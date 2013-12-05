@@ -1,0 +1,31 @@
+#!/bin/sh
+
+set -e
+
+#PKGOS-INCLUDE#
+
+CONF=/etc/designate/designate.conf
+
+if [ "${1}" = "configure" ] ; then
+	. /usr/share/debconf/confmodule
+	. /usr/share/dbconfig-common/dpkg/postinst
+
+	pkgos_var_user_group designate
+	pkgos_write_new_conf designate designate.conf
+
+	pkgos_dbc_postinst ${CONF} storage:sqlalchemy database_connection designate $@
+	pkgos_rabbit_write_conf ${CONF} DEFAULT designate
+	pkgos_write_admin_creds ${CONF} keystone_authtoken designate
+
+	db_get designate/configure_db
+	if [ "$RET" = "true" ] && [ "$dbc_upgrade" = "true" ] ; then
+		echo "Now doing designate-manage database-sync: this may take a while..."
+		su -s /bin/sh -c 'cd /tmp && designate-manage database-init' designate || true
+		su -s /bin/sh -c 'cd /tmp && designate-manage database-sync' designate
+	fi
+	db_stop
+fi
+
+#DEBHELPER#
+
+exit 0

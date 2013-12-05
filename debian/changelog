@@ -1,0 +1,5 @@
+designate (2013.2-1) unstable; urgency=low
+
+  * Initial release (Closes: #731406).
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 05 Dec 2013 09:55:26 +0800

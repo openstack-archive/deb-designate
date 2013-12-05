@@ -1,0 +1,26 @@
+From: Artom Lifshitz <artom.lifshitz@enovance.com>
+Date: Fri, 22 Nov 2013 20:04:58 +0000
+Subject: config-paths
+
+---
+ etc/designate/designate.conf.sample |    4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/etc/designate/designate.conf.sample b/etc/designate/designate.conf.sample
+index 1c71a3f..24dd20d 100644
+--- a/etc/designate/designate.conf.sample
++++ b/etc/designate/designate.conf.sample
+@@ -9,10 +9,10 @@ verbose = True
+ debug = False
+ 
+ # Top-level directory for maintaining designate's state
+-#state_path = /var/lib/designate
++state_path = /var/lib/designate
+ 
+ # Log directory
+-#logdir = /var/log/designate
++logdir = /var/log/designate
+ 
+ # Driver used for issuing notifications
+ #notification_driver = designate.openstack.common.notifier.rabbit_notifier
+-- 

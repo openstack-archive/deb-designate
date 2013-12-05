@@ -1,0 +1,7 @@
+/var/log/designate/designate-agent.log {
+    daily
+    missingok
+    compress
+    delaycompress
+    notifempty
+}

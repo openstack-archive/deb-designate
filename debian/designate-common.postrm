@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -e
+
+if [ "${1}" = "purge" ] ; then
+	if [ -f /usr/share/debconf/confmodule ] ; then
+		. /usr/share/debconf/confmodule
+
+		db_get designate/configure_db || true
+		if [ "$RET" = "true" ]; then
+			if [ -f /usr/share/dbconfig-common/dpkg/postrm ]; then
+				. /usr/share/dbconfig-common/dpkg/postrm
+				dbc_go designate-common $@
+			else
+				rm -f /etc/dbconfig-common/designate-common.conf
+				if which ucf >/dev/null 2>&1; then
+					ucf --purge /etc/dbconfig-common/designate-common.conf
+					ucfr --purge cinder-common /etc/dbconfig-common/designate-common.conf
+				fi
+			fi
+		fi
+	fi
+	rm -rf /var/lib/designate /var/log/designate || true
+
+	rm -f /etc/designate/designate.conf
+	[ -d /etc/designate ] && rmdir --ignore-fail-on-non-empty /etc/designate
+fi
+
+#DEBHELPER#

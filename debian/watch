@@ -1,0 +1,2 @@
+version=3
+https://github.com/stackforge/designate/tags .*/(\d[\d\.]+)\.tar\.gz

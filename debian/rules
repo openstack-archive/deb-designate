@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+
+UPSTREAM_GIT = git://github.com/stackforge/designate.git
+include /usr/share/openstack-pkg-tools/pkgos.make
+export OSLO_PACKAGE_VERSION=$(VERSION)
+
+%:
+	dh $@ --with python2 --buildsystem=python_distutils
+
+override_dh_auto_install:
+	dh_auto_install -O--buildsystem=python_distutils
+	install -D -m 0664 $(CURDIR)/etc/designate/rootwrap.conf.sample $(CURDIR)/debian/designate-common/etc/designate/rootwrap.conf
+	install -D -m 0664 $(CURDIR)/etc/designate/designate.conf.sample $(CURDIR)/debian/designate-common/usr/share/designate-common/designate.conf
+
+override_dh_auto_clean:
+	dh_auto_clean -O--buildsystem=python_distutils
+	rm -f debian/designate-common.postinst debian/designate-common.config debian/designate-api.config debian/designate-api.postinst
+
+override_dh_auto_build:
+	dh_auto_build -O--buildsystem=python_distutils
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func designate-common.postinst
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func designate-common.config
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func designate-api.config
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func designate-api.postinst
+
+#ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+#override_dh_auto_test:
+#	PYTHONPATH=$(CURDIR) python setup.py testr
+#endif
+
+#override_dh_auto_build:
+#		dh_auto_build
+#ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+#		mkdir doc/build
+#		python setup.py build_sphinx
+#else
+#		mkdir -p doc/build/html
+#endif
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf doc/build build *.egg-info
