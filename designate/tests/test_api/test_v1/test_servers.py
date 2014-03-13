@@ -25,7 +25,12 @@ LOG = logging.getLogger(__name__)
 
 
 class ApiV1ServersTest(ApiV1Test):
-    __test__ = True
+    def setUp(self):
+        super(ApiV1ServersTest, self).setUp()
+
+        # All Server Checks should be performed as an admin, so..
+        # Override to policy to make everyone an admin.
+        self.policy({'admin': '@'})
 
     def test_create_server(self):
         # Create a server

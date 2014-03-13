@@ -15,9 +15,12 @@
 # under the License.
 import time
 from sqlalchemy.orm import exc
+from sqlalchemy import exc as sqlalchemy_exc
 from sqlalchemy import distinct, func
 from oslo.config import cfg
 from designate.openstack.common import log as logging
+from designate.openstack.common.db.sqlalchemy.utils import paginate_query
+from designate.openstack.common.db.sqlalchemy.utils import InvalidSortKey
 from designate import exceptions
 from designate.storage import base
 from designate.storage.impl_sqlalchemy import models
@@ -25,6 +28,7 @@ from designate.sqlalchemy.models import SoftDeleteMixin
 from designate.sqlalchemy.session import get_session
 from designate.sqlalchemy.session import get_engine
 from designate.sqlalchemy.session import SQLOPTS
+
 
 LOG = logging.getLogger(__name__)
 
@@ -44,6 +48,15 @@ class SQLAlchemyStorage(base.Storage):
 
         self.engine = get_engine(self.name)
         self.session = get_session(self.name)
+
+    def begin(self):
+        self.session.begin(subtransactions=True)
+
+    def commit(self):
+        self.session.commit()
+
+    def rollback(self):
+        self.session.rollback()
 
     def setup_schema(self):
         """ Semi-Private Method to create the database schema """
@@ -65,6 +78,15 @@ class SQLAlchemyStorage(base.Storage):
 
         return query
 
+    def _apply_tenant_criteria(self, context, model, query):
+        if hasattr(model, 'tenant_id'):
+            if context.all_tenants:
+                LOG.debug('Including all tenants items in query results')
+            else:
+                query = query.filter(model.tenant_id == context.tenant_id)
+
+        return query
+
     def _apply_deleted_criteria(self, context, model, query):
         if issubclass(model, SoftDeleteMixin):
             if context.show_deleted:
@@ -74,7 +96,8 @@ class SQLAlchemyStorage(base.Storage):
 
         return query
 
-    def _find(self, model, context, criterion, one=False):
+    def _find(self, model, context, criterion, one=False,
+              marker=None, limit=None, sort_key=None, sort_dir=None):
         """
         Base "finder" method
 
@@ -83,6 +106,7 @@ class SQLAlchemyStorage(base.Storage):
         # First up, create a query and apply the various filters
         query = self.session.query(model)
         query = self._apply_criterion(model, query, criterion)
+        query = self._apply_tenant_criteria(context, model, query)
         query = self._apply_deleted_criteria(context, model, query)
 
         if one:
@@ -93,8 +117,36 @@ class SQLAlchemyStorage(base.Storage):
             except (exc.NoResultFound, exc.MultipleResultsFound):
                 raise exceptions.NotFound()
         else:
-            # Othwewise, return all matching records
-            return query.all()
+            # If marker is not none and basestring we query it.
+            # Otherwise, return all matching records
+            if marker is not None:
+                try:
+                    marker = self._find(model, context, {'id': marker},
+                                        one=True)
+                except exceptions.NotFound:
+                    raise exceptions.MarkerNotFound(
+                        'Marker %s could not be found' % marker)
+                # Malformed UUIDs return StatementError
+                except sqlalchemy_exc.StatementError as statement_error:
+                    raise exceptions.InvalidMarker(statement_error.message)
+            sort_key = sort_key or 'created_at'
+            sort_dir = sort_dir or 'asc'
+
+            try:
+                query = paginate_query(
+                    query, model, limit,
+                    [sort_key, 'id', 'created_at'], marker=marker,
+                    sort_dir=sort_dir)
+
+                return query.all()
+            except InvalidSortKey as sort_key_error:
+                raise exceptions.InvalidSortKey(sort_key_error.message)
+            # Any ValueErrors are propagated back to the user as is.
+            # Limits, sort_dir and sort_key are checked at the API layer.
+            # If however central or storage is called directly, invalid values
+            # show up as ValueError
+            except ValueError as value_error:
+                raise exceptions.ValueError(value_error.message)
 
     ## CRUD for our resources (quota, server, tsigkey, tenant, domain & record)
     ## R - get_*, find_*s
@@ -107,9 +159,12 @@ class SQLAlchemyStorage(base.Storage):
     ##
 
     # Quota Methods
-    def _find_quotas(self, context, criterion, one=False):
+    def _find_quotas(self, context, criterion, one=False,
+                     marker=None, limit=None, sort_key=None, sort_dir=None):
         try:
-            return self._find(models.Quota, context, criterion, one)
+            return self._find(models.Quota, context, criterion, one=one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
         except exceptions.NotFound:
             raise exceptions.QuotaNotFound()
 
@@ -130,8 +185,11 @@ class SQLAlchemyStorage(base.Storage):
 
         return dict(quota)
 
-    def find_quotas(self, context, criterion=None):
-        quotas = self._find_quotas(context, criterion)
+    def find_quotas(self, context, criterion=None,
+                    marker=None, limit=None, sort_key=None, sort_dir=None):
+        quotas = self._find_quotas(context, criterion, marker=marker,
+                                   limit=limit, sort_key=sort_key,
+                                   sort_dir=sort_dir)
 
         return [dict(q) for q in quotas]
 
@@ -158,9 +216,12 @@ class SQLAlchemyStorage(base.Storage):
         quota.delete(self.session)
 
     # Server Methods
-    def _find_servers(self, context, criterion, one=False):
+    def _find_servers(self, context, criterion, one=False,
+                      marker=None, limit=None, sort_key=None, sort_dir=None):
         try:
-            return self._find(models.Server, context, criterion, one)
+            return self._find(models.Server, context, criterion, one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
         except exceptions.NotFound:
             raise exceptions.ServerNotFound()
 
@@ -176,9 +237,11 @@ class SQLAlchemyStorage(base.Storage):
 
         return dict(server)
 
-    def find_servers(self, context, criterion=None):
-        servers = self._find_servers(context, criterion)
-
+    def find_servers(self, context, criterion=None,
+                     marker=None, limit=None, sort_key=None, sort_dir=None):
+        servers = self._find_servers(context, criterion, marker=marker,
+                                     limit=limit, sort_key=sort_key,
+                                     sort_dir=sort_dir)
         return [dict(s) for s in servers]
 
     def get_server(self, context, server_id):
@@ -202,10 +265,63 @@ class SQLAlchemyStorage(base.Storage):
 
         server.delete(self.session)
 
-    # TSIG Key Methods
-    def _find_tsigkeys(self, context, criterion, one=False):
+    # TLD Methods
+    def _find_tlds(self, context, criterion, one=False,
+                   marker=None, limit=None, sort_key=None, sort_dir=None):
         try:
-            return self._find(models.TsigKey, context, criterion, one)
+            return self._find(models.Tld, context, criterion, one=one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
+        except exceptions.NotFound:
+            raise exceptions.TLDNotFound()
+
+    def create_tld(self, context, values):
+        tld = models.Tld()
+        tld.update(values)
+
+        try:
+            tld.save(self.session)
+        except exceptions.Duplicate:
+            raise exceptions.DuplicateTLD()
+
+        return dict(tld)
+
+    def find_tlds(self, context, criterion=None,
+                  marker=None, limit=None, sort_key=None, sort_dir=None):
+        tlds = self._find_tlds(context, criterion, marker=marker, limit=limit,
+                               sort_key=sort_key, sort_dir=sort_dir)
+        return [dict(s) for s in tlds]
+
+    def find_tld(self, context, criterion):
+        tld = self._find_tlds(context, criterion, one=True)
+        return dict(tld)
+
+    def get_tld(self, context, tld_id):
+        tld = self._find_tlds(context, {'id': tld_id}, one=True)
+        return dict(tld)
+
+    def update_tld(self, context, tld_id, values):
+        tld = self._find_tlds(context, {'id': tld_id}, one=True)
+        tld.update(values)
+
+        try:
+            tld.save(self.session)
+        except exceptions.Duplicate:
+            raise exceptions.DuplicateTLD()
+
+        return dict(tld)
+
+    def delete_tld(self, context, tld_id):
+        tld = self._find_tlds(context, {'id': tld_id}, one=True)
+        tld.delete(self.session)
+
+    # TSIG Key Methods
+    def _find_tsigkeys(self, context, criterion, one=False,
+                       marker=None, limit=None, sort_key=None, sort_dir=None):
+        try:
+            return self._find(models.TsigKey, context, criterion, one=one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
         except exceptions.NotFound:
             raise exceptions.TsigKeyNotFound()
 
@@ -221,8 +337,11 @@ class SQLAlchemyStorage(base.Storage):
 
         return dict(tsigkey)
 
-    def find_tsigkeys(self, context, criterion=None):
-        tsigkeys = self._find_tsigkeys(context, criterion)
+    def find_tsigkeys(self, context, criterion=None,
+                      marker=None, limit=None, sort_key=None, sort_dir=None):
+        tsigkeys = self._find_tsigkeys(context, criterion, marker=marker,
+                                       limit=limit, sort_key=sort_key,
+                                       sort_dir=sort_dir)
 
         return [dict(t) for t in tsigkeys]
 
@@ -255,6 +374,7 @@ class SQLAlchemyStorage(base.Storage):
         # returns an array of tenant_id & count of their domains
         query = self.session.query(models.Domain.tenant_id,
                                    func.count(models.Domain.id))
+        query = self._apply_tenant_criteria(context, models.Domain, query)
         query = self._apply_deleted_criteria(context, models.Domain, query)
         query = query.group_by(models.Domain.tenant_id)
 
@@ -263,8 +383,9 @@ class SQLAlchemyStorage(base.Storage):
     def get_tenant(self, context, tenant_id):
         # get list list & count of all domains owned by given tenant_id
         query = self.session.query(models.Domain.name)
-        query = query.filter(models.Domain.tenant_id == tenant_id)
+        query = self._apply_tenant_criteria(context, models.Domain, query)
         query = self._apply_deleted_criteria(context, models.Domain, query)
+        query = query.filter(models.Domain.tenant_id == tenant_id)
 
         result = query.all()
 
@@ -278,6 +399,7 @@ class SQLAlchemyStorage(base.Storage):
         # tenants are the owner of domains, count the number of unique tenants
         # select count(distinct tenant_id) from domains
         query = self.session.query(distinct(models.Domain.tenant_id))
+        query = self._apply_tenant_criteria(context, models.Domain, query)
         query = self._apply_deleted_criteria(context, models.Domain, query)
 
         return query.count()
@@ -285,9 +407,12 @@ class SQLAlchemyStorage(base.Storage):
     ##
     ## Domain Methods
     ##
-    def _find_domains(self, context, criterion, one=False):
+    def _find_domains(self, context, criterion, one=False,
+                      marker=None, limit=None, sort_key=None, sort_dir=None):
         try:
-            return self._find(models.Domain, context, criterion, one)
+            return self._find(models.Domain, context, criterion, one=one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
         except exceptions.NotFound:
             raise exceptions.DomainNotFound()
 
@@ -308,8 +433,11 @@ class SQLAlchemyStorage(base.Storage):
 
         return dict(domain)
 
-    def find_domains(self, context, criterion=None):
-        domains = self._find_domains(context, criterion)
+    def find_domains(self, context, criterion=None,
+                     marker=None, limit=None, sort_key=None, sort_dir=None):
+        domains = self._find_domains(context, criterion, marker=marker,
+                                     limit=limit, sort_key=sort_key,
+                                     sort_dir=sort_dir)
 
         return [dict(d) for d in domains]
 
@@ -339,37 +467,121 @@ class SQLAlchemyStorage(base.Storage):
     def count_domains(self, context, criterion=None):
         query = self.session.query(models.Domain)
         query = self._apply_criterion(models.Domain, query, criterion)
+        query = self._apply_tenant_criteria(context, models.Domain, query)
         query = self._apply_deleted_criteria(context, models.Domain, query)
 
         return query.count()
 
-    # Record Methods
-    def _find_records(self, context, criterion, one=False):
+    # RecordSet Methods
+    def _find_recordsets(self, context, criterion, one=False,
+                         marker=None, limit=None, sort_key=None,
+                         sort_dir=None):
         try:
-            return self._find(models.Record, context, criterion, one)
+            return self._find(models.RecordSet, context, criterion, one=one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
+        except exceptions.NotFound:
+            raise exceptions.RecordSetNotFound()
+
+    def create_recordset(self, context, domain_id, values):
+        # Fetch the domain as we need the tenant_id
+        domain = self._find_domains(context, {'id': domain_id}, one=True)
+
+        recordset = models.RecordSet()
+
+        recordset.update(values)
+        recordset.tenant_id = domain['tenant_id']
+        recordset.domain_id = domain_id
+
+        try:
+            recordset.save(self.session)
+        except exceptions.Duplicate:
+            raise exceptions.DuplicateRecordSet()
+
+        return dict(recordset)
+
+    def get_recordset(self, context, recordset_id):
+        recordset = self._find_recordsets(context, {'id': recordset_id},
+                                          one=True)
+
+        return dict(recordset)
+
+    def find_recordsets(self, context, criterion=None,
+                        marker=None, limit=None, sort_key=None, sort_dir=None):
+        recordsets = self._find_recordsets(
+            context, criterion, marker=marker, limit=limit, sort_key=sort_key,
+            sort_dir=sort_dir)
+
+        return [dict(r) for r in recordsets]
+
+    def find_recordset(self, context, criterion):
+        recordset = self._find_recordsets(context, criterion, one=True)
+
+        return dict(recordset)
+
+    def update_recordset(self, context, recordset_id, values):
+        recordset = self._find_recordsets(context, {'id': recordset_id},
+                                          one=True)
+
+        recordset.update(values)
+
+        try:
+            recordset.save(self.session)
+        except exceptions.Duplicate:
+            raise exceptions.DuplicateRecordSet()
+
+        return dict(recordset)
+
+    def delete_recordset(self, context, recordset_id):
+        recordset = self._find_recordsets(context, {'id': recordset_id},
+                                          one=True)
+
+        recordset.delete(self.session)
+
+        return dict(recordset)
+
+    def count_recordsets(self, context, criterion=None):
+        query = self.session.query(models.RecordSet)
+        query = self._apply_criterion(models.RecordSet, query, criterion)
+
+        return query.count()
+
+    # Record Methods
+    def _find_records(self, context, criterion, one=False,
+                      marker=None, limit=None, sort_key=None, sort_dir=None):
+        try:
+            return self._find(models.Record, context, criterion, one=one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
         except exceptions.NotFound:
             raise exceptions.RecordNotFound()
 
-    def create_record(self, context, domain_id, values):
+    def create_record(self, context, domain_id, recordset_id, values):
+        # Fetch the domain as we need the tenant_id
+        domain = self._find_domains(context, {'id': domain_id}, one=True)
+
         record = models.Record()
 
+        # Create and populate the new Record model
+        record = models.Record()
         record.update(values)
+        record.tenant_id = domain['tenant_id']
         record.domain_id = domain_id
+        record.recordset_id = recordset_id
 
         try:
+            # Save the new Record model
             record.save(self.session)
         except exceptions.Duplicate:
             raise exceptions.DuplicateRecord()
 
         return dict(record)
 
-    def find_records(self, context, domain_id, criterion=None):
-        if criterion is None:
-            criterion = {}
-
-        criterion['domain_id'] = domain_id
-
-        records = self._find_records(context, criterion)
+    def find_records(self, context, criterion=None,
+                     marker=None, limit=None, sort_key=None, sort_dir=None):
+        records = self._find_records(
+            context, criterion, marker=marker, limit=limit, sort_key=sort_key,
+            sort_dir=sort_dir)
 
         return [dict(r) for r in records]
 
@@ -378,12 +590,7 @@ class SQLAlchemyStorage(base.Storage):
 
         return dict(record)
 
-    def find_record(self, context, domain_id, criterion=None):
-        if criterion is None:
-            criterion = {}
-
-        criterion['domain_id'] = domain_id
-
+    def find_record(self, context, criterion):
         record = self._find_records(context, criterion, one=True)
 
         return dict(record)
@@ -409,8 +616,72 @@ class SQLAlchemyStorage(base.Storage):
 
     def count_records(self, context, criterion=None):
         query = self.session.query(models.Record)
+        query = self._apply_tenant_criteria(context, models.Record, query)
         query = self._apply_criterion(models.Record, query, criterion)
         return query.count()
+
+    #
+    # Blacklist Methods
+    #
+    def _find_blacklist(self, context, criterion, one=False,
+                        marker=None, limit=None, sort_key=None, sort_dir=None):
+        try:
+            return self._find(models.Blacklists, context, criterion, one=one,
+                              marker=marker, limit=limit, sort_key=sort_key,
+                              sort_dir=sort_dir)
+        except exceptions.NotFound:
+            raise exceptions.BlacklistNotFound()
+
+    def create_blacklist(self, context, values):
+        blacklist = models.Blacklists()
+
+        blacklist.update(values)
+
+        try:
+            blacklist.save(self.session)
+        except exceptions.Duplicate:
+            raise exceptions.DuplicateBlacklist()
+
+        return dict(blacklist)
+
+    def find_blacklists(self, context, criterion=None,
+                        marker=None, limit=None, sort_key=None, sort_dir=None):
+        blacklists = self._find_blacklist(
+            context, criterion, marker=marker, limit=limit, sort_key=sort_key,
+            sort_dir=sort_dir)
+
+        return [dict(b) for b in blacklists]
+
+    def get_blacklist(self, context, blacklist_id):
+        blacklist = self._find_blacklist(context,
+                                         {'id': blacklist_id}, one=True)
+
+        return dict(blacklist)
+
+    def find_blacklist(self, context, criterion):
+        blacklist = self._find_blacklist(context, criterion, one=True)
+
+        return dict(blacklist)
+
+    def update_blacklist(self, context, blacklist_id, values):
+        blacklist = self._find_blacklist(context, {'id': blacklist_id},
+                                         one=True)
+
+        blacklist.update(values)
+
+        try:
+            blacklist.save(self.session)
+        except exceptions.Duplicate:
+            raise exceptions.DuplicateBlacklist()
+
+        return dict(blacklist)
+
+    def delete_blacklist(self, context, blacklist_id):
+
+        blacklist = self._find_blacklist(context, {'id': blacklist_id},
+                                         one=True)
+
+        blacklist.delete(self.session)
 
     # diagnostics
     def ping(self, context):

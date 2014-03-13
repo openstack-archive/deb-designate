@@ -33,6 +33,8 @@ cfg.CONF.register_opts([
     cfg.StrOpt('rndc-config-file', default=None,
                help='RNDC Config File'),
     cfg.StrOpt('rndc-key-file', default=None, help='RNDC Key File'),
+    cfg.StrOpt('nzf-path', default='/var/cache/bind',
+               help='Path where Bind9 stores the nzf files'),
 ], group='backend:bind9')
 
 
@@ -75,15 +77,23 @@ class Bind9Backend(base.Backend):
         LOG.debug('Delete Domain')
         self._sync_delete_domain(domain)
 
-    def create_record(self, context, domain, record):
+    def update_recordset(self, context, domain, recordset):
+        LOG.debug('Update RecordSet')
+        self._sync_domain(domain)
+
+    def delete_recordset(self, context, domain, recordset):
+        LOG.debug('Delete RecordSet')
+        self._sync_domain(domain)
+
+    def create_record(self, context, domain, recordset, record):
         LOG.debug('Create Record')
         self._sync_domain(domain)
 
-    def update_record(self, context, domain, record):
+    def update_record(self, context, domain, recordset, record):
         LOG.debug('Update Record')
         self._sync_domain(domain)
 
-    def delete_record(self, context, domain, record):
+    def delete_record(self, context, domain, recordset, record):
         LOG.debug('Delete Record')
         self._sync_domain(domain)
 
@@ -124,7 +134,7 @@ class Bind9Backend(base.Backend):
         #zones.config file we wish to maintain. The file name can change as it
         #is a hash of rndc view name, we're only interested in the first file
         #name this returns because there is only one .nzf file
-        nzf_name = glob.glob('/var/cache/bind/*.nzf')
+        nzf_name = glob.glob('%s/*.nzf' % cfg.CONF[self.name].nzf_path)
 
         output_file = os.path.join(output_folder, 'zones.config')
 
@@ -136,8 +146,28 @@ class Bind9Backend(base.Backend):
 
         servers = self.central_service.find_servers(self.admin_context)
 
-        records = self.central_service.find_records(self.admin_context,
-                                                    domain['id'])
+        recordsets = self.central_service.find_recordsets(
+            self.admin_context, {'domain_id': domain['id']})
+
+        records = []
+
+        for recordset in recordsets:
+            criterion = {
+                'domain_id': domain['id'],
+                'recordset_id': recordset['id']
+            }
+
+            raw_records = self.central_service.find_records(
+                self.admin_context, criterion)
+
+            for record in raw_records:
+                records.append({
+                    'name': recordset['name'],
+                    'type': recordset['type'],
+                    'ttl': recordset['ttl'],
+                    'priority': record['priority'],
+                    'data': record['data'],
+                })
 
         output_folder = os.path.join(os.path.abspath(cfg.CONF.state_path),
                                      'bind9')
@@ -157,7 +187,7 @@ class Bind9Backend(base.Backend):
             rndc_op = [
                 'addzone',
                 '%s { type master; file "%s"; };' % (domain['name'],
-                output_path),
+                                                     output_path),
             ]
             rndc_call.extend(rndc_op)
         else:
@@ -168,7 +198,7 @@ class Bind9Backend(base.Backend):
         LOG.debug('Calling RNDC with: %s' % " ".join(rndc_call))
         utils.execute(*rndc_call)
 
-        nzf_name = glob.glob('/var/cache/bind/*.nzf')
+        nzf_name = glob.glob('%s/*.nzf' % cfg.CONF[self.name].nzf_path)
 
         output_file = os.path.join(output_folder, 'zones.config')
 

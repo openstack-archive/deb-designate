@@ -13,7 +13,7 @@
         "recordset": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["zone_id", "name", "type", "records"],
+            "required": ["name", "type"],
 
             "properties": {
                 "id": {
@@ -38,7 +38,7 @@
                 "type": {
                     "type": "string",
                     "description": "RecordSet type (TODO: Make types extensible)",
-                    "enum": ["A", "MX"]
+                    "enum": ["A", "AAAA", "CNAME", "MX", "SRV", "TXT", "SPF", "NS", "PTR", "SSHFP"]
                 },
                 "description": {
                     "type": ["string", "null"],
@@ -51,17 +51,6 @@
                     "min": 0,
                     "max": 2147483647,
                     "default": null
-                },
-                "records": {
-                    "type": "array",
-                    "description": "Records Array",
-                    "uniqueItems": true,
-                    "minItems": 1
-                },
-                "notes": {
-                    "type": ["string", "null"],
-                    "description": "Notes",
-                    "maxLength": 100
                 },
                 "version": {
                     "type": "integer",
@@ -91,20 +80,7 @@
                         }
                     }
                 }
-            },
-            "oneOf": [
-                {"properties": {"type": {"enum": ["A"]}, "records": {"items": {"$ref": "rdata/a#"}}}},
-                {"properties": {"type": {"enum": ["AAAA"]}, "records": {"items": {"$ref": "rdata/aaaa#"}}}},
-                {"properties": {"type": {"enum": ["CNAME"]}, "records": {"items": {"$ref": "rdata/cname#"}}}},
-                {"properties": {"type": {"enum": ["MX"]}, "records": {"items": {"$ref": "rdata/mx#"}}}},
-                {"properties": {"type": {"enum": ["NS"]}, "records": {"items": {"$ref": "rdata/ns#"}}}},
-                {"properties": {"type": {"enum": ["PTR"]}, "records": {"items": {"$ref": "rdata/ptr#"}}}},
-                {"properties": {"type": {"enum": ["SOA"]}, "records": {"items": {"$ref": "rdata/soa#"}}}},
-                {"properties": {"type": {"enum": ["SPF"]}, "records": {"items": {"$ref": "rdata/spf#"}}}},
-                {"properties": {"type": {"enum": ["SRV"]}, "records": {"items": {"$ref": "rdata/srv#"}}}},
-                {"properties": {"type": {"enum": ["SSHFP"]}, "records": {"items": {"$ref": "rdata/sshfp#"}}}},
-                {"properties": {"type": {"enum": ["TXT"]}, "records": {"items": {"$ref": "rdata/txt#"}}}}
-            ]
+            }
         }
     }
 }

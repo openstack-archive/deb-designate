@@ -15,28 +15,13 @@
 # under the License.
 import json
 import os
-from designate.notification_handler.base import Handler
-from designate.tests import TestCase
+import testtools
+from designate.tests import resources
 
-FIXTURES_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                             '..',
-                                             'sample_notifications'))
+FIXTURES_PATH = os.path.join(resources.path, 'sample_notifications')
 
 
-class NotificationHandlerTestCase(TestCase):
-    __test__ = False
-    __plugin_base__ = Handler
-
-    def setUp(self):
-        super(NotificationHandlerTestCase, self).setUp()
-
-        self.central_service = self.get_central_service()
-        self.central_service.start()
-
-    def tearDown(self):
-        self.central_service.stop()
-        super(NotificationHandlerTestCase, self).tearDown()
-
+class NotificationHandlerMixin(object):
     def get_notification_fixture(self, service, name):
         filename = os.path.join(FIXTURES_PATH, service, '%s.json' % name)
 
@@ -47,9 +32,11 @@ class NotificationHandlerTestCase(TestCase):
             return json.load(fh)
 
     def test_invalid_event_type(self):
+        if not hasattr(self, 'plugin'):
+            raise NotImplementedError
         event_type = 'invalid'
 
         self.assertNotIn(event_type, self.plugin.get_event_types())
 
-        with self.assertRaises(ValueError):
+        with testtools.ExpectedException(ValueError):
             self.plugin.process_notification(event_type, 'payload')

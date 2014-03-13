@@ -15,6 +15,7 @@
 # under the License.
 import abc
 from stevedore import driver
+from stevedore import enabled
 from designate.openstack.common import log as logging
 
 
@@ -33,30 +34,6 @@ class Plugin(object):
         self.name = self.get_canonical_name()
         LOG.debug("Loaded plugin %s", self.name)
 
-    def is_enabled(self):
-        """
-        Is this Plugin enabled?
-
-        :retval: Boolean
-        """
-        return True
-
-    @classmethod
-    def get_plugin(cls, name, ns=None, invoke_on_load=False,
-                   invoke_args=(), invoke_kwds={}):
-        """
-        Load a plugin from namespace
-        """
-        ns = ns or cls.__plugin_ns__
-        if ns is None:
-            raise RuntimeError('No namespace provided or __plugin_ns__ unset')
-
-        LOG.debug('Looking for plugin %s in %s', name, ns)
-        mgr = driver.DriverManager(ns, name)
-
-        return mgr.driver(*invoke_args, **invoke_kwds) if invoke_on_load \
-            else mgr.driver
-
     @classmethod
     def get_canonical_name(cls):
         """
@@ -74,12 +51,50 @@ class Plugin(object):
     def get_plugin_type(cls):
         return cls.__plugin_type__
 
-    def start(self):
-        """
-        Start this plugin
-        """
 
-    def stop(self):
-        """
-        Stop this plugin from doing anything
-        """
+class DriverPlugin(Plugin):
+    """
+    A Driver plugin is a singleton, where only a single driver will loaded
+    at a time.
+
+    For example: Storage implementations (SQLAlchemy)
+    """
+
+    @classmethod
+    def get_driver(cls, name):
+        """ Load a single driver """
+
+        LOG.debug('Looking for driver %s in %s', name, cls.__plugin_ns__)
+
+        mgr = driver.DriverManager(cls.__plugin_ns__, name)
+
+        return mgr.driver
+
+
+class ExtensionPlugin(Plugin):
+    """
+    Extension plugins are loaded as a group, where multiple extensions will
+    be loaded and used at the same time.
+
+    For example: Designate Sink handlers
+    """
+
+    @classmethod
+    def get_extensions(cls, enabled_extensions=None):
+        """ Load a series of extensions """
+
+        LOG.debug('Looking for extensions in %s', cls.__plugin_ns__)
+
+        def _check_func(ext):
+            if enabled_extensions is None:
+                # All extensions are enabled by default, if no specific list
+                # is specified
+                return True
+
+            return ext.plugin.get_plugin_name() in enabled_extensions
+
+        mgr = enabled.EnabledExtensionManager(
+            cls.__plugin_ns__, check_func=_check_func,
+            propagate_map_exceptions=True)
+
+        return [e.plugin for e in mgr]

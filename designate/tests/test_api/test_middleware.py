@@ -15,6 +15,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from designate.tests.test_api import ApiTestCase
+from designate import exceptions
 from designate.api import middleware
 
 
@@ -33,8 +34,6 @@ class FakeRequest(object):
 
 
 class MaintenanceMiddlewareTest(ApiTestCase):
-    __test__ = True
-
     def test_process_request_disabled(self):
         self.config(maintenance_mode=False, group='service:api')
 
@@ -107,8 +106,6 @@ class MaintenanceMiddlewareTest(ApiTestCase):
 
 
 class KeystoneContextMiddlewareTest(ApiTestCase):
-    __test__ = True
-
     def test_process_request(self):
         app = middleware.KeystoneContextMiddleware({})
 
@@ -134,10 +131,7 @@ class KeystoneContextMiddlewareTest(ApiTestCase):
         self.assertEqual('TenantID', context.tenant_id)
         self.assertEqual(['admin', 'Member'], context.roles)
 
-    def test_process_request_sudo(self):
-        # Set the policy to accept the authz
-        self.policy({'use_sudo': '@'})
-
+    def test_process_request_invalid_keystone_token(self):
         app = middleware.KeystoneContextMiddleware({})
 
         request = FakeRequest()
@@ -147,29 +141,16 @@ class KeystoneContextMiddlewareTest(ApiTestCase):
             'X-User-ID': 'UserID',
             'X-Tenant-ID': 'TenantID',
             'X-Roles': 'admin,Member',
-            'X-Designate-Sudo-Tenant-ID':
-            '5a993bf8-d521-420a-81e1-192d9cc3d5a0'
+            'X-Identity-Status': 'Invalid'
         }
 
         # Process the request
-        app.process_request(request)
+        response = app(request)
 
-        self.assertIn('context', request.environ)
-
-        context = request.environ['context']
-
-        self.assertFalse(context.is_admin)
-        self.assertEqual('AuthToken', context.auth_token)
-        self.assertEqual('UserID', context.user_id)
-        self.assertEqual('TenantID', context.original_tenant_id)
-        self.assertEqual('5a993bf8-d521-420a-81e1-192d9cc3d5a0',
-                         context.tenant_id)
-        self.assertEqual(['admin', 'Member'], context.roles)
+        self.assertEqual(response.status_code, 401)
 
 
 class NoAuthContextMiddlewareTest(ApiTestCase):
-    __test__ = True
-
     def test_process_request(self):
         app = middleware.NoAuthContextMiddleware({})
 
@@ -184,6 +165,34 @@ class NoAuthContextMiddlewareTest(ApiTestCase):
 
         self.assertTrue(context.is_admin)
         self.assertIsNone(context.auth_token)
-        self.assertIsNone(context.user_id)
-        self.assertIsNone(context.tenant_id)
+        self.assertEqual('noauth-user', context.user_id)
+        self.assertEqual('noauth-project', context.tenant_id)
         self.assertEqual([], context.roles)
+
+
+class FaultMiddlewareTest(ApiTestCase):
+    __test__ = True
+
+    def test_notify_of_fault(self):
+        self.config(notify_api_faults=True)
+        app = middleware.FaultWrapperMiddleware({})
+
+        class RaisingRequest(FakeRequest):
+            def get_response(self, request):
+                raise exceptions.DuplicateDomain()
+
+        request = RaisingRequest()
+        context = FakeContext()
+        context.request_id = 'one'
+        request.environ['context'] = context
+
+        # Process the request
+        app(request)
+
+        notifications = self.get_notifications()
+        self.assertEqual(1, len(notifications))
+
+        self.assertEqual('ERROR', notifications[0]['priority'])
+        self.assertEqual('dns.api.fault', notifications[0]['event_type'])
+        self.assertIn('timestamp', notifications[0])
+        self.assertIn('publisher_id', notifications[0])

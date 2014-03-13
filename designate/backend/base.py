@@ -17,13 +17,13 @@ import abc
 from designate.openstack.common import log as logging
 from designate import exceptions
 from designate.context import DesignateContext
-from designate.plugin import Plugin
+from designate.plugin import DriverPlugin
 
 
 LOG = logging.getLogger(__name__)
 
 
-class Backend(Plugin):
+class Backend(DriverPlugin):
     """ Base class for backend implementations """
     __plugin_type__ = 'backend'
     __plugin_ns__ = 'designate.backend'
@@ -32,6 +32,13 @@ class Backend(Plugin):
         super(Backend, self).__init__()
         self.central_service = central_service
         self.admin_context = DesignateContext.get_admin_context()
+        self.admin_context.all_tenants = True
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
 
     def create_tsigkey(self, context, tsigkey):
         """ Create a TSIG Key """
@@ -60,16 +67,27 @@ class Backend(Plugin):
     def delete_domain(self, context, domain):
         """ Delete a DNS domain """
 
+    def create_recordset(self, context, domain, recordset):
+        """ Create a DNS recordset """
+
     @abc.abstractmethod
-    def create_record(self, context, domain, record):
+    def update_recordset(self, context, domain, recordset):
+        """ Update a DNS recordset """
+
+    @abc.abstractmethod
+    def delete_recordset(self, context, domain, recordset):
+        """ Delete a DNS recordset """
+
+    @abc.abstractmethod
+    def create_record(self, context, domain, recordset, record):
         """ Create a DNS record """
 
     @abc.abstractmethod
-    def update_record(self, context, domain, record):
+    def update_record(self, context, domain, recordset, record):
         """ Update a DNS record """
 
     @abc.abstractmethod
-    def delete_record(self, context, domain, record):
+    def delete_record(self, context, domain, recordset, record):
         """ Delete a DNS record """
 
     @abc.abstractmethod

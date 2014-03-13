@@ -17,12 +17,13 @@ import flask
 import webob.dec
 from oslo.config import cfg
 from designate import exceptions
+from designate import notifications
 from designate import wsgi
 from designate.context import DesignateContext
 from designate.openstack.common import jsonutils as json
 from designate.openstack.common import local
 from designate.openstack.common import log as logging
-from designate.openstack.common import uuidutils
+from designate.openstack.common import strutils
 from designate.openstack.common.rpc import common as rpc_common
 
 LOG = logging.getLogger(__name__)
@@ -99,22 +100,29 @@ class KeystoneContextMiddleware(ContextMiddleware):
     def process_request(self, request):
         headers = request.headers
 
+        try:
+            if headers['X-Identity-Status'] is 'Invalid':
+                # TODO(graham) fix the return to use non-flask resources
+                return flask.Response(status=401)
+        except KeyError:
+            # If the key is valid, Keystone does not include this header at all
+            pass
+
+        if headers.get('X-Service-Catalog'):
+            catalog = json.loads(headers.get('X-Service-Catalog'))
+        else:
+            catalog = None
+
         roles = headers.get('X-Roles').split(',')
 
         context = DesignateContext(auth_token=headers.get('X-Auth-Token'),
                                    user=headers.get('X-User-ID'),
                                    tenant=headers.get('X-Tenant-ID'),
-                                   roles=roles)
+                                   roles=roles,
+                                   service_catalog=catalog)
 
         # Store the context where oslo-log exepcts to find it.
         local.store.context = context
-
-        # Attempt to sudo, if requested.
-        sudo_tenant_id = headers.get('X-Designate-Sudo-Tenant-ID', None)
-
-        if sudo_tenant_id and (uuidutils.is_uuid_like(sudo_tenant_id)
-                               or sudo_tenant_id.isdigit()):
-            context.sudo(sudo_tenant_id)
 
         # Attach the context to the request environment
         request.environ['context'] = context
@@ -129,7 +137,42 @@ class NoAuthContextMiddleware(ContextMiddleware):
     def process_request(self, request):
         # NOTE(kiall): This makes the assumption that disabling authentication
         #              means you wish to allow full access to everyone.
-        context = DesignateContext(is_admin=True)
+        headers = request.headers
+
+        context = DesignateContext(
+            auth_token=headers.get('X-Auth-Token', None),
+            user=headers.get('X-Auth-User-ID', 'noauth-user'),
+            tenant=headers.get('X-Auth-Project-ID', 'noauth-project'),
+            is_admin=True,
+        )
+
+        # Store the context where oslo-log exepcts to find it.
+        local.store.context = context
+
+        # Attach the context to the request environment
+        request.environ['context'] = context
+
+
+class TestContextMiddleware(ContextMiddleware):
+    def __init__(self, application, tenant_id=None, user_id=None):
+        super(TestContextMiddleware, self).__init__(application)
+
+        LOG.critical('Starting designate testcontext middleware')
+        LOG.critical('**** DO NOT USE IN PRODUCTION ****')
+
+        self.default_tenant_id = tenant_id
+        self.default_user_id = user_id
+
+    def process_request(self, request):
+        headers = request.headers
+
+        all_tenants = strutils.bool_from_string(
+            headers.get('X-Test-All-Tenants', 'False'))
+
+        context = DesignateContext(
+            user=headers.get('X-Test-User-ID', self.default_user_id),
+            tenant=headers.get('X-Test-Tenant-ID', self.default_tenant_id),
+            all_tenants=all_tenants)
 
         # Store the context where oslo-log exepcts to find it.
         local.store.context = context
@@ -187,6 +230,8 @@ class FaultWrapperMiddleware(wsgi.Middleware):
             ('Content-Type', 'application/json'),
         ]
 
+        url = getattr(request, 'url', None)
+
         # Set a response code and type, if they are missing.
         if 'code' not in response:
             response['code'] = status
@@ -194,11 +239,14 @@ class FaultWrapperMiddleware(wsgi.Middleware):
         if 'type' not in response:
             response['type'] = 'unknown'
 
-        # Set the request ID, if we have one
         if 'context' in request.environ:
             response['request_id'] = request.environ['context'].request_id
 
-        # TODO(kiall): Send a fault notification
+            notifications.send_api_fault(url, response['code'], e)
+        else:
+            #TODO(ekarlso): Remove after verifying that there's actually a
+            # context always set
+            LOG.error('Missing context in request, please check.')
 
         # Return the new response
         return flask.Response(status=status, headers=headers,

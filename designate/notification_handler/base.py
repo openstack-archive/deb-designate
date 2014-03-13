@@ -16,10 +16,11 @@
 # under the License.
 import abc
 from oslo.config import cfg
+from designate import exceptions
 from designate.openstack.common import log as logging
 from designate.central import rpcapi as central_rpcapi
 from designate.context import DesignateContext
-from designate.plugin import Plugin
+from designate.plugin import ExtensionPlugin
 
 
 LOG = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ def get_ip_data(addr_dict):
     return data
 
 
-class Handler(Plugin):
+class NotificationHandler(ExtensionPlugin):
     """ Base class for notification handlers """
     __plugin_ns__ = 'designate.notification.handler'
     __plugin_type__ = 'handler'
@@ -69,11 +70,28 @@ class Handler(Plugin):
         """
         Return the domain for this context
         """
-        context = DesignateContext.get_admin_context()
+        context = DesignateContext.get_admin_context(all_tenants=True)
         return central_api.get_domain(context, domain_id)
 
+    def _find_or_create_recordset(self, context, domain_id, name, type,
+                                  ttl=None):
+        try:
+            recordset = central_api.find_recordset(context, {
+                'domain_id': domain_id,
+                'name': name,
+                'type': type,
+            })
+        except exceptions.RecordSetNotFound:
+            recordset = central_api.create_recordset(context, domain_id, {
+                'name': name,
+                'type': type,
+                'ttl': ttl,
+            })
 
-class BaseAddressHandler(Handler):
+        return recordset
+
+
+class BaseAddressHandler(NotificationHandler):
     default_format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
 
     def _get_format(self):
@@ -99,17 +117,23 @@ class BaseAddressHandler(Handler):
         LOG.debug('Event data: %s' % data)
         data['domain'] = domain['name']
 
-        context = DesignateContext.get_admin_context()
+        context = DesignateContext.get_admin_context(all_tenants=True)
 
         for addr in addresses:
-            record_data = data.copy()
-            record_data.update(get_ip_data(addr))
+            event_data = data.copy()
+            event_data.update(get_ip_data(addr))
 
-            record_name = self._get_format() % record_data
+            recordset_values = {
+                'domain_id': domain['id'],
+                'name': self._get_format() % event_data,
+                'type': 'A' if addr['version'] == 4 else 'AAAA'}
+
+            recordset = self._find_or_create_recordset(
+                context, **recordset_values)
+
             record_values = {
-                'type': 'A' if addr['version'] == 4 else 'AAAA',
-                'name': record_name,
                 'data': addr['address']}
+
             if managed:
                 record_values.update({
                     'managed': managed,
@@ -117,9 +141,11 @@ class BaseAddressHandler(Handler):
                     'managed_plugin_type': self.get_plugin_type(),
                     'managed_resource_type': resource_type,
                     'managed_resource_id': resource_id})
-            LOG.debug('Creating record in %s with values %r', domain['id'],
-                      record_values)
-            central_api.create_record(context, domain['id'], record_values)
+
+            LOG.debug('Creating record in %s / %s with values %r',
+                      domain['id'], recordset['id'], record_values)
+            central_api.create_record(context, domain['id'], recordset['id'],
+                                      record_values)
 
     def _delete(self, managed=True, resource_id=None, resource_type='instance',
                 criterion={}):
@@ -128,7 +154,9 @@ class BaseAddressHandler(Handler):
 
         :param criterion: Criterion to search and destroy records
         """
-        context = DesignateContext.get_admin_context()
+        context = DesignateContext.get_admin_context(all_tenants=True)
+
+        criterion.update({'domain_id': cfg.CONF[self.name].domain_id})
 
         if managed:
             criterion.update({
@@ -139,12 +167,10 @@ class BaseAddressHandler(Handler):
                 'managed_resource_type': resource_type
             })
 
-        records = central_api.find_records(context,
-                                           cfg.CONF[self.name].domain_id,
-                                           criterion)
+        records = central_api.find_records(context, criterion)
 
         for record in records:
             LOG.debug('Deleting record %s' % record['id'])
 
             central_api.delete_record(context, cfg.CONF[self.name].domain_id,
-                                      record['id'])
+                                      record['recordset_id'], record['id'])

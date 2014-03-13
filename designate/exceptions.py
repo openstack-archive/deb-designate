@@ -34,12 +34,28 @@ class Backend(Exception):
     pass
 
 
+class NSD4SlaveBackendError(Backend):
+    pass
+
+
 class NotImplemented(Base, NotImplementedError):
     pass
 
 
 class ConfigurationError(Base):
     error_type = 'configuration_error'
+
+
+class CommunicationFailure(Base):
+    error_code = 504
+    error_type = 'communication_failure'
+
+
+class NeutronCommunicationFailure(CommunicationFailure):
+    """
+    Raised in case one of the alleged Neutron endpoints fails.
+    """
+    error_type = 'neutron_communication_failure'
 
 
 class NoServersConfigured(ConfigurationError):
@@ -66,6 +82,48 @@ class BadRequest(Base):
     error_type = 'bad_request'
 
 
+class InvalidUUID(BadRequest):
+    error_type = 'invalid_uuid'
+
+
+class NetworkEndpointNotFound(BadRequest):
+    error_type = 'no_endpoint'
+    error_code = 403
+
+
+class MarkerNotFound(BadRequest):
+    error_type = 'marker_not_found'
+
+
+class ValueError(BadRequest):
+    error_type = 'value_error'
+
+
+class InvalidMarker(BadRequest):
+    error_type = 'invalid_marker'
+
+
+class InvalidSortDir(BadRequest):
+    error_type = 'invalid_sort_dir'
+
+
+class InvalidLimit(BadRequest):
+    error_type = 'invalid_limit'
+
+
+class InvalidSortKey(BadRequest):
+    error_type = 'invalid_sort_key'
+
+
+class InvalidJson(BadRequest):
+    error_type = 'invalid_json'
+
+
+class InvalidOperation(BadRequest):
+    error_code = 400
+    error_type = 'invalid_operation'
+
+
 class UnsupportedAccept(BadRequest):
     error_code = 406
     error_type = 'unsupported_accept'
@@ -81,19 +139,14 @@ class InvalidDomainName(Base):
     error_type = 'invalid_domain_name'
 
 
-class InvalidTLD(Base):
+class InvalidRecordSetName(Base):
     error_code = 400
-    error_type = 'invalid_tld'
+    error_type = 'invalid_recordset_name'
 
 
-class InvalidRecordName(Base):
+class InvalidRecordSetLocation(Base):
     error_code = 400
-    error_type = 'invalid_record_name'
-
-
-class InvalidRecordLocation(Base):
-    error_code = 400
-    error_type = 'invalid_record_location'
+    error_type = 'invalid_recordset_location'
 
 
 class DomainHasSubdomain(Base):
@@ -127,8 +180,20 @@ class DuplicateDomain(Duplicate):
     error_type = 'duplicate_domain'
 
 
+class DuplicateTLD(Duplicate):
+    error_type = 'duplicate_tld'
+
+
+class DuplicateRecordSet(Duplicate):
+    error_type = 'duplicate_recordset'
+
+
 class DuplicateRecord(Duplicate):
     error_type = 'duplicate_record'
+
+
+class DuplicateBlacklist(Duplicate):
+    error_type = 'duplicate_blacklist'
 
 
 class NotFound(Base):
@@ -148,8 +213,20 @@ class TsigKeyNotFound(NotFound):
     error_type = 'tsigkey_not_found'
 
 
+class BlacklistNotFound(NotFound):
+    error_type = 'blacklist_not_found'
+
+
 class DomainNotFound(NotFound):
     error_type = 'domain_not_found'
+
+
+class TLDNotFound(NotFound):
+    error_type = 'tld_not_found'
+
+
+class RecordSetNotFound(NotFound):
+    error_type = 'recordset_not_found'
 
 
 class RecordNotFound(NotFound):

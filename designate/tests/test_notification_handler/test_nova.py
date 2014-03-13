@@ -14,18 +14,19 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from designate.openstack.common import log as logging
+from designate.tests import TestCase
 from designate.notification_handler.nova import NovaFixedHandler
 from designate.tests.test_notification_handler import \
-    NotificationHandlerTestCase
+    NotificationHandlerMixin
 
 LOG = logging.getLogger(__name__)
 
 
-class NovaFixedHandlerTest(NotificationHandlerTestCase):
-    __test__ = True
-
+class NovaFixedHandlerTest(TestCase, NotificationHandlerMixin):
     def setUp(self):
         super(NovaFixedHandlerTest, self).setUp()
+
+        self.central_service = self.start_service('central')
 
         domain = self.create_domain()
         self.domain_id = domain['id']
@@ -39,9 +40,11 @@ class NovaFixedHandlerTest(NotificationHandlerTestCase):
 
         self.assertIn(event_type, self.plugin.get_event_types())
 
+        criterion = {'domain_id': self.domain_id}
+
         # Ensure we start with 0 records
         records = self.central_service.find_records(self.admin_context,
-                                                    self.domain_id)
+                                                    criterion)
 
         self.assertEqual(0, len(records))
 
@@ -49,9 +52,9 @@ class NovaFixedHandlerTest(NotificationHandlerTestCase):
 
         # Ensure we now have exactly 1 record
         records = self.central_service.find_records(self.admin_context,
-                                                    self.domain_id)
+                                                    criterion)
 
-        self.assertEqual(len(records), 1)
+        self.assertEqual(1, len(records))
 
     def test_instance_delete_start(self):
         # Prepare for the test
@@ -67,16 +70,18 @@ class NovaFixedHandlerTest(NotificationHandlerTestCase):
 
         self.assertIn(event_type, self.plugin.get_event_types())
 
+        criterion = {'domain_id': self.domain_id}
+
         # Ensure we start with at least 1 record
         records = self.central_service.find_records(self.admin_context,
-                                                    self.domain_id)
+                                                    criterion)
 
-        self.assertGreaterEqual(len(records), 1)
+        self.assertEqual(1, len(records))
 
         self.plugin.process_notification(event_type, fixture['payload'])
 
         # Ensure we now have exactly 0 records
         records = self.central_service.find_records(self.admin_context,
-                                                    self.domain_id)
+                                                    criterion)
 
         self.assertEqual(0, len(records))

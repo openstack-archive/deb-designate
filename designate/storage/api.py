@@ -35,13 +35,16 @@ class StorageAPI(object):
         :param context: RPC Context.
         :param values: Values to create the new Quota from.
         """
-        quota = self.storage.create_quota(context, values)
+        self.storage.begin()
 
         try:
+            quota = self.storage.create_quota(context, values)
             yield quota
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.storage.delete_quota(context, quota['id'])
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def get_quota(self, context, quota_id):
         """
@@ -52,14 +55,16 @@ class StorageAPI(object):
         """
         return self.storage.get_quota(context, quota_id)
 
-    def find_quotas(self, context, criterion=None):
+    def find_quotas(self, context, criterion=None, marker=None, limit=None,
+                    sort_key=None, sort_dir=None):
         """
         Find Quotas
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
         """
-        return self.storage.find_quotas(context, criterion)
+        return self.storage.find_quotas(
+            context, criterion, marker, limit, sort_key, sort_dir)
 
     def find_quota(self, context, criterion):
         """
@@ -79,15 +84,16 @@ class StorageAPI(object):
         :param quota_id: Quota ID to update.
         :param values: Values to update the Quota from
         """
-        backup = self.storage.get_quota(context, quota_id)
-        quota = self.storage.update_quota(context, quota_id, values)
+        self.storage.begin()
 
         try:
+            quota = self.storage.update_quota(context, quota_id, values)
             yield quota
         except Exception:
             with excutils.save_and_reraise_exception():
-                restore = self._extract_dict_subset(backup, values.keys())
-                self.storage.update_quota(context, quota_id, restore)
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     @contextlib.contextmanager
     def delete_quota(self, context, quota_id):
@@ -97,8 +103,16 @@ class StorageAPI(object):
         :param context: RPC Context.
         :param quota_id: Delete a Quota via ID
         """
-        yield self.storage.get_quota(context, quota_id)
-        self.storage.delete_quota(context, quota_id)
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_quota(context, quota_id)
+            self.storage.delete_quota(context, quota_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     @contextlib.contextmanager
     def create_server(self, context, values):
@@ -108,13 +122,16 @@ class StorageAPI(object):
         :param context: RPC Context.
         :param values: Values to create the new Domain from.
         """
-        server = self.storage.create_server(context, values)
+        self.storage.begin()
 
         try:
+            server = self.storage.create_server(context, values)
             yield server
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.storage.delete_server(context, server['id'])
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def get_server(self, context, server_id):
         """
@@ -125,14 +142,16 @@ class StorageAPI(object):
         """
         return self.storage.get_server(context, server_id)
 
-    def find_servers(self, context, criterion=None):
+    def find_servers(self, context, criterion=None, marker=None, limit=None,
+                     sort_key=None, sort_dir=None):
         """
         Find Servers
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
         """
-        return self.storage.find_servers(context, criterion)
+        return self.storage.find_servers(
+            context, criterion, marker, limit, sort_key, sort_dir)
 
     def find_server(self, context, criterion):
         """
@@ -152,15 +171,16 @@ class StorageAPI(object):
         :param server_id: Server ID to update.
         :param values: Values to update the Server from
         """
-        backup = self.storage.get_server(context, server_id)
-        server = self.storage.update_server(context, server_id, values)
+        self.storage.begin()
 
         try:
+            server = self.storage.update_server(context, server_id, values)
             yield server
         except Exception:
             with excutils.save_and_reraise_exception():
-                restore = self._extract_dict_subset(backup, values.keys())
-                self.storage.update_server(context, server_id, restore)
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     @contextlib.contextmanager
     def delete_server(self, context, server_id):
@@ -170,8 +190,103 @@ class StorageAPI(object):
         :param context: RPC Context.
         :param server_id: Delete a Server via ID
         """
-        yield self.storage.get_server(context, server_id)
-        self.storage.delete_server(context, server_id)
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_server(context, server_id)
+            self.storage.delete_server(context, server_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    @contextlib.contextmanager
+    def create_tld(self, context, values):
+        """
+        Create a TLD.
+
+        :param context: RPC Context.
+        :param values: Values to create the new TLD from.
+        """
+        self.storage.begin()
+
+        try:
+            tld = self.storage.create_tld(context, values)
+            yield tld
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    def get_tld(self, context, tld_id):
+        """
+        Get a TLD via ID.
+
+        :param context: RPC Context.
+        :param tld_id: TLD ID to get.
+        """
+        return self.storage.get_tld(context, tld_id)
+
+    def find_tlds(self, context, criterion=None, marker=None, limit=None,
+                  sort_key=None, sort_dir=None):
+        """
+        Find TLDs
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+        return self.storage.find_tlds(
+            context, criterion, marker, limit, sort_key, sort_dir)
+
+    def find_tld(self, context, criterion):
+        """
+        Find a single TLD.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+        return self.storage.find_tld(context, criterion)
+
+    @contextlib.contextmanager
+    def update_tld(self, context, tld_id, values):
+        """
+        Update a TLD via ID
+
+        :param context: RPC Context.
+        :param tld_id: TLD ID to update.
+        :param values: Values to update the TLD from
+        """
+        self.storage.begin()
+
+        try:
+            tld = self.storage.update_tld(context, tld_id, values)
+            yield tld
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    @contextlib.contextmanager
+    def delete_tld(self, context, tld_id):
+        """
+        Delete a TLD via ID.
+
+        :param context: RPC Context.
+        :param tld_id: Delete a TLD via ID
+        """
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_tld(context, tld_id)
+            self.storage.delete_tld(context, tld_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     @contextlib.contextmanager
     def create_tsigkey(self, context, values):
@@ -180,13 +295,16 @@ class StorageAPI(object):
 
         :param context: RPC Context.
         """
-        tsigkey = self.storage.create_tsigkey(context, values)
+        self.storage.begin()
 
         try:
+            tsigkey = self.storage.create_tsigkey(context, values)
             yield tsigkey
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.storage.delete_tsigkey(context, tsigkey['id'])
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def get_tsigkey(self, context, tsigkey_id):
         """
@@ -197,14 +315,16 @@ class StorageAPI(object):
         """
         return self.storage.get_tsigkey(context, tsigkey_id)
 
-    def find_tsigkeys(self, context, criterion=None):
+    def find_tsigkeys(self, context, criterion=None, marker=None, limit=None,
+                      sort_key=None, sort_dir=None):
         """
         Find Tsigkey
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
         """
-        return self.storage.find_tsigkeys(context, criterion)
+        return self.storage.find_tsigkeys(
+            context, criterion, marker, limit, sort_key, sort_dir)
 
     def find_tsigkey(self, context, criterion):
         """
@@ -224,15 +344,16 @@ class StorageAPI(object):
         :param tsigkey_id: TSIG Key ID to update.
         :param values: Values to update the TSIG Key from
         """
-        backup = self.storage.get_tsigkey(context, tsigkey_id)
-        tsigkey = self.storage.update_tsigkey(context, tsigkey_id, values)
+        self.storage.begin()
 
         try:
+            tsigkey = self.storage.update_tsigkey(context, tsigkey_id, values)
             yield tsigkey
         except Exception:
             with excutils.save_and_reraise_exception():
-                restore = self._extract_dict_subset(backup, values.keys())
-                self.storage.update_tsigkey(context, tsigkey_id, restore)
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     @contextlib.contextmanager
     def delete_tsigkey(self, context, tsigkey_id):
@@ -242,8 +363,16 @@ class StorageAPI(object):
         :param context: RPC Context.
         :param tsigkey_id: Delete a TSIG Key via ID
         """
-        yield self.storage.get_tsigkey(context, tsigkey_id)
-        self.storage.delete_tsigkey(context, tsigkey_id)
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_tsigkey(context, tsigkey_id)
+            self.storage.delete_tsigkey(context, tsigkey_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def find_tenants(self, context):
         """
@@ -278,13 +407,16 @@ class StorageAPI(object):
         :param context: RPC Context.
         :param values: Values to create the new Domain from.
         """
-        domain = self.storage.create_domain(context, values)
+        self.storage.begin()
 
         try:
+            domain = self.storage.create_domain(context, values)
             yield domain
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.storage.delete_domain(context, domain['id'])
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def get_domain(self, context, domain_id):
         """
@@ -295,14 +427,16 @@ class StorageAPI(object):
         """
         return self.storage.get_domain(context, domain_id)
 
-    def find_domains(self, context, criterion=None):
+    def find_domains(self, context, criterion=None, marker=None, limit=None,
+                     sort_key=None, sort_dir=None):
         """
         Find Domains
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
         """
-        return self.storage.find_domains(context, criterion)
+        return self.storage.find_domains(
+            context, criterion, marker, limit, sort_key, sort_dir)
 
     def find_domain(self, context, criterion):
         """
@@ -322,15 +456,16 @@ class StorageAPI(object):
         :param domain_id: Values to update the Domain with
         :param values: Values to update the Domain from.
         """
-        backup = self.storage.get_domain(context, domain_id)
-        domain = self.storage.update_domain(context, domain_id, values)
+        self.storage.begin()
 
         try:
+            domain = self.storage.update_domain(context, domain_id, values)
             yield domain
         except Exception:
             with excutils.save_and_reraise_exception():
-                restore = self._extract_dict_subset(backup, values.keys())
-                self.storage.update_domain(context, domain_id, restore)
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     @contextlib.contextmanager
     def delete_domain(self, context, domain_id):
@@ -340,8 +475,16 @@ class StorageAPI(object):
         :param context: RPC Context.
         :param domain_id: Domain ID to delete.
         """
-        yield self.storage.get_domain(context, domain_id)
-        self.storage.delete_domain(context, domain_id)
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_domain(context, domain_id)
+            self.storage.delete_domain(context, domain_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def count_domains(self, context, criterion=None):
         """
@@ -353,21 +496,124 @@ class StorageAPI(object):
         return self.storage.count_domains(context, criterion)
 
     @contextlib.contextmanager
-    def create_record(self, context, domain_id, values):
+    def create_recordset(self, context, domain_id, values):
+        """
+        Create a recordset on a given Domain ID
+
+        :param context: RPC Context.
+        :param domain_id: Domain ID to create the recordset in.
+        :param values: Values to create the new RecordSet from.
+        """
+        self.storage.begin()
+
+        try:
+            recordset = self.storage.create_recordset(
+                context, domain_id, values)
+            yield recordset
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    def get_recordset(self, context, recordset_id):
+        """
+        Get a recordset via ID
+
+        :param context: RPC Context.
+        :param recordset_id: RecordSet ID to get
+        """
+        return self.storage.get_recordset(context, recordset_id)
+
+    def find_recordsets(self, context, criterion=None, marker=None, limit=None,
+                        sort_key=None, sort_dir=None):
+        """
+        Find RecordSets.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+        return self.storage.find_recordsets(
+            context, criterion, marker, limit, sort_key, sort_dir)
+
+    def find_recordset(self, context, criterion=None):
+        """
+        Find a single RecordSet.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+        return self.storage.find_recordset(context, criterion)
+
+    @contextlib.contextmanager
+    def update_recordset(self, context, recordset_id, values):
+        """
+        Update a recordset via ID
+
+        :param context: RPC Context
+        :param recordset_id: RecordSet ID to update
+        """
+        self.storage.begin()
+
+        try:
+            recordset = self.storage.update_recordset(
+                context, recordset_id, values)
+            yield recordset
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    @contextlib.contextmanager
+    def delete_recordset(self, context, recordset_id):
+        """
+        Delete a recordset
+
+        :param context: RPC Context
+        :param recordset_id: RecordSet ID to delete
+        """
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_recordset(context, recordset_id)
+            self.storage.delete_recordset(context, recordset_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    def count_recordsets(self, context, criterion=None):
+        """
+        Count recordsets
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+        return self.storage.count_recordsets(context, criterion)
+
+    @contextlib.contextmanager
+    def create_record(self, context, domain_id, recordset_id, values):
         """
         Create a record on a given Domain ID
 
         :param context: RPC Context.
         :param domain_id: Domain ID to create the record in.
+        :param recordset_id: RecordSet ID to create the record in.
         :param values: Values to create the new Record from.
         """
-        record = self.storage.create_record(context, domain_id, values)
+        self.storage.begin()
 
         try:
+            record = self.storage.create_record(
+                context, domain_id, recordset_id, values)
             yield record
         except Exception:
             with excutils.save_and_reraise_exception():
-                self.storage.delete_record(context, record['id'])
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def get_record(self, context, record_id):
         """
@@ -378,25 +624,25 @@ class StorageAPI(object):
         """
         return self.storage.get_record(context, record_id)
 
-    def find_records(self, context, domain_id, criterion=None):
+    def find_records(self, context, criterion=None, marker=None, limit=None,
+                     sort_key=None, sort_dir=None):
         """
         Find Records.
 
         :param context: RPC Context.
-        :param domain_id: Domain ID to find in
         :param criterion: Criteria to filter by.
         """
-        return self.storage.find_records(context, domain_id, criterion)
+        return self.storage.find_records(
+            context, criterion, marker, limit, sort_key, sort_dir)
 
-    def find_record(self, context, domain_id, criterion=None):
+    def find_record(self, context, criterion=None):
         """
         Find a single Record.
 
         :param context: RPC Context.
-        :param domain_id: Domain ID to find in
         :param criterion: Criteria to filter by.
         """
-        return self.storage.find_record(context, domain_id, criterion)
+        return self.storage.find_record(context, criterion)
 
     @contextlib.contextmanager
     def update_record(self, context, record_id, values):
@@ -406,15 +652,16 @@ class StorageAPI(object):
         :param context: RPC Context
         :param record_id: Record ID to update
         """
-        backup = self.storage.get_record(context, record_id)
-        record = self.storage.update_record(context, record_id, values)
+        self.storage.begin()
 
         try:
+            record = self.storage.update_record(context, record_id, values)
             yield record
         except Exception:
             with excutils.save_and_reraise_exception():
-                restore = self._extract_dict_subset(backup, values.keys())
-                self.storage.update_record(context, record_id, restore)
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     @contextlib.contextmanager
     def delete_record(self, context, record_id):
@@ -424,8 +671,16 @@ class StorageAPI(object):
         :param context: RPC Context
         :param record_id: Record ID to delete
         """
-        yield self.storage.get_record(context, record_id)
-        self.storage.delete_record(context, record_id)
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_record(context, record_id)
+            self.storage.delete_record(context, record_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def count_records(self, context, criterion=None):
         """
@@ -435,6 +690,95 @@ class StorageAPI(object):
         :param criterion: Criteria to filter by.
         """
         return self.storage.count_records(context, criterion)
+
+    @contextlib.contextmanager
+    def create_blacklist(self, context, values):
+        """
+        Create a new Blacklisted Domain.
+
+        :param context: RPC Context.
+        :param values: Values to create the new Blacklist from.
+        """
+        self.storage.begin()
+
+        try:
+            blacklist = self.storage.create_blacklist(context, values)
+            yield blacklist
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    def get_blacklist(self, context, blacklist_id):
+        """
+        Get a Blacklist via its ID.
+
+        :param context: RPC Context.
+        :param blacklist_id: ID of the Blacklisted Domain.
+        """
+        return self.storage.get_blacklist(context, blacklist_id)
+
+    def find_blacklists(self, context, criterion=None, marker=None, limit=None,
+                        sort_key=None, sort_dir=None):
+        """
+        Find all Blacklisted Domains
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+        return self.storage.find_blacklists(
+            context, criterion, marker, limit, sort_key, sort_dir)
+
+    def find_blacklist(self, context, criterion):
+        """
+        Find a single Blacklisted Domain.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+        return self.storage.find_blacklist(context, criterion)
+
+    @contextlib.contextmanager
+    def update_blacklist(self, context, blacklist_id, values):
+        """
+        Update a Blacklisted Domain via ID.
+
+        :param context: RPC Context.
+        :param blacklist_id: Values to update the Blacklist with
+        :param values: Values to update the Blacklist from.
+        """
+        self.storage.begin()
+
+        try:
+            blacklist = self.storage.update_blacklist(context,
+                                                      blacklist_id,
+                                                      values)
+            yield blacklist
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
+
+    @contextlib.contextmanager
+    def delete_blacklist(self, context, blacklist_id):
+        """
+        Delete a Blacklisted Domain
+
+        :param context: RPC Context.
+        :param blacklist_id: Blacklist ID to delete.
+        """
+        self.storage.begin()
+
+        try:
+            yield self.storage.get_blacklist(context, blacklist_id)
+            self.storage.delete_blacklist(context, blacklist_id)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.storage.rollback()
+        else:
+            self.storage.commit()
 
     def ping(self, context):
         """ Ping the Storage connection """

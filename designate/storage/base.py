@@ -14,10 +14,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import abc
-from designate.plugin import Plugin
+from designate.plugin import DriverPlugin
 
 
-class Storage(Plugin):
+class Storage(DriverPlugin):
+
     """ Base class for storage plugins """
     __metaclass__ = abc.ABCMeta
     __plugin_ns__ = 'designate.storage'
@@ -42,12 +43,19 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
-    def find_quotas(self, context, criterion):
+    def find_quotas(self, context, criterion=None, marker=None,
+                    limit=None, sort_key=None, sort_dir=None):
         """
         Find Quotas
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
         """
 
     @abc.abstractmethod
@@ -88,12 +96,19 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
-    def find_servers(self, context, criterion=None):
+    def find_servers(self, context, criterion=None, marker=None,
+                     limit=None, sort_key=None, sort_dir=None):
         """
         Find Servers.
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
         """
 
     @abc.abstractmethod
@@ -125,6 +140,74 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
+    def create_tld(self, context, values):
+        """
+        Create a TLD.
+
+        :param context: RPC Context.
+        :param values: Values to create the new TLD from.
+        """
+
+    @abc.abstractmethod
+    def get_tld(self, context, tld_id):
+        """
+        Get a TLD via ID.
+
+        :param context: RPC Context.
+        :param tld_id: TLD ID to get.
+        """
+
+    @abc.abstractmethod
+    def find_tlds(self, context, criterion=None, marker=None,
+                  limit=None, sort_key=None, sort_dir=None):
+        """
+        Find TLDs
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
+        """
+
+    @abc.abstractmethod
+    def find_tld(self, context, criterion):
+        """
+        Find a single TLD.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
+        """
+
+    @abc.abstractmethod
+    def update_tld(self, context, tld_id, values):
+        """
+        Update a TLD via ID
+
+        :param context: RPC Context.
+        :param tld_id: TLD ID to update.
+        :param values: Values to update the TLD from
+        """
+
+    @abc.abstractmethod
+    def delete_tld(self, context, tld_id):
+        """
+        Delete a TLD via ID.
+
+        :param context: RPC Context.
+        :param tld_id: Delete a TLD via ID
+        """
+
+    @abc.abstractmethod
     def create_tsigkey(self, context, values):
         """
         Create a TSIG Key.
@@ -133,12 +216,19 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
-    def find_tsigkeys(self, context, criterion=None):
+    def find_tsigkeys(self, context, criterion=None,
+                      marker=None, limit=None, sort_key=None, sort_dir=None):
         """
         Find TSIG Keys.
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
         """
 
     @abc.abstractmethod
@@ -187,7 +277,7 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
-    def count_tenants(self, context, values):
+    def count_tenants(self, context):
         """
         Count tenants
 
@@ -213,12 +303,19 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
-    def find_domains(self, context, criterion=None):
+    def find_domains(self, context, criterion=None, marker=None,
+                     limit=None, sort_key=None, sort_dir=None):
         """
         Find Domains
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
         """
 
     @abc.abstractmethod
@@ -259,12 +356,85 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
-    def create_record(self, context, domain_id, values):
+    def create_recordset(self, context, domain_id, values):
+        """
+        Create a recordset on a given Domain ID
+
+        :param context: RPC Context.
+        :param domain_id: Domain ID to create the recordset in.
+        :param values: Values to create the new RecordSet from.
+        """
+
+    @abc.abstractmethod
+    def get_recordset(self, context, recordset_id):
+        """
+        Get a recordset via ID
+
+        :param context: RPC Context.
+        :param recordset_id: RecordSet ID to get
+        """
+
+    @abc.abstractmethod
+    def find_recordsets(self, context, criterion=None,
+                        marker=None, limit=None, sort_key=None, sort_dir=None):
+        """
+        Find RecordSets.
+
+        :param context: RPC Context.
+        :param domain_id: Domain ID where the recordsets reside.
+        :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
+        """
+
+    @abc.abstractmethod
+    def find_recordset(self, context, criterion):
+        """
+        Find a single RecordSet.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+
+    @abc.abstractmethod
+    def update_recordset(self, context, recordset_id, values):
+        """
+        Update a recordset via ID
+
+        :param context: RPC Context
+        :param recordset_id: RecordSet ID to update
+        """
+
+    @abc.abstractmethod
+    def delete_recordset(self, context, recordset_id):
+        """
+        Delete a recordset
+
+        :param context: RPC Context
+        :param recordset_id: RecordSet ID to delete
+        """
+
+    @abc.abstractmethod
+    def count_recordsets(self, context, criterion=None):
+        """
+        Count recordsets
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+
+    @abc.abstractmethod
+    def create_record(self, context, domain_id, recordset_id, values):
         """
         Create a record on a given Domain ID
 
         :param context: RPC Context.
         :param domain_id: Domain ID to create the record in.
+        :param recordset_id: RecordSet ID to create the record in.
         :param values: Values to create the new Record from.
         """
 
@@ -278,22 +448,27 @@ class Storage(Plugin):
         """
 
     @abc.abstractmethod
-    def find_records(self, context, domain_id, criterion=None):
+    def find_records(self, context, criterion=None, marker=None,
+                     limit=None, sort_key=None, sort_dir=None):
         """
         Find Records.
 
         :param context: RPC Context.
-        :param domain_id: Domain ID where the records reside.
         :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
         """
 
     @abc.abstractmethod
-    def find_record(self, context, domain_id, criterion):
+    def find_record(self, context, criterion):
         """
         Find a single Record.
 
         :param context: RPC Context.
-        :param domain_id: Domain ID where the records reside.
         :param criterion: Criteria to filter by.
         """
 
@@ -322,6 +497,68 @@ class Storage(Plugin):
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
+        """
+
+    @abc.abstractmethod
+    def create_blacklist(self, context, values):
+        """
+        Create a Blacklist.
+
+        :param context: RPC Context.
+        :param values: Values to create the new Blacklist from.
+        """
+
+    @abc.abstractmethod
+    def get_blacklist(self, context, blacklist_id):
+        """
+        Get a Blacklist via ID.
+
+        :param context: RPC Context.
+        :param blacklist_id: Blacklist ID to get.
+        """
+
+    @abc.abstractmethod
+    def find_blacklists(self, context, criterion=None, marker=None,
+                        limit=None, sort_key=None, sort_dir=None):
+        """
+        Find Blacklists
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
+        """
+
+    @abc.abstractmethod
+    def find_blacklist(self, context, criterion):
+        """
+        Find a single Blacklist.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+
+    @abc.abstractmethod
+    def update_blacklist(self, context, blacklist_id, values):
+        """
+        Update a Blacklist via ID
+
+        :param context: RPC Context.
+        :param blacklist_id: Blacklist ID to update.
+        :param values: Values to update the Blacklist from
+        """
+
+    @abc.abstractmethod
+    def delete_blacklist(self, context, blacklist_id):
+        """
+        Delete a Blacklist via ID.
+
+        :param context: RPC Context.
+        :param blacklist_id: Delete a Blacklist via ID
         """
 
     def ping(self, context):

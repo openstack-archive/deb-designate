@@ -16,10 +16,10 @@
 import abc
 from oslo.config import cfg
 from designate import exceptions
-from designate.plugin import Plugin
+from designate.plugin import DriverPlugin
 
 
-class Quota(Plugin):
+class Quota(DriverPlugin):
     """ Base class for quota plugins """
     __metaclass__ = abc.ABCMeta
     __plugin_ns__ = 'designate.quota'
@@ -49,7 +49,9 @@ class Quota(Plugin):
     def get_default_quotas(self, context):
         return {
             'domains': cfg.CONF.quota_domains,
+            'domain_recordsets': cfg.CONF.quota_domain_recordsets,
             'domain_records': cfg.CONF.quota_domain_records,
+            'recordset_records': cfg.CONF.quota_recordset_records,
         }
 
     def get_quota(self, context, tenant_id, resource):

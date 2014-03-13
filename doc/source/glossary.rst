@@ -28,7 +28,7 @@ Glossary
 
    central
      Software service running on a central management node that stores
-     information persistantly in a backend storage using a configurable driver
+     information persistently in a backend storage using a configurable driver
      like SQLAlchemy or other.
 
    api
@@ -38,11 +38,11 @@ Glossary
      A message queue, typically something like RabbitMQ or ZeroMQ
 
    storage
-     A backend for storing data/information persistantly. Typically MongoDB or
+     A backend for storing data/information persistently. Typically MongoDB or
      a SQL based server software.
 
    node
-     a server, physical or virtual, running some aspect of the designate system.
+     A server, physical or virtual, running some aspect of the designate system.
 
    sink
      Optional Software Service that is configured to listen to events from the Nova

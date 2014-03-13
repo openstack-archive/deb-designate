@@ -21,12 +21,23 @@ LOG = logging.getLogger(__name__)
 
 cfg.CONF.register_opts([
     cfg.StrOpt('quota-driver', default='storage', help='Quota driver to use'),
-    cfg.IntOpt('quota-domains', default=10, help='Number of domains allowed '
-                                                 'per tenant'),
-    cfg.IntOpt('quota-domain-records', default=500, help='Number of records '
-                                                         'allowed per domain'),
+
+    cfg.IntOpt('quota-domains', default=10,
+               help='Number of domains allowed per tenant'),
+    cfg.IntOpt('quota-domain-recordsets', default=500,
+               help='Number of recordsets allowed per domain'),
+    cfg.IntOpt('quota-domain-records', default=500,
+               help='Number of records allowed per domain'),
+    cfg.IntOpt('quota-recordset-records', default=20,
+               help='Number of records allowed per recordset'),
 ])
 
 
 def get_quota():
-    return Quota.get_plugin(cfg.CONF.quota_driver, invoke_on_load=True)
+    quota_driver = cfg.CONF.quota_driver
+
+    LOG.debug("Loading quota driver: %s" % quota_driver)
+
+    cls = Quota.get_driver(quota_driver)
+
+    return cls()

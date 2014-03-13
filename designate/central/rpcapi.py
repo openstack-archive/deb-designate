@@ -32,11 +32,14 @@ class CentralAPI(rpc_proxy.RpcProxy):
         1.3 - Add get_absolute_limits
         2.0 - Renamed most get_resources to find_resources
         2.1 - Add quota methods
-
+        3.0 - RecordSet Changes
+        3.1 - Add floating ip ptr methods
+        3.2 - TLD Api changes
+        3.3 - Add methods for blacklisted domains
     """
     def __init__(self, topic=None):
         topic = topic if topic else cfg.CONF.central_topic
-        super(CentralAPI, self).__init__(topic=topic, default_version='2.0')
+        super(CentralAPI, self).__init__(topic=topic, default_version='3.0')
 
     # Misc Methods
     def get_absolute_limits(self, context):
@@ -50,27 +53,27 @@ class CentralAPI(rpc_proxy.RpcProxy):
         LOG.info("get_quotas: Calling central's get_quotas.")
         msg = self.make_msg('get_quotas', tenant_id=tenant_id)
 
-        return self.call(context, msg, version='2.1')
+        return self.call(context, msg)
 
     def get_quota(self, context, tenant_id, resource):
         LOG.info("get_quota: Calling central's get_quota.")
         msg = self.make_msg('get_quota', tenant_id=tenant_id,
                             resource=resource)
 
-        return self.call(context, msg, version='2.1')
+        return self.call(context, msg)
 
     def set_quota(self, context, tenant_id, resource, hard_limit):
         LOG.info("set_quota: Calling central's set_quota.")
         msg = self.make_msg('set_quota', tenant_id=tenant_id,
                             resource=resource, hard_limit=hard_limit)
 
-        return self.call(context, msg, version='2.1')
+        return self.call(context, msg)
 
     def reset_quotas(self, context, tenant_id):
         LOG.info("reset_quotas: Calling central's reset_quotas.")
         msg = self.make_msg('reset_quotas', tenant_id=tenant_id)
 
-        return self.call(context, msg, version='2.1')
+        return self.call(context, msg)
 
     # Server Methods
     def create_server(self, context, values):
@@ -79,9 +82,11 @@ class CentralAPI(rpc_proxy.RpcProxy):
 
         return self.call(context, msg)
 
-    def find_servers(self, context, criterion=None):
+    def find_servers(self, context, criterion=None, marker=None, limit=None,
+                     sort_key=None, sort_dir=None):
         LOG.info("find_servers: Calling central's find_servers.")
-        msg = self.make_msg('find_servers', criterion=criterion)
+        msg = self.make_msg('find_servers', criterion=criterion, marker=marker,
+                            limit=limit, sort_key=sort_key, sort_dir=sort_dir)
 
         return self.call(context, msg)
 
@@ -111,9 +116,12 @@ class CentralAPI(rpc_proxy.RpcProxy):
 
         return self.call(context, msg)
 
-    def find_tsigkeys(self, context, criterion=None):
+    def find_tsigkeys(self, context, criterion=None, marker=None, limit=None,
+                      sort_key=None, sort_dir=None):
         LOG.info("find_tsigkeys: Calling central's find_tsigkeys.")
-        msg = self.make_msg('find_tsigkeys', criterion=criterion)
+        msg = self.make_msg('find_tsigkeys', criterion=criterion,
+                            marker=marker, limit=limit, sort_key=sort_key,
+                            sort_dir=sort_dir)
 
         return self.call(context, msg)
 
@@ -174,13 +182,15 @@ class CentralAPI(rpc_proxy.RpcProxy):
 
         return self.call(context, msg)
 
-    def find_domains(self, context, criterion=None):
+    def find_domains(self, context, criterion=None, marker=None, limit=None,
+                     sort_key=None, sort_dir=None):
         LOG.info("find_domains: Calling central's find_domains.")
-        msg = self.make_msg('find_domains', criterion=criterion)
+        msg = self.make_msg('find_domains', criterion=criterion, marker=marker,
+                            limit=limit, sort_key=sort_key, sort_dir=sort_dir)
 
         return self.call(context, msg)
 
-    def find_domain(self, context, criterion):
+    def find_domain(self, context, criterion=None):
         LOG.info("find_domain: Calling central's find_domain.")
         msg = self.make_msg('find_domain', criterion=criterion)
 
@@ -213,56 +223,151 @@ class CentralAPI(rpc_proxy.RpcProxy):
 
         return self.call(context, msg)
 
-    # Record Methods
-    def create_record(self, context, domain_id, values, increment_serial=True):
-        LOG.info("create_record: Calling central's create_record.")
-        msg = self.make_msg('create_record',
+    # TLD Methods
+    def create_tld(self, context, values):
+        LOG.info("create_tld: Calling central's create_tld.")
+        msg = self.make_msg('create_tld', values=values)
+
+        return self.call(context, msg, version='3.2')
+
+    def find_tlds(self, context, criterion=None, marker=None, limit=None,
+                  sort_key=None, sort_dir=None):
+        LOG.info("find_tlds: Calling central's find_tlds.")
+        msg = self.make_msg('find_tlds', criterion=criterion, marker=marker,
+                            limit=limit, sort_key=sort_key, sort_dir=sort_dir)
+
+        return self.call(context, msg, version='3.2')
+
+    def get_tld(self, context, tld_id):
+        LOG.info("get_tld: Calling central's get_tld.")
+        msg = self.make_msg('get_tld', tld_id=tld_id)
+
+        return self.call(context, msg, version='3.2')
+
+    def update_tld(self, context, tld_id, values):
+        LOG.info("update_tld: Calling central's update_tld.")
+        msg = self.make_msg('update_tld', tld_id=tld_id, values=values)
+
+        return self.call(context, msg, version='3.2')
+
+    def delete_tld(self, context, tld_id):
+        LOG.info("delete_tld: Calling central's delete_tld.")
+        msg = self.make_msg('delete_tld', tld_id=tld_id)
+
+        return self.call(context, msg, version='3.2')
+
+    # RecordSet Methods
+    def create_recordset(self, context, domain_id, values):
+        LOG.info("create_recordset: Calling central's create_recordset.")
+        msg = self.make_msg('create_recordset',
                             domain_id=domain_id,
+                            values=values)
+
+        return self.call(context, msg)
+
+    def get_recordset(self, context, domain_id, recordset_id):
+        LOG.info("get_recordset: Calling central's get_recordset.")
+        msg = self.make_msg('get_recordset',
+                            domain_id=domain_id,
+                            recordset_id=recordset_id)
+
+        return self.call(context, msg)
+
+    def find_recordsets(self, context, criterion=None, marker=None, limit=None,
+                        sort_key=None, sort_dir=None):
+        LOG.info("find_recordsets: Calling central's find_recordsets.")
+        msg = self.make_msg('find_recordsets', criterion=criterion,
+                            marker=marker, limit=limit, sort_key=sort_key,
+                            sort_dir=sort_dir)
+
+        return self.call(context, msg)
+
+    def find_recordset(self, context, criterion=None):
+        LOG.info("find_recordset: Calling central's find_recordset.")
+        msg = self.make_msg('find_recordset', criterion=criterion)
+
+        return self.call(context, msg)
+
+    def update_recordset(self, context, domain_id, recordset_id, values,
+                         increment_serial=True):
+        LOG.info("update_recordset: Calling central's update_recordset.")
+        msg = self.make_msg('update_recordset',
+                            domain_id=domain_id,
+                            recordset_id=recordset_id,
                             values=values,
                             increment_serial=increment_serial)
 
         return self.call(context, msg)
 
-    def get_record(self, context, domain_id, record_id):
+    def delete_recordset(self, context, domain_id, recordset_id,
+                         increment_serial=True):
+        LOG.info("delete_recordset: Calling central's delete_recordset.")
+        msg = self.make_msg('delete_recordset',
+                            domain_id=domain_id,
+                            recordset_id=recordset_id,
+                            increment_serial=increment_serial)
+
+        return self.call(context, msg)
+
+    def count_recordsets(self, context, criterion=None):
+        LOG.info("count_recordsets: Calling central's count_recordsets.")
+        msg = self.make_msg('count_recordsets', criterion=criterion)
+
+        return self.call(context, msg)
+
+    # Record Methods
+    def create_record(self, context, domain_id, recordset_id, values,
+                      increment_serial=True):
+        LOG.info("create_record: Calling central's create_record.")
+        msg = self.make_msg('create_record',
+                            domain_id=domain_id,
+                            recordset_id=recordset_id,
+                            values=values,
+                            increment_serial=increment_serial)
+
+        return self.call(context, msg)
+
+    def get_record(self, context, domain_id, recordset_id, record_id):
         LOG.info("get_record: Calling central's get_record.")
         msg = self.make_msg('get_record',
                             domain_id=domain_id,
+                            recordset_id=recordset_id,
                             record_id=record_id)
 
         return self.call(context, msg)
 
-    def find_records(self, context, domain_id, criterion=None):
+    def find_records(self, context, criterion=None, marker=None, limit=None,
+                     sort_key=None, sort_dir=None):
         LOG.info("find_records: Calling central's find_records.")
-        msg = self.make_msg('find_records',
-                            domain_id=domain_id,
-                            criterion=criterion)
+        msg = self.make_msg('find_records', criterion=criterion, marker=marker,
+                            limit=limit, sort_key=sort_key, sort_dir=sort_dir)
 
         return self.call(context, msg)
 
-    def find_record(self, context, domain_id, criterion=None):
+    def find_record(self, context, criterion=None):
         LOG.info("find_record: Calling central's find_record.")
-        msg = self.make_msg('find_record',
-                            domain_id=domain_id,
-                            criterion=criterion)
+        msg = self.make_msg('find_record', criterion=criterion)
 
         return self.call(context, msg)
 
-    def update_record(self, context, domain_id, record_id, values,
-                      increment_serial=True):
+    def update_record(self, context, domain_id, recordset_id, record_id,
+                      values, increment_serial=True):
         LOG.info("update_record: Calling central's update_record.")
         msg = self.make_msg('update_record',
                             domain_id=domain_id,
+                            recordset_id=recordset_id,
                             record_id=record_id,
                             values=values,
                             increment_serial=increment_serial)
 
         return self.call(context, msg)
 
-    def delete_record(self, context, domain_id, record_id,
+    def delete_record(self, context, domain_id, recordset_id, record_id,
                       increment_serial=True):
         LOG.info("delete_record: Calling central's delete_record.")
         msg = self.make_msg('delete_record',
                             domain_id=domain_id,
+                            recordset_id=recordset_id,
                             record_id=record_id,
                             increment_serial=increment_serial)
 
@@ -287,10 +392,66 @@ class CentralAPI(rpc_proxy.RpcProxy):
 
         return self.call(context, msg)
 
-    def sync_record(self, context, domain_id, record_id):
+    def sync_record(self, context, domain_id, recordset_id, record_id):
         LOG.info("sync_record: Calling central's sync_record.")
         msg = self.make_msg('sync_record',
                             domain_id=domain_id,
+                            recordset_id=recordset_id,
                             record_id=record_id)
 
         return self.call(context, msg)
+
+    def list_floatingips(self, context):
+        msg = self.make_msg('list_floatingips')
+        return self.call(context, msg, version="3.1")
+
+    def get_floatingip(self, context, region, floatingip_id):
+        msg = self.make_msg('get_floatingip', region=region,
+                            floatingip_id=floatingip_id)
+        return self.call(context, msg, version="3.1")
+
+    def update_floatingip(self, context, region, floatingip_id, values):
+        msg = self.make_msg('update_floatingip', region=region,
+                            floatingip_id=floatingip_id, values=values)
+        return self.call(context, msg)
+
+    # Blacklisted Domain Methods
+    def create_blacklist(self, context, values):
+        LOG.info("create_blacklist: Calling central's create_blacklist")
+        msg = self.make_msg('create_blacklist', values=values)
+
+        return self.call(context, msg, version='3.3')
+
+    def get_blacklist(self, context, blacklist_id):
+        LOG.info("get_blacklist: Calling central's get_blacklist.")
+        msg = self.make_msg('get_blacklist', blacklist_id=blacklist_id)
+
+        return self.call(context, msg, version='3.3')
+
+    def find_blacklists(self, context, criterion=None, marker=None, limit=None,
+                        sort_key=None, sort_dir=None):
+        LOG.info("find_blacklists: Calling central's find_blacklists.")
+        msg = self.make_msg('find_blacklists', criterion=criterion,
+                            marker=marker, limit=limit, sort_key=sort_key,
+                            sort_dir=sort_dir)
+
+        return self.call(context, msg, version='3.3')
+
+    def find_blacklist(self, context, criterion):
+        LOG.info("find_blacklist: Calling central's find_blacklist.")
+        msg = self.make_msg('find_blacklist', criterion=criterion)
+
+        return self.call(context, msg, version='3.3')
+
+    def update_blacklist(self, context, blacklist_id, values):
+        LOG.info("update_blacklist: Calling central's update_blacklist.")
+        msg = self.make_msg('update_blacklist', blacklist_id=blacklist_id,
+                            values=values)
+
+        return self.call(context, msg, version='3.3')
+
+    def delete_blacklist(self, context, blacklist_id):
+        LOG.info("delete_blacklist: Calling central's delete blacklist.")
+        msg = self.make_msg('delete_blacklist', blacklist_id=blacklist_id)
+
+        return self.call(context, msg, version='3.3')

@@ -17,17 +17,14 @@ from designate.tests.test_api import ApiTestCase
 
 
 class ApiServiceTest(ApiTestCase):
-    __test__ = True
-
     def setUp(self):
         super(ApiServiceTest, self).setUp()
 
         # Use a random port for the API
         self.config(api_port=0, group='service:api')
 
-        self.service = self.get_api_service()
+        self.service = self.start_service('api')
 
     def test_start_and_stop(self):
-        # Ensures the start/stop actions don't raise
-        self.service.start()
+        # NOTE: Start is already done by the fixture in start_service()
         self.service.stop()

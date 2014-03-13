@@ -11,16 +11,32 @@ debug = False
 # Top-level directory for maintaining designate's state
 #state_path = /var/lib/designate
 
+# Log Configuration
+#log_config = None
+
 # Log directory
 #logdir = /var/log/designate
 
 # Driver used for issuing notifications
-#notification_driver = designate.openstack.common.notifier.rabbit_notifier
+#notification_driver = designate.openstack.common.notifier.rpc_notifier
+
+# Notification Topics
+#notification_topics = notifications
 
 # Use "sudo designate-rootwrap /etc/designate/rootwrap.conf" to use the real
 # root filter facility.
 # Change to "sudo" to skip the filtering and just run the comand directly
-root_helper = sudo
+#root_helper = sudo designate-rootwrap /etc/designate/rootwrap.conf
+
+# Which networking API to use, Defaults to neutron
+#network_api = neutron
+
+# RabbitMQ Config
+#rabbit_userid = guest
+#rabbit_password = guest
+#rabbit_virtual_host = /
+#rabbit_use_ssl = False
+#rabbit_hosts = 127.0.0.1:5672
 
 ########################
 ## Service Configuration
@@ -32,17 +48,20 @@ root_helper = sudo
 # Driver used for backend communication (e.g. fake, rpc, bind9, powerdns)
 #backend_driver = fake
 
-# List of blacklist domain name regexes
-#domain_name_blacklist = \.arpa\.$, \.novalocal\.$, \.localhost\.$, \.localdomain\.$, \.local\.$
-
-# Accepted TLD list - http://data.iana.org/TLD/tlds-alpha-by-domain.txt
-#accepted_tld_list = COM, NET, ORG, IE, UK, ...
-
 # Maximum domain name length
 #max_domain_name_len = 255
 
 # Maximum record name length
 #max_record_name_len = 255
+
+
+## Managed resources settings
+
+# Email to use for managed resources like domains created by the FloatingIP API
+#managed_resource_email = root@example.io.
+
+# Tenant ID to own all managed resources - like auto-created records etc.
+#managed_resource_tenant_id = 123456
 
 #-----------------------
 # API Service
@@ -63,8 +82,11 @@ root_helper = sudo
 # Enable Version 2 API (experimental)
 #enable_api_v2 = False
 
+# Show the pecan HTML based debug interface (v2 only)
+#pecan_debug = False
+
 # Enabled API Version 1 extensions
-#enabled_extensions_v1 = diagnostics, quotas, reports, sync
+#enabled_extensions_v1 = diagnostics, quotas, reports, sync, touch
 
 #-----------------------
 # Keystone Middleware
@@ -91,6 +113,21 @@ root_helper = sudo
 # List of notification handlers to enable, configuration of these needs to
 # correspond to a [handler:my_driver] section below or else in the config
 #enabled_notification_handlers = nova_fixed
+
+##############
+## Network API
+##############
+[network_api:neutron]
+#endpoints = RegionOne|http://localhost:9696
+#endpoint_type = publicURL
+#timeout = 30
+#admin_username = designate
+#admin_password = designate
+#admin_tenant_name = designate
+#auth_url = http://localhost:35357/v2.0
+#insecure = False
+#auth_strategy = keystone
+#ca_certificates_file = /etc/path/to/ca.pem
 
 ########################
 ## Storage Configuration
@@ -122,12 +159,12 @@ root_helper = sudo
 #format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
 
 #------------------------
-# Quantum Floating Handler
+# Neutron Floating Handler
 #------------------------
-[handler:quantum_floating]
+[handler:neutron_floatingip]
 #domain_id = <random uuid>
 #notification_topics = monitor
-#control_exchange = 'quantum'
+#control_exchange = 'neutron'
 #format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
 
 
@@ -166,3 +203,19 @@ root_helper = sudo
 #idle_timeout = 3600
 #max_retries = 10
 #retry_interval = 10
+
+#-----------------------
+# NSD4Slave Backend
+#-----------------------
+[backend:nsd4slave]
+#keyfile =/etc/nsd/nsd_control.key
+#certfile = /etc/nsd/nsd_control.pem
+#servers = 127.0.0.1,127.0.1.1:4242
+#pattern = slave
+
+#-----------------------
+# Multi Backend
+#-----------------------
+[backend:multi]
+#master = fake
+#slave = fake

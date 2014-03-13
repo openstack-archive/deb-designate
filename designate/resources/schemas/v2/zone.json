@@ -37,7 +37,7 @@
                 "name": {
                     "type": "string",
                     "description": "Zone name",
-                    "format": "domain-name",
+                    "format": "domainname",
                     "maxLength": 255,
                     "immutable": true
                 },
@@ -70,11 +70,6 @@
                     "min": 1,
                     "max": 4294967295,
                     "readOnly": true
-                },
-                "notes": {
-                    "type": ["string", "null"],
-                    "description": "Notes",
-                    "maxLength": 100
                 },
                 "version": {
                     "type": "integer",

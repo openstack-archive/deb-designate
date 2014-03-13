@@ -14,16 +14,20 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import copy
+import json
+import functools
+import inspect
 import os
 import pkg_resources
-import json
+import uuid
+
 from jinja2 import Template
-from designate.openstack.common import log as logging
 from oslo.config import cfg
+
+from designate import exceptions
+from designate.openstack.common import log as logging
 from designate.openstack.common import processutils
 from designate.openstack.common import timeutils
-from designate.openstack.common.notifier import api as notifier_api
-from designate import exceptions
 
 LOG = logging.getLogger(__name__)
 
@@ -32,13 +36,6 @@ cfg.CONF.register_opts([
     cfg.StrOpt('root-helper',
                default='sudo designate-rootwrap /etc/designate/rootwrap.conf')
 ])
-
-
-def notify(context, service, event_type, payload):
-    priority = 'INFO'
-    publisher_id = notifier_api.publisher_id(service)
-    event_type = "dns.%s" % event_type
-    notifier_api.notify(context, publisher_id, event_type, priority, payload)
 
 
 def find_config(config_path):
@@ -52,9 +49,9 @@ def find_config(config_path):
     """
     possible_locations = [
         config_path,
-        os.path.join(cfg.CONF.state_path, "etc", "designate", config_path),
-        os.path.join(cfg.CONF.state_path, "etc", config_path),
-        os.path.join(cfg.CONF.state_path, config_path),
+        os.path.join(cfg.CONF.pybasedir, "etc", "designate", config_path),
+        os.path.join(cfg.CONF.pybasedir, "etc", config_path),
+        os.path.join(cfg.CONF.pybasedir, config_path),
         "/etc/designate/%s" % config_path,
     ]
 
@@ -237,3 +234,59 @@ def deep_dict_merge(a, b):
             result[k] = copy.deepcopy(v)
 
     return result
+
+
+def generate_uuid():
+    return str(uuid.uuid4())
+
+
+def is_uuid_like(val):
+    """Returns validation of a value as a UUID.
+
+    For our purposes, a UUID is a canonical form string:
+    aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+
+    """
+    try:
+        return str(uuid.UUID(val)) == val
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def validate_uuid(*check):
+    """
+    A wrapper to ensure that API controller methods arguments are valid UUID's.
+
+    Usage:
+    @validate_uuid('zone_id')
+    def get_all(self, zone_id):
+        return {}
+    """
+    def inner(f):
+        def wrapper(*args, **kwargs):
+            arg_spec = inspect.getargspec(f).args
+
+            # Ensure that we have the exact number of parameters that the
+            # function expects.  This handles URLs like
+            # /v2/zones/<UUID - valid or invalid>/invalid
+            # get, patch and delete return a 404, but Pecan returns a 405
+            # for a POST at the same URL
+            if (len(arg_spec) != len(args)):
+                raise exceptions.NotFound()
+
+            # Ensure that we have non-empty parameters in the cases where we
+            # have sub controllers - i.e. controllers at the 2nd level
+            # This is for URLs like /v2/zones/nameservers
+            # Ideally Pecan should be handling these cases, but until then
+            # we handle those cases here.
+            if (len(args) <= len(check)):
+                raise exceptions.NotFound()
+
+            for name in check:
+                pos = arg_spec.index(name)
+                if not is_uuid_like(args[pos]):
+                    msg = 'Invalid UUID %s: %s' % (name, args[pos])
+                    raise exceptions.InvalidUUID(msg)
+            return f(*args, **kwargs)
+        return functools.wraps(f)(wrapper)
+    return inner

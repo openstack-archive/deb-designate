@@ -24,8 +24,6 @@ LOG = logging.getLogger(__name__)
 
 
 class ApiV1Test(ApiTestCase):
-    __test__ = False
-
     def setUp(self):
         super(ApiV1Test, self).setUp()
 
@@ -39,20 +37,15 @@ class ApiV1Test(ApiTestCase):
         self.app.wsgi_app = middleware.FaultWrapperMiddleware(
             self.app.wsgi_app)
 
-        # Inject the NoAuth middleware
-        self.app.wsgi_app = middleware.NoAuthContextMiddleware(
-            self.app.wsgi_app)
+        # Inject the TestAuth middleware
+        self.app.wsgi_app = middleware.TestContextMiddleware(
+            self.app.wsgi_app, self.admin_context.tenant_id,
+            self.admin_context.user_id)
 
         # Obtain a test client
         self.client = self.app.test_client()
 
-        # Create and start an instance of the central service
-        self.central_service = self.get_central_service()
-        self.central_service.start()
-
-    def tearDown(self):
-        self.central_service.stop()
-        super(ApiV1Test, self).tearDown()
+        self.central_service = self.start_service('central')
 
     def get(self, path, **kw):
         expected_status_code = kw.pop('status_code', 200)
