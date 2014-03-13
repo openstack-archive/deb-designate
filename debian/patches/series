@@ -1,5 +1,1 @@
-0001-config-paths.patch
-0003-clean-deps.patch
-0005-support-old-webtest.patch
-adds-missing-rabbitmq-config.patch
 fixes-keystone-authtoken.patch

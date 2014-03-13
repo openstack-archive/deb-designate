@@ -3,9 +3,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: not-needed
 Last-Update: 2013-12-05
 
---- designate-2013.2.orig/etc/designate/designate.conf.sample
-+++ designate-2013.2/etc/designate/designate.conf.sample
-@@ -121,12 +121,12 @@ root_helper = sudo
+Index: designate/etc/designate/designate.conf.sample
+===================================================================
+--- designate.orig/etc/designate/designate.conf.sample	2014-03-13 22:58:54.000000000 +0800
++++ designate/etc/designate/designate.conf.sample	2014-03-13 23:19:19.000000000 +0800
+@@ -92,12 +92,12 @@
  # Keystone Middleware
  #-----------------------
  [keystone_authtoken]
