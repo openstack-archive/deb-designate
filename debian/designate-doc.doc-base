@@ -1,0 +1,9 @@
+Document: designate-doc
+Title: Designate Documentation
+Author: OpenStack
+Abstract: Sphinx documentation for Designate
+Section: Programming/Python
+
+Format: HTML
+Index: /usr/share/doc/designate-doc/html/index.html
+Files: /usr/share/doc/designate-doc/html/*
