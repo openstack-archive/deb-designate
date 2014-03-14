@@ -23,19 +23,10 @@ override_dh_auto_build:
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func designate-api.config
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func designate-api.postinst
 
-#ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
-#override_dh_auto_test:
-#	PYTHONPATH=$(CURDIR) python setup.py testr
-#endif
-
-#override_dh_auto_build:
-#		dh_auto_build
-#ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
-#		mkdir doc/build
-#		python setup.py build_sphinx
-#else
-#		mkdir -p doc/build/html
-#endif
+override_dh_auto_test:
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	PYTHONPATH=$(CURDIR) python setup.py testr
+endif
 
 override_dh_auto_clean:
 	dh_auto_clean
