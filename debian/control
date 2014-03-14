@@ -50,12 +50,13 @@ Build-Depends-Indep: python-anyjson (>= 0.3.3),
                      python-webtest (>= 2.0),
                      subunit (>= 0.0.18),
                      testrepository (>= 0.0.18)
-Standards-Version: 3.9.4
+Standards-Version: 3.9.5
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/designate.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/designate.git
 Homepage: https://github.com/stackforge/designate
 
 Package: python-designate
+Section: python
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: python-anyjson (>= 0.3.3),
