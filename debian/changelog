@@ -1,3 +1,9 @@
+designate (2014.1~rc1-1) experimental; urgency=low
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 02 Apr 2014 14:02:53 +0800
+
 designate (2014.1~b3-1) experimental; urgency=low
 
   * Initial release (Closes: #731406).
