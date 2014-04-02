@@ -1,5 +1,5 @@
 ..
-    Copyright 2013 Hewlett-Packard Development Company, L.P.
+    Copyright 2014 Hewlett-Packard Development Company, L.P.
 
     Licensed under the Apache License, Version 2.0 (the "License"); you may
     not use this file except in compliance with the License. You may obtain
@@ -13,7 +13,7 @@
     License for the specific language governing permissions and limitations
     under the License.
 
-Backend Documentation
+Install Documentation
 =====================
 
 Contents:
@@ -22,5 +22,4 @@ Contents:
    :maxdepth: 2
    :glob:
 
-   backends/bind9
-   backends/powerdns
+   install/*
