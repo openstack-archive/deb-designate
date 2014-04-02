@@ -15,6 +15,7 @@ override_dh_auto_install:
 override_dh_auto_clean:
 	dh_auto_clean -O--buildsystem=python_distutils
 	rm -f debian/designate-common.postinst debian/designate-common.config debian/designate-api.config debian/designate-api.postinst
+	rm -rf doc/build build *.egg-info
 
 override_dh_auto_build:
 	dh_auto_build -O--buildsystem=python_distutils
@@ -34,10 +35,6 @@ ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 		rm -f $$TEMP_REZ ;
 	testr slowest
 endif
-
-override_dh_auto_clean:
-	dh_auto_clean
-	rm -rf doc/build build *.egg-info
 
 override_dh_sphinxdoc:
 ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
