@@ -1,3 +1,10 @@
+designate (2014.1-3) unstable; urgency=medium
+
+  * Added French debconf templates translation thanks to Julien Patriarca
+    <leatherface@debian.org> (Closes: #747511).
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 12 May 2014 05:38:37 +0800
+
 designate (2014.1-2) unstable; urgency=medium
 
   * Added Portuguese debconf translation, thanks to Américo Monteiro
