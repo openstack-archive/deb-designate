@@ -1,3 +1,9 @@
+designate (2014.1-5) unstable; urgency=medium
+
+  * Added a copytruncate in logrotate scripts.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 29 May 2014 14:04:33 +0800
+
 designate (2014.1-4) unstable; urgency=medium
 
   * Added missing dependency on adduser (Closes: #749316).
