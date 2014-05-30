@@ -1,3 +1,9 @@
+designate (2014.1-6) unstable; urgency=medium
+
+  * Do not use addgroup in config script (Closes: #749316).
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 30 May 2014 09:25:43 +0800
+
 designate (2014.1-5) unstable; urgency=medium
 
   * Added a copytruncate in logrotate scripts.
