@@ -1,3 +1,9 @@
+designate (2014.1-7) unstable; urgency=medium
+
+  * Added missing depends on dbconfig-common (Closes: #749316).
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 02 Jun 2014 03:04:37 +0000
+
 designate (2014.1-6) unstable; urgency=medium
 
   * Do not use addgroup in config script (Closes: #749316).

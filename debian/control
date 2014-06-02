@@ -105,7 +105,7 @@ Description: OpenStack DNS as a Service - Python libs
 Package: designate-common
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: python-designate (= ${binary:Version}), ${misc:Depends}
+Depends: adduser, dbconfig-common, python-designate (= ${binary:Version}), ${misc:Depends}
 Description: OpenStack DNS as a Service - common files
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
@@ -118,8 +118,7 @@ Description: OpenStack DNS as a Service - common files
 Package: designate
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: adduser,
-         designate-agent (= ${binary:Version}),
+Depends: designate-agent (= ${binary:Version}),
          designate-api (= ${binary:Version}),
          designate-central (= ${binary:Version}),
          designate-common (= ${binary:Version}),
