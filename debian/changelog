@@ -1,3 +1,9 @@
+designate (2014.1-8) unstable; urgency=medium
+
+  * Now build-depends on openstack-pkg-tools >= 12~.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 05 Jun 2014 09:08:52 +0000
+
 designate (2014.1-7) unstable; urgency=medium
 
   * Added missing depends on dbconfig-common (Closes: #749316).
