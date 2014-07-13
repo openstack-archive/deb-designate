@@ -2,6 +2,7 @@ designate (2014.1-9) unstable; urgency=medium
 
   * Fixed new upstream URL in debian/rules.
   * Added sqlite3 as depends: for designate-common (Closes: #754673).
+  * Added ${python:Depends} for designate-common as well.
 
  -- Thomas Goirand <zigo@debian.org>  Sun, 13 Jul 2014 23:15:25 +0800
 
