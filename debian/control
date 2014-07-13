@@ -48,6 +48,7 @@ Build-Depends-Indep: python-anyjson (>= 0.3.3),
                      python-testtools (>= 0.9.34),
                      python-webob (>= 1.2.3),
                      python-webtest (>= 2.0),
+                     sqlite3,
                      subunit (>= 0.0.18),
                      testrepository (>= 0.0.18)
 Standards-Version: 3.9.5
@@ -105,7 +106,11 @@ Description: OpenStack DNS as a Service - Python libs
 Package: designate-common
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: adduser, dbconfig-common, python-designate (= ${binary:Version}), ${misc:Depends}
+Depends: adduser,
+         dbconfig-common,
+         python-designate (= ${binary:Version}),
+         sqlite3,
+         ${misc:Depends}
 Description: OpenStack DNS as a Service - common files
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
@@ -201,7 +206,7 @@ Package: designate-doc
 Section: doc
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: ${sphinxdoc:Depends}, ${misc:Depends}
+Depends: ${misc:Depends}, ${sphinxdoc:Depends}
 Description: OpenStack DNS as a Service - doc
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
