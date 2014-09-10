@@ -1,3 +1,10 @@
+designate (2014.1-10) unstable; urgency=medium
+
+  * Added Italian debconf translation thanks to Beatrice Torracca
+    <beatricet@libero.it> (Closes: #758535).
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 10 Sep 2014 12:08:08 +0000
+
 designate (2014.1-9) unstable; urgency=medium
 
   * Fixed new upstream URL in debian/rules.
