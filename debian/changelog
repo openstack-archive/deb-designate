@@ -1,3 +1,10 @@
+designate (2014.2~b3-1) experimental; urgency=medium
+
+  * New upstream release.
+  * Uploading to experimental just before the Jessie freeze.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 23 Sep 2014 02:11:53 +0800
+
 designate (2014.1-9) unstable; urgency=medium
 
   * Fixed new upstream URL in debian/rules.
