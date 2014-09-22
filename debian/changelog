@@ -2,6 +2,7 @@ designate (2014.2~b3-1) experimental; urgency=medium
 
   * New upstream release.
   * Uploading to experimental just before the Jessie freeze.
+  * Updated (build-)depends form this release.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 23 Sep 2014 02:11:53 +0800
 
