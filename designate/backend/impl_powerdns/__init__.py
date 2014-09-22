@@ -16,19 +16,24 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import base64
+import threading
+
+from oslo.config import cfg
+from oslo.db import options
 from sqlalchemy import func
 from sqlalchemy.sql import select
 from sqlalchemy.sql.expression import and_
 from sqlalchemy.orm import exc as sqlalchemy_exceptions
-from oslo.config import cfg
+
 from designate.openstack.common import excutils
 from designate.openstack.common import log as logging
+from designate.i18n import _LC
 from designate import exceptions
 from designate.backend import base
 from designate.backend.impl_powerdns import models
-from designate.sqlalchemy.session import get_session
-from designate.sqlalchemy.session import SQLOPTS
+from designate.sqlalchemy import session
 from designate.sqlalchemy.expressions import InsertFromSelect
+
 
 LOG = logging.getLogger(__name__)
 TSIG_SUPPORTED_ALGORITHMS = ['hmac-md5']
@@ -41,11 +46,11 @@ cfg.CONF.register_opts([
     cfg.StrOpt('domain-type', default='NATIVE', help='PowerDNS Domain Type'),
     cfg.ListOpt('also-notify', default=[], help='List of additional IPs to '
                                                 'send NOTIFYs to'),
-] + SQLOPTS, group='backend:powerdns')
+] + options.database_opts, group='backend:powerdns')
 
 # Overide the default DB connection registered above, to avoid name conflicts
 # between the Designate and PowerDNS databases.
-cfg.CONF.set_default('database_connection',
+cfg.CONF.set_default('connection',
                      'sqlite:///$state_path/powerdns.sqlite',
                      group='backend:powerdns')
 
@@ -53,14 +58,30 @@ cfg.CONF.set_default('database_connection',
 class PowerDNSBackend(base.Backend):
     __plugin_name__ = 'powerdns'
 
+    def __init__(self, *args, **kwargs):
+        super(PowerDNSBackend, self).__init__(*args, **kwargs)
+
+        self.local_store = threading.local()
+
     def start(self):
         super(PowerDNSBackend, self).start()
 
-        self.session = get_session(self.name)
+    @property
+    def session(self):
+        # NOTE: This uses a thread local store, allowing each greenthread to
+        #       have it's own session stored correctly. Without this, each
+        #       greenthread may end up using a single global session, which
+        #       leads to bad things happening.
+        global LOCAL_STORE
+
+        if not hasattr(self.local_store, 'session'):
+            self.local_store.session = session.get_session(self.name)
+
+        return self.local_store.session
 
     # TSIG Key Methods
     def create_tsigkey(self, context, tsigkey):
-        """ Create a TSIG Key """
+        """Create a TSIG Key"""
 
         if tsigkey['algorithm'] not in TSIG_SUPPORTED_ALGORITHMS:
             raise exceptions.NotImplemented('Unsupported algorithm')
@@ -100,7 +121,7 @@ class PowerDNSBackend(base.Backend):
         self.session.commit()
 
     def update_tsigkey(self, context, tsigkey):
-        """ Update a TSIG Key """
+        """Update a TSIG Key"""
         tsigkey_m = self._get_tsigkey(tsigkey['id'])
 
         # Store a copy of the original name..
@@ -121,7 +142,7 @@ class PowerDNSBackend(base.Backend):
                 .update(content=tsigkey['name'])
 
     def delete_tsigkey(self, context, tsigkey):
-        """ Delete a TSIG Key """
+        """Delete a TSIG Key"""
         try:
             # Delete this TSIG Key itself
             tsigkey_m = self._get_tsigkey(tsigkey['id'])
@@ -129,8 +150,9 @@ class PowerDNSBackend(base.Backend):
         except exceptions.TsigKeyNotFound:
             # If the TSIG Key is already gone, that's ok. We're deleting it
             # anyway, so just log and continue.
-            LOG.critical('Attempted to delete a TSIG key which is not present '
-                         'in the backend. ID: %s', tsigkey['id'])
+            LOG.critical(_LC('Attempted to delete a TSIG key which is '
+                             'not present in the backend. ID: %s') %
+                         tsigkey['id'])
             return
 
         # Delete this TSIG Key from every domain's metadata
@@ -160,7 +182,7 @@ class PowerDNSBackend(base.Backend):
             'name': domain['name'].rstrip('.'),
             'master': servers[0]['name'].rstrip('.'),
             'type': cfg.CONF['backend:powerdns'].domain_type,
-            'account': context.tenant_id
+            'account': context.tenant
         })
         domain_m.save(self.session)
 
@@ -228,8 +250,9 @@ class PowerDNSBackend(base.Backend):
         except exceptions.DomainNotFound:
             # If the Domain is already gone, that's ok. We're deleting it
             # anyway, so just log and continue.
-            LOG.critical('Attempted to delete a domain which is not present '
-                         'in the backend. ID: %s', domain['id'])
+            LOG.critical(_LC('Attempted to delete a domain which is '
+                             'not present in the backend. ID: %s') %
+                         domain['id'])
             return
 
         domain_m.delete(self.session)
@@ -308,8 +331,9 @@ class PowerDNSBackend(base.Backend):
         except exceptions.RecordNotFound:
             # If the Record is already gone, that's ok. We're deleting it
             # anyway, so just log and continue.
-            LOG.critical('Attempted to delete a record which is not present '
-                         'in the backend. ID: %s', record['id'])
+            LOG.critical(_LC('Attempted to delete a record which is '
+                             'not present in the backend. ID: %s') %
+                         record['id'])
         else:
             record_m.delete(self.session)
 
@@ -328,9 +352,12 @@ class PowerDNSBackend(base.Backend):
 
         record_m.save(self.session)
 
-    def _update_domainmetadata(self, domain_id, kind, values=[], delete=True):
-        """ Updates a domain's metadata with new values """
+    def _update_domainmetadata(self, domain_id, kind, values=None,
+                               delete=True):
+        """Updates a domain's metadata with new values"""
         # Fetch all current metadata of the specified kind
+        values = values or []
+
         query = self.session.query(models.DomainMetadata)
         query = query.filter_by(domain_id=domain_id, kind=kind)
 
@@ -339,8 +366,8 @@ class PowerDNSBackend(base.Backend):
         for metadata in metadatas:
             if metadata.content not in values:
                 if delete:
-                    LOG.debug('Deleting stale domain metadata: %r',
-                              (domain_id, kind, metadata.value))
+                    LOG.debug('Deleting stale domain metadata: %r' %
+                              tuple([domain_id, kind, metadata.value]))
                     # Delete no longer necessary values
                     metadata.delete(self.session)
             else:
@@ -349,8 +376,8 @@ class PowerDNSBackend(base.Backend):
 
         # Insert new values
         for value in values:
-            LOG.debug('Inserting new domain metadata: %r',
-                      (domain_id, kind, value))
+            LOG.debug('Inserting new domain metadata: %r' %
+                      tuple([domain_id, kind, value]))
             m = models.DomainMetadata(domain_id=domain_id, kind=kind,
                                       content=value)
             m.save(self.session)
@@ -527,8 +554,7 @@ class PowerDNSBackend(base.Backend):
                     .where(and_(models.Record.__table__.c.type == "SOA",
                            models.Record.__table__.c.content.like
                                ("%s%%" % old_server_name)))
-                    .values(content=
-                            func.replace(
+                    .values(content=func.replace(
                                 models.Record.__table__.c.content,
                                 old_server_name,
                                 server['name'].rstrip('.'))

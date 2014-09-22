@@ -116,7 +116,7 @@ Installing using Source (Git)
 
 ::
 
-    $ git clone git://github.com/stackforge/designate designate
+    $ git clone git://github.com/openstack/designate designate
 
 3. Change directory to the newly cloned repository
 
@@ -186,11 +186,9 @@ Sync Database schemas
 
 Initialize and sync the database schemas for Designate and PowerDNS::
 
-    $ designate-manage database-init
-    $ designate-manage database-sync
+    $ designate-manage database sync
 
-    $ designate-manage powerdns database-init
-    $ designate-manage powerdns database-sync
+    $ designate-manage powerdns database sync
 
 Register Designate with Keystone
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

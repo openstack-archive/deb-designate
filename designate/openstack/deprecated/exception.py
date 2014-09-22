@@ -21,7 +21,7 @@ Exceptions common to OpenStack projects
 
 import logging
 
-from designate.openstack.common.gettextutils import _
+from designate.i18n import _
 
 _FATAL_EXCEPTION_FORMAT_ERRORS = False
 
@@ -100,9 +100,9 @@ def wrap_exception(f):
             return f(*args, **kw)
         except Exception, e:
             if not isinstance(e, Error):
-                #exc_type, exc_value, exc_traceback = sys.exc_info()
+                # exc_type, exc_value, exc_traceback = sys.exc_info()
                 logging.exception(_('Uncaught exception'))
-                #logging.error(traceback.extract_stack(exc_traceback))
+                # logging.error(traceback.extract_stack(exc_traceback))
                 raise Error(str(e))
             raise
     _wrap.func_name = f.func_name

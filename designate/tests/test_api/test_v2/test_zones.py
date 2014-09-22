@@ -15,9 +15,10 @@
 # under the License.
 from dns import zone as dnszone
 from mock import patch
+from oslo import messaging
+
 from designate import exceptions
 from designate.central import service as central_service
-from designate.openstack.common.rpc import common as rpc_common
 from designate.tests.test_api.test_v2 import ApiV2TestCase
 
 
@@ -102,7 +103,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
                                '/zones', {'zone': fixture})
 
     @patch.object(central_service.Service, 'create_domain',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_create_zone_timeout(self, _):
         fixture = self.get_domain_fixture(0)
 
@@ -166,7 +167,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
         self._assert_invalid_paging(data, '/zones', key='zones')
 
     @patch.object(central_service.Service, 'find_domains',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_get_zones_timeout(self, _):
         self._assert_exception('timeout', 504, self.client.get, '/zones/')
 
@@ -198,7 +199,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
         self._assert_invalid_uuid(self.client.get, '/zones/%s')
 
     @patch.object(central_service.Service, 'get_domain',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_get_zone_timeout(self, _):
         url = '/zones/2fdadfb1-cf96-4259-ac6b-bb7b6d2ff980'
         self._assert_exception('timeout', 504, self.client.get, url,
@@ -274,6 +275,22 @@ class ApiV2ZonesTest(ApiV2TestCase):
         self._assert_exception('invalid_object', 400, self.client.patch_json,
                                url, body)
 
+        # Prepare an update body with negative ttl in the body
+        body = {'zone': {'email': 'prefix-%s' % zone['email'],
+                         'ttl': -20}}
+
+        # Ensure it fails with a 400
+        self._assert_exception('invalid_object', 400, self.client.patch_json,
+                               url, body)
+
+        # Prepare an update body with ttl > maximum (2147483647) in the body
+        body = {'zone': {'email': 'prefix-%s' % zone['email'],
+                         'ttl': 2147483648}}
+
+        # Ensure it fails with a 400
+        self._assert_exception('invalid_object', 400, self.client.patch_json,
+                               url, body)
+
     @patch.object(central_service.Service, 'get_domain',
                   side_effect=exceptions.DuplicateDomain())
     def test_update_zone_duplicate(self, _):
@@ -287,7 +304,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
                                url, body)
 
     @patch.object(central_service.Service, 'get_domain',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_update_zone_timeout(self, _):
         # Prepare an update body
         body = {'zone': {'email': 'example@example.org'}}
@@ -319,7 +336,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
         self._assert_invalid_uuid(self.client.delete, '/zones/%s')
 
     @patch.object(central_service.Service, 'delete_domain',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_delete_zone_timeout(self, _):
         url = '/zones/2fdadfb1-cf96-4259-ac6b-bb7b6d2ff980'
 
@@ -374,7 +391,8 @@ class ApiV2ZonesTest(ApiV2TestCase):
         # and dnspython considers that to be not equal.
         imported.delete_rdataset(imported.origin, 'SOA')
         exported.delete_rdataset(exported.origin, 'SOA')
-        # Delete non-delegation NS, since they won't be the same
+        # Delete NS records, since they won't be the same
         imported.delete_rdataset(imported.origin, 'NS')
         exported.delete_rdataset(exported.origin, 'NS')
+        imported.delete_rdataset('delegation', 'NS')
         self.assertEqual(imported, exported)

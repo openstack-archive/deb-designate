@@ -13,15 +13,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import pecan
+
 from designate.openstack.common import log as logging
 from designate import schema
 from designate import utils
 from designate.api.v2.controllers import rest
 from designate.api.v2.views import tlds as tlds_view
-from designate.central import rpcapi as central_rpcapi
+from designate.objects import Tld
+
 
 LOG = logging.getLogger(__name__)
-central_api = central_rpcapi.CentralAPI()
 
 
 class TldsController(rest.RestController):
@@ -33,17 +34,17 @@ class TldsController(rest.RestController):
     @pecan.expose(template='json:', content_type='application/json')
     @utils.validate_uuid('tld_id')
     def get_one(self, tld_id):
-        """ Get Tld """
+        """Get Tld"""
 
         request = pecan.request
         context = request.environ['context']
 
-        tld = central_api.get_tld(context, tld_id)
+        tld = self.central_api.get_tld(context, tld_id)
         return self._view.show(context, request, tld)
 
     @pecan.expose(template='json:', content_type='application/json')
     def get_all(self, **params):
-        """ List Tlds """
+        """List Tlds"""
         request = pecan.request
         context = request.environ['context']
 
@@ -55,14 +56,14 @@ class TldsController(rest.RestController):
         criterion = dict((k, params[k]) for k in accepted_filters
                          if k in params)
 
-        tlds = central_api.find_tlds(
+        tlds = self.central_api.find_tlds(
             context, criterion, marker, limit, sort_key, sort_dir)
 
         return self._view.list(context, request, tlds)
 
     @pecan.expose(template='json:', content_type='application/json')
     def post_all(self):
-        """ Create Tld """
+        """Create Tld"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
@@ -75,7 +76,7 @@ class TldsController(rest.RestController):
         values = self._view.load(context, request, body)
 
         # Create the tld
-        tld = central_api.create_tld(context, values)
+        tld = self.central_api.create_tld(context, Tld(**values))
         response.status_int = 201
 
         response.headers['Location'] = self._view._get_resource_href(request,
@@ -87,28 +88,29 @@ class TldsController(rest.RestController):
     @pecan.expose(template='json:', content_type='application/json-patch+json')
     @utils.validate_uuid('tld_id')
     def patch_one(self, tld_id):
-        """ Update Tld """
+        """Update Tld"""
         request = pecan.request
         context = request.environ['context']
         body = request.body_dict
         response = pecan.response
 
         # Fetch the existing tld
-        tld = central_api.get_tld(context, tld_id)
+        tld = self.central_api.get_tld(context, tld_id)
 
         # Convert to APIv2 Format
-        tld = self._view.show(context, request, tld)
+        tld_data = self._view.show(context, request, tld)
 
         if request.content_type == 'application/json-patch+json':
             raise NotImplemented('json-patch not implemented')
         else:
-            tld = utils.deep_dict_merge(tld, body)
+            tld_data = utils.deep_dict_merge(tld_data, body)
 
-            # Validate the request conforms to the schema
-            self._resource_schema.validate(tld)
+            # Validate the new set of data
+            self._resource_schema.validate(tld_data)
 
-            values = self._view.load(context, request, body)
-            tld = central_api.update_tld(context, tld_id, values)
+            # Update and persist the resource
+            tld.update(self._view.load(context, request, body))
+            tld = self.central_api.update_tld(context, tld)
 
         response.status_int = 200
 
@@ -117,12 +119,12 @@ class TldsController(rest.RestController):
     @pecan.expose(template=None, content_type='application/json')
     @utils.validate_uuid('tld_id')
     def delete_one(self, tld_id):
-        """ Delete Tld """
+        """Delete Tld"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
 
-        central_api.delete_tld(context, tld_id)
+        self.central_api.delete_tld(context, tld_id)
 
         response.status_int = 204
 

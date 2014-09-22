@@ -14,95 +14,23 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+from oslo.config import cfg
+
 from designate.tests.test_api import ApiTestCase
+from designate import context
 from designate import exceptions
+from designate import rpc
 from designate.api import middleware
-
-
-class FakeContext(object):
-    def __init__(self, roles=[]):
-        self.roles = roles
 
 
 class FakeRequest(object):
     def __init__(self):
         self.headers = {}
         self.environ = {}
+        self.params = {}
 
     def get_response(self, app):
         return "FakeResponse"
-
-
-class MaintenanceMiddlewareTest(ApiTestCase):
-    def test_process_request_disabled(self):
-        self.config(maintenance_mode=False, group='service:api')
-
-        request = FakeRequest()
-        app = middleware.MaintenanceMiddleware({})
-
-        # Process the request
-        response = app(request)
-
-        # Ensure request was not blocked
-        self.assertEqual(response, 'FakeResponse')
-
-    def test_process_request_enabled_reject(self):
-        self.config(maintenance_mode=True, maintenance_mode_role='admin',
-                    group='service:api')
-
-        request = FakeRequest()
-        request.environ['context'] = FakeContext(roles=['user'])
-
-        app = middleware.MaintenanceMiddleware({})
-
-        # Process the request
-        response = app(request)
-
-        # Ensure request was blocked
-        self.assertEqual(response.status_code, 503)
-
-    def test_process_request_enabled_reject_no_roles(self):
-        self.config(maintenance_mode=True, maintenance_mode_role='admin',
-                    group='service:api')
-
-        request = FakeRequest()
-        request.environ['context'] = FakeContext(roles=[])
-
-        app = middleware.MaintenanceMiddleware({})
-
-        # Process the request
-        response = app(request)
-
-        # Ensure request was blocked
-        self.assertEqual(response.status_code, 503)
-
-    def test_process_request_enabled_reject_no_context(self):
-        self.config(maintenance_mode=True, maintenance_mode_role='admin',
-                    group='service:api')
-
-        request = FakeRequest()
-        app = middleware.MaintenanceMiddleware({})
-
-        # Process the request
-        response = app(request)
-
-        # Ensure request was blocked
-        self.assertEqual(response.status_code, 503)
-
-    def test_process_request_enabled_bypass(self):
-        self.config(maintenance_mode=True, maintenance_mode_role='admin',
-                    group='service:api')
-
-        request = FakeRequest()
-        request.environ['context'] = FakeContext(roles=['admin'])
-
-        app = middleware.MaintenanceMiddleware({})
-
-        # Process the request
-        response = app(request)
-
-        # Ensure request was not blocked
-        self.assertEqual(response, 'FakeResponse')
 
 
 class KeystoneContextMiddlewareTest(ApiTestCase):
@@ -127,8 +55,8 @@ class KeystoneContextMiddlewareTest(ApiTestCase):
 
         self.assertFalse(context.is_admin)
         self.assertEqual('AuthToken', context.auth_token)
-        self.assertEqual('UserID', context.user_id)
-        self.assertEqual('TenantID', context.tenant_id)
+        self.assertEqual('UserID', context.user)
+        self.assertEqual('TenantID', context.tenant)
         self.assertEqual(['admin', 'Member'], context.roles)
 
     def test_process_request_invalid_keystone_token(self):
@@ -161,20 +89,116 @@ class NoAuthContextMiddlewareTest(ApiTestCase):
 
         self.assertIn('context', request.environ)
 
-        context = request.environ['context']
+        ctxt = request.environ['context']
 
-        self.assertTrue(context.is_admin)
-        self.assertIsNone(context.auth_token)
-        self.assertEqual('noauth-user', context.user_id)
-        self.assertEqual('noauth-project', context.tenant_id)
-        self.assertEqual([], context.roles)
+        self.assertIsNone(ctxt.auth_token)
+        self.assertEqual('noauth-user', ctxt.user)
+        self.assertEqual('noauth-project', ctxt.tenant)
+        self.assertEqual(['admin'], ctxt.roles)
+
+
+class MaintenanceMiddlewareTest(ApiTestCase):
+    def test_process_request_disabled(self):
+        self.config(maintenance_mode=False, group='service:api')
+
+        request = FakeRequest()
+        app = middleware.MaintenanceMiddleware({})
+
+        # Process the request
+        response = app(request)
+
+        # Ensure request was not blocked
+        self.assertEqual(response, 'FakeResponse')
+
+    def test_process_request_enabled_reject(self):
+        self.config(maintenance_mode=True, maintenance_mode_role='admin',
+                    group='service:api')
+
+        request = FakeRequest()
+        request.environ['context'] = context.DesignateContext(roles=['user'])
+
+        app = middleware.MaintenanceMiddleware({})
+
+        # Process the request
+        response = app(request)
+
+        # Ensure request was blocked
+        self.assertEqual(response.status_code, 503)
+
+    def test_process_request_enabled_reject_no_roles(self):
+        self.config(maintenance_mode=True, maintenance_mode_role='admin',
+                    group='service:api')
+
+        request = FakeRequest()
+        request.environ['context'] = context.DesignateContext(roles=[])
+
+        app = middleware.MaintenanceMiddleware({})
+
+        # Process the request
+        response = app(request)
+
+        # Ensure request was blocked
+        self.assertEqual(response.status_code, 503)
+
+    def test_process_request_enabled_reject_no_context(self):
+        self.config(maintenance_mode=True, maintenance_mode_role='admin',
+                    group='service:api')
+
+        request = FakeRequest()
+        app = middleware.MaintenanceMiddleware({})
+
+        # Process the request
+        response = app(request)
+
+        # Ensure request was blocked
+        self.assertEqual(response.status_code, 503)
+
+    def test_process_request_enabled_bypass(self):
+        self.config(maintenance_mode=True, maintenance_mode_role='admin',
+                    group='service:api')
+
+        request = FakeRequest()
+        request.environ['context'] = context.DesignateContext(roles=['admin'])
+
+        app = middleware.MaintenanceMiddleware({})
+
+        # Process the request
+        response = app(request)
+
+        # Ensure request was not blocked
+        self.assertEqual(response, 'FakeResponse')
+
+
+class NormalizeURIMiddlewareTest(ApiTestCase):
+    def test_strip_trailing_slases(self):
+        request = FakeRequest()
+        request.environ['PATH_INFO'] = 'resource/'
+
+        app = middleware.NormalizeURIMiddleware({})
+
+        # Process the request
+        app(request)
+
+        # Ensure request's PATH_INFO had the trailing slash removed.
+        self.assertEqual(request.environ['PATH_INFO'], 'resource')
+
+    def test_strip_trailing_slases_multiple(self):
+        request = FakeRequest()
+        request.environ['PATH_INFO'] = 'resource///'
+
+        app = middleware.NormalizeURIMiddleware({})
+
+        # Process the request
+        app(request)
+
+        # Ensure request's PATH_INFO had the trailing slash removed.
+        self.assertEqual(request.environ['PATH_INFO'], 'resource')
 
 
 class FaultMiddlewareTest(ApiTestCase):
-    __test__ = True
-
     def test_notify_of_fault(self):
         self.config(notify_api_faults=True)
+        rpc.init(cfg.CONF)
         app = middleware.FaultWrapperMiddleware({})
 
         class RaisingRequest(FakeRequest):
@@ -182,9 +206,9 @@ class FaultMiddlewareTest(ApiTestCase):
                 raise exceptions.DuplicateDomain()
 
         request = RaisingRequest()
-        context = FakeContext()
-        context.request_id = 'one'
-        request.environ['context'] = context
+        ctxt = context.DesignateContext()
+        ctxt.request_id = 'one'
+        request.environ['context'] = ctxt
 
         # Process the request
         app(request)
@@ -192,7 +216,9 @@ class FaultMiddlewareTest(ApiTestCase):
         notifications = self.get_notifications()
         self.assertEqual(1, len(notifications))
 
-        self.assertEqual('ERROR', notifications[0]['priority'])
-        self.assertEqual('dns.api.fault', notifications[0]['event_type'])
-        self.assertIn('timestamp', notifications[0])
-        self.assertIn('publisher_id', notifications[0])
+        ctxt, message, priority, retry = notifications.pop()
+
+        self.assertEqual('ERROR', message['priority'])
+        self.assertEqual('dns.api.fault', message['event_type'])
+        self.assertIn('timestamp', message)
+        self.assertIn('publisher_id', message)

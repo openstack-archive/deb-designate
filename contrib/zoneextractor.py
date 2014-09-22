@@ -17,9 +17,13 @@
 import sys
 import re
 import os
-import dns.zone
 import argparse
 import logging
+
+import dns.zone
+
+from designate.i18n import _LI
+from designate.i18n import _LE
 
 
 logging.basicConfig()
@@ -166,13 +170,14 @@ class Extractor:
                     zone_object = dns.zone.from_file(zonefile,
                                                      allow_include=True)
                 except dns.zone.UnknownOrigin:
-                    LOG.info('%s is missing $ORIGIN, inserting %s' %
-                             (zonefile, name))
+                    LOG.info(_LI('%(zonefile)s is missing $ORIGIN, '
+                                 'inserting %(name)s') %
+                             {'zonefile': zonefile, 'name': name})
                     zone_object = dns.zone.from_file(zonefile,
                                                      allow_include=True,
                                                      origin=name)
                 except dns.zone.NoSOA:
-                    LOG.error('%s has no SOA' % zonefile)
+                    LOG.error(_LE('%s has no SOA') % zonefile)
                 zones.append(Zone(zone_object))
         return zones
 

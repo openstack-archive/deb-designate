@@ -14,20 +14,22 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import copy
 import random
+
 import testtools
+from testtools.matchers import GreaterThan
+
 from designate.openstack.common import log as logging
 from designate import exceptions
+from designate import objects
 from designate.tests.test_central import CentralTestCase
+
 
 LOG = logging.getLogger(__name__)
 
 
 class CentralServiceTest(CentralTestCase):
-    def setUp(self):
-        super(CentralServiceTest, self).setUp()
-        self.central_service = self.start_service('central')
-
     def test_stop(self):
         # Test stopping the service
         self.central_service.stop()
@@ -123,6 +125,30 @@ class CentralServiceTest(CentralTestCase):
                                                     'www.example.org.')
         self.assertTrue(result)
 
+    def test_is_superdomain(self):
+        context = self.get_context()
+
+        # Create a domain (using the specified domain name)
+        self.create_domain(name='example.org.')
+
+        LOG.debug("Testing 'org.'")
+        result = self.central_service._is_superdomain(context, 'org.')
+        self.assertTrue(result)
+
+        LOG.debug("Testing 'www.example.net.'")
+        result = self.central_service._is_superdomain(context,
+                                                      'www.example.net.')
+        self.assertFalse(result)
+
+        LOG.debug("Testing 'example.org.'")
+        result = self.central_service._is_superdomain(context, 'example.org.')
+        self.assertTrue(result)
+
+        LOG.debug("Testing 'www.example.org.'")
+        result = self.central_service._is_superdomain(context,
+                                                      'www.example.org.')
+        self.assertFalse(result)
+
     def test_is_valid_recordset_placement_subdomain(self):
         context = self.get_context()
 
@@ -147,6 +173,19 @@ class CentralServiceTest(CentralTestCase):
 
         _ok(sub_domain, 'record.example.org.')
 
+    def test_is_valid_ttl(self):
+        self.policy({'use_low_ttl': '!'})
+        self.config(min_ttl="100",
+                    group='service:central')
+        context = self.get_context()
+
+        values = self.get_domain_fixture(1)
+        values['ttl'] = 0
+
+        with testtools.ExpectedException(exceptions.InvalidTTL):
+                    self.central_service._is_valid_ttl(
+                        context, values['ttl'])
+
     # Server Tests
     def test_create_server(self):
         values = dict(
@@ -155,7 +194,7 @@ class CentralServiceTest(CentralTestCase):
 
         # Create a server
         server = self.central_service.create_server(
-            self.admin_context, values=values)
+            self.admin_context, server=objects.Server(**values))
 
         # Ensure all values have been set correctly
         self.assertIsNotNone(server['id'])
@@ -197,19 +236,19 @@ class CentralServiceTest(CentralTestCase):
 
     def test_update_server(self):
         # Create a server
-        expected_server = self.create_server()
+        server = self.create_server(name='ns1.example.org.')
 
-        # Update the server
-        values = dict(name='prefix.%s' % expected_server['name'])
-        self.central_service.update_server(
-            self.admin_context, expected_server['id'], values=values)
+        # Update the Object
+        server.name = 'ns2.example.org.'
+
+        # Perform the update
+        self.central_service.update_server(self.admin_context, server)
 
         # Fetch the server again
-        server = self.central_service.get_server(
-            self.admin_context, expected_server['id'])
+        server = self.central_service.get_server(self.admin_context, server.id)
 
-        # Ensure the server was updated correctly
-        self.assertEqual(server['name'], 'prefix.%s' % expected_server['name'])
+        # Ensure the new value took
+        self.assertEqual('ns2.example.org.', server.name)
 
     def test_delete_server(self):
         # Create a server
@@ -287,19 +326,19 @@ class CentralServiceTest(CentralTestCase):
 
     def test_update_tld(self):
         # Create a tld
-        expected_tld = self.create_tld(fixture=0)
+        tld = self.create_tld(name='org.')
 
-        # Update the tld
-        values = dict(name='prefix.%s' % expected_tld['name'])
-        self.central_service.update_tld(
-            self.admin_context, expected_tld['id'], values=values)
+        # Update the Object
+        tld.name = 'net.'
+
+        # Perform the update
+        self.central_service.update_tld(self.admin_context, tld)
 
         # Fetch the tld again
-        tld = self.central_service.get_tld(
-            self.admin_context, expected_tld['id'])
+        tld = self.central_service.get_tld(self.admin_context, tld.id)
 
         # Ensure the tld was updated correctly
-        self.assertEqual(tld['name'], 'prefix.%s' % expected_tld['name'])
+        self.assertEqual('net.', tld.name)
 
     def test_delete_tld(self):
         # Create a tld
@@ -309,7 +348,7 @@ class CentralServiceTest(CentralTestCase):
 
         # Fetch the tld again, ensuring an exception is raised
         self.assertRaises(
-            exceptions.TLDNotFound,
+            exceptions.TldNotFound,
             self.central_service.get_tld,
             self.admin_context, tld['id'])
 
@@ -319,7 +358,7 @@ class CentralServiceTest(CentralTestCase):
 
         # Create a tsigkey
         tsigkey = self.central_service.create_tsigkey(
-            self.admin_context, values=values)
+            self.admin_context, tsigkey=objects.TsigKey(**values))
 
         # Ensure all values have been set correctly
         self.assertIsNotNone(tsigkey['id'])
@@ -363,22 +402,21 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(tsigkey['secret'], expected['secret'])
 
     def test_update_tsigkey(self):
-        # Create a tsigkey using default values
-        expected = self.create_tsigkey()
+        # Create a tsigkey
+        tsigkey = self.create_tsigkey(name='test-key')
 
-        # Update the tsigkey
-        fixture = self.get_tsigkey_fixture(fixture=1)
-        values = dict(name=fixture['name'])
+        # Update the Object
+        tsigkey.name = 'test-key-updated'
 
-        self.central_service.update_tsigkey(
-            self.admin_context, expected['id'], values=values)
+        # Perform the update
+        self.central_service.update_tsigkey(self.admin_context, tsigkey)
 
         # Fetch the tsigkey again
         tsigkey = self.central_service.get_tsigkey(
-            self.admin_context, expected['id'])
+            self.admin_context, tsigkey.id)
 
-        # Ensure the tsigkey was updated correctly
-        self.assertEqual(tsigkey['name'], fixture['name'])
+        # Ensure the new value took
+        self.assertEqual('test-key-updated', tsigkey.name)
 
     def test_delete_tsigkey(self):
         # Create a tsigkey
@@ -427,7 +465,7 @@ class CentralServiceTest(CentralTestCase):
 
         # Create a domain
         domain = self.central_service.create_domain(
-            self.admin_context, values=values)
+            self.admin_context, domain=objects.Domain(**values))
 
         # Ensure all values have been set correctly
         self.assertIsNotNone(domain['id'])
@@ -435,26 +473,29 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(domain['email'], values['email'])
         self.assertIn('status', domain)
 
-        # Ensure we sent exactly 1 notification
+        # Ensure we sent exactly 1 notification, plus 2 for SOA and NS
+        # recordsets
         notifications = self.get_notifications()
-        self.assertEqual(len(notifications), 1)
+        self.assertEqual(len(notifications), 3)
 
         # Ensure the notification wrapper contains the correct info
-        notification = notifications.pop()
-        self.assertEqual(notification['event_type'], 'dns.domain.create')
-        self.assertEqual(notification['priority'], 'INFO')
-        self.assertIsNotNone(notification['timestamp'])
-        self.assertIsNotNone(notification['message_id'])
+
+        ctxt, message, priority, retry = notifications[0]
+
+        self.assertEqual(message['event_type'], 'dns.domain.create')
+        self.assertEqual(message['priority'], 'INFO')
+        self.assertIsNotNone(message['timestamp'])
+        self.assertIsNotNone(message['message_id'])
 
         # Ensure the notification payload contains the correct info
-        payload = notification['payload']
+        payload = message['payload']
         self.assertEqual(payload['id'], domain['id'])
         self.assertEqual(payload['name'], domain['name'])
         self.assertEqual(payload['tenant_id'], domain['tenant_id'])
 
     def test_create_domain_over_tld(self):
         values = dict(
-            name='example.com',
+            name='example.com.',
             email='info@example.com'
         )
         self._test_create_domain(values)
@@ -464,8 +505,9 @@ class CentralServiceTest(CentralTestCase):
             name='xn--3e0b707e'
         )
 
+        tld = objects.Tld(**values)
         # Create the appropriate TLD
-        self.central_service.create_tld(self.admin_context, values=values)
+        self.central_service.create_tld(self.admin_context, tld=tld)
 
         # Test creation of a domain in 한국 (kr)
         values = dict(
@@ -492,17 +534,45 @@ class CentralServiceTest(CentralTestCase):
 
         # Create the subdomain
         domain = self.central_service.create_domain(
-            self.admin_context, values=values)
+            self.admin_context, domain=objects.Domain(**values))
 
         # Ensure all values have been set correctly
         self.assertIsNotNone(domain['id'])
         self.assertEqual(domain['parent_domain_id'], parent_domain['id'])
 
+    def test_create_superdomain(self):
+        # Prepare values for the domain and subdomain
+        # using fixture 1 as a base
+        domain_values = self.get_domain_fixture(1)
+
+        subdomain_values = copy.deepcopy(domain_values)
+        subdomain_values['name'] = 'www.%s' % domain_values['name']
+        subdomain_values['context'] = self.admin_context
+
+        LOG.debug("domain_values: {0}".format(domain_values))
+        LOG.debug("subdomain_values: {0}".format(subdomain_values))
+
+        # Create the subdomain
+        subdomain = self.create_domain(**subdomain_values)
+
+        # Create the Parent Domain using fixture 1
+        parent_domain = self.central_service.create_domain(
+            self.admin_context, domain=objects.Domain(**domain_values)
+        )
+
+        # Get updated subdomain values
+        subdomain = self.central_service.get_domain(self.admin_context,
+                                                    subdomain.id)
+
+        # Ensure all values have been set correctly
+        self.assertIsNotNone(parent_domain['id'])
+        self.assertEqual(subdomain['parent_domain_id'], parent_domain['id'])
+
     def test_create_subdomain_failure(self):
         context = self.get_admin_context()
 
         # Explicitly set a tenant_id
-        context.tenant_id = '1'
+        context.tenant = '1'
 
         # Create the Parent Domain using fixture 0
         parent_domain = self.create_domain(fixture=0, context=context)
@@ -510,7 +580,7 @@ class CentralServiceTest(CentralTestCase):
         context = self.get_admin_context()
 
         # Explicitly use a different tenant_id
-        context.tenant_id = '2'
+        context.tenant = '2'
 
         # Prepare values for the subdomain using fixture 1 as a base
         values = self.get_domain_fixture(1)
@@ -518,7 +588,35 @@ class CentralServiceTest(CentralTestCase):
 
         # Attempt to create the subdomain
         with testtools.ExpectedException(exceptions.Forbidden):
-            self.central_service.create_domain(context, values=values)
+            self.central_service.create_domain(
+                context, domain=objects.Domain(**values))
+
+    def test_create_superdomain_failure(self):
+        context = self.get_admin_context()
+
+        # Explicitly set a tenant_id
+        context.tenant = '1'
+
+        # Set up domain and subdomain values
+        domain_values = self.get_domain_fixture(1)
+        domain_name = domain_values['name']
+
+        subdomain_values = copy.deepcopy(domain_values)
+        subdomain_values['name'] = 'www.%s' % domain_name
+        subdomain_values['context'] = context
+
+        # Create sub domain
+        self.create_domain(**subdomain_values)
+
+        context = self.get_admin_context()
+
+        # Explicitly use a different tenant_id
+        context.tenant = '2'
+
+        # Attempt to create the domain
+        with testtools.ExpectedException(exceptions.Forbidden):
+            self.central_service.create_domain(
+                context, domain=objects.Domain(**domain_values))
 
     def test_create_blacklisted_domain_success(self):
         # Create blacklisted zone using default values
@@ -537,7 +635,7 @@ class CentralServiceTest(CentralTestCase):
 
         # Create a zone that is blacklisted
         domain = self.central_service.create_domain(
-            self.admin_context, values=values)
+            self.admin_context, domain=objects.Domain(**values))
 
         # Ensure all values have been set correctly
         self.assertIsNotNone(domain['id'])
@@ -558,14 +656,14 @@ class CentralServiceTest(CentralTestCase):
         with testtools.ExpectedException(exceptions.InvalidDomainName):
             # Create a domain
             self.central_service.create_domain(
-                self.admin_context, values=values)
+                self.admin_context, domain=objects.Domain(**values))
 
     def _test_create_domain_fail(self, values, exception):
 
         with testtools.ExpectedException(exception):
             # Create an invalid domain
             self.central_service.create_domain(
-                self.admin_context, values=values)
+                self.admin_context, domain=objects.Domain(**values))
 
     def test_create_domain_invalid_tld_fail(self):
         # Create a server
@@ -580,7 +678,8 @@ class CentralServiceTest(CentralTestCase):
         )
 
         # Create a valid domain
-        self.central_service.create_domain(self.admin_context, values=values)
+        self.central_service.create_domain(
+            self.admin_context, domain=objects.Domain(**values))
 
         values = dict(
             name='example.net.',
@@ -591,7 +690,40 @@ class CentralServiceTest(CentralTestCase):
         with testtools.ExpectedException(exceptions.InvalidDomainName):
             # Create an invalid domain
             self.central_service.create_domain(
-                self.admin_context, values=values)
+                self.admin_context, domain=objects.Domain(**values))
+
+    def test_create_domain_invalid_ttl_fail(self):
+        self.policy({'use_low_ttl': '!'})
+        self.config(min_ttl="100",
+                    group='service:central')
+        context = self.get_context()
+
+        values = self.get_domain_fixture(1)
+        values['ttl'] = 0
+
+        # Create a server
+        self.create_server()
+
+        with testtools.ExpectedException(exceptions.InvalidTTL):
+                    self.central_service.create_domain(
+                        context, domain=objects.Domain(**values))
+
+    def test_create_domain_no_min_ttl(self):
+        self.policy({'use_low_ttl': '!'})
+        self.config(min_ttl="None",
+                    group='service:central')
+        values = self.get_domain_fixture(1)
+        values['ttl'] = -100
+
+        # Create a server
+        self.create_server()
+
+        # Create domain with random TTL
+        domain = self.central_service.create_domain(
+            self.admin_context, domain=objects.Domain(**values))
+
+        # Ensure all values have been set correctly
+        self.assertEqual(domain['ttl'], values['ttl'])
 
     def test_find_domains(self):
         # Ensure we have no domains to start with.
@@ -699,71 +831,78 @@ class CentralServiceTest(CentralTestCase):
 
     def test_update_domain(self):
         # Create a domain
-        expected_domain = self.create_domain()
+        domain = self.create_domain(email='info@example.org')
+        original_serial = domain.serial
 
         # Reset the list of notifications
         self.reset_notifications()
 
-        # Update the domain
-        values = dict(email='new@example.com')
+        # Update the object
+        domain.email = 'info@example.net'
 
-        self.central_service.update_domain(
-            self.admin_context, expected_domain['id'], values=values)
+        # Perform the update
+        self.central_service.update_domain(self.admin_context, domain)
 
         # Fetch the domain again
-        domain = self.central_service.get_domain(
-            self.admin_context, expected_domain['id'])
+        domain = self.central_service.get_domain(self.admin_context, domain.id)
 
         # Ensure the domain was updated correctly
-        self.assertTrue(domain['serial'] > expected_domain['serial'])
-        self.assertEqual(domain['email'], 'new@example.com')
+        self.assertTrue(domain.serial > original_serial)
+        self.assertEqual('info@example.net', domain.email)
 
-        # Ensure we sent exactly 1 notification
+        # Ensure we sent exactly 2 notifications
+        # One for the domain update and one to
+        # update the SOA recordset
         notifications = self.get_notifications()
-        self.assertEqual(len(notifications), 1)
+        self.assertEqual(len(notifications), 2)
 
         # Ensure the notification wrapper contains the correct info
-        notification = notifications.pop()
-        self.assertEqual(notification['event_type'], 'dns.domain.update')
-        self.assertEqual(notification['priority'], 'INFO')
-        self.assertIsNotNone(notification['timestamp'])
-        self.assertIsNotNone(notification['message_id'])
+        # The SOA is the first notification, so test the second one
+        ctxt, message, priority, retry = notifications[1]
+
+        self.assertEqual(message['event_type'], 'dns.domain.update')
+        self.assertEqual(message['priority'], 'INFO')
+        self.assertIsNotNone(message['timestamp'])
+        self.assertIsNotNone(message['message_id'])
 
         # Ensure the notification payload contains the correct info
-        payload = notification['payload']
-        self.assertEqual(payload['id'], domain['id'])
-        self.assertEqual(payload['name'], domain['name'])
-        self.assertEqual(payload['tenant_id'], domain['tenant_id'])
+        payload = message['payload']
+        self.assertEqual(domain.id, payload['id'])
+        self.assertEqual(domain.name, payload['name'])
+        self.assertEqual(domain.tenant_id, payload['tenant_id'])
 
     def test_update_domain_without_incrementing_serial(self):
         # Create a domain
-        expected_domain = self.create_domain()
+        domain = self.create_domain(email='info@example.org')
+        original_serial = domain.serial
 
-        # Update the domain
-        values = dict(email='new@example.com')
+        # Reset the list of notifications
+        self.reset_notifications()
 
+        # Update the object
+        domain.email = 'info@example.net'
+
+        # Perform the update
         self.central_service.update_domain(
-            self.admin_context, expected_domain['id'], values=values,
-            increment_serial=False)
+            self.admin_context, domain, increment_serial=False)
 
         # Fetch the domain again
-        domain = self.central_service.get_domain(
-            self.admin_context, expected_domain['id'])
+        domain = self.central_service.get_domain(self.admin_context, domain.id)
 
         # Ensure the domain was updated correctly
-        self.assertEqual(domain['serial'], expected_domain['serial'])
-        self.assertEqual(domain['email'], 'new@example.com')
+        self.assertEqual(original_serial, domain.serial)
+        self.assertEqual('info@example.net', domain.email)
 
     def test_update_domain_name_fail(self):
         # Create a domain
-        expected_domain = self.create_domain()
+        domain = self.create_domain(name='example.org.')
 
-        # Update the domain
+        # Update the Object
+        domain.name = 'example.net.'
+
+        # Perform the update
         with testtools.ExpectedException(exceptions.BadRequest):
-            values = dict(name='renamed-domain.com.')
-
-            self.central_service.update_domain(
-                self.admin_context, expected_domain['id'], values=values)
+            self.central_service.update_domain(self.admin_context, domain)
 
     def test_delete_domain(self):
         # Create a domain
@@ -784,14 +923,14 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(len(notifications), 1)
 
         # Ensure the notification wrapper contains the correct info
-        notification = notifications.pop()
-        self.assertEqual(notification['event_type'], 'dns.domain.delete')
-        self.assertEqual(notification['priority'], 'INFO')
-        self.assertIsNotNone(notification['timestamp'])
-        self.assertIsNotNone(notification['message_id'])
+        ctxt, message, priority, retry = notifications.pop()
+        self.assertEqual(message['event_type'], 'dns.domain.delete')
+        self.assertEqual(message['priority'], 'INFO')
+        self.assertIsNotNone(message['timestamp'])
+        self.assertIsNotNone(message['message_id'])
 
         # Ensure the notification payload contains the correct info
-        payload = notification['payload']
+        payload = message['payload']
         self.assertEqual(payload['id'], domain['id'])
         self.assertEqual(payload['name'], domain['name'])
         self.assertEqual(payload['tenant_id'], domain['tenant_id'])
@@ -847,20 +986,59 @@ class CentralServiceTest(CentralTestCase):
     # RecordSet Tests
     def test_create_recordset(self):
         domain = self.create_domain()
+        original_serial = domain.serial
 
-        values = dict(
-            name='www.%s' % domain['name'],
-            type='A'
-        )
+        # Create the Object
+        recordset = objects.RecordSet(name='www.%s' % domain.name, type='A')
 
-        # Create a recordset
+        # Persist the Object
         recordset = self.central_service.create_recordset(
-            self.admin_context, domain['id'], values=values)
+            self.admin_context, domain.id, recordset=recordset)
+
+        # Get the zone again to check if serial increased
+        updated_domain = self.central_service.get_domain(self.admin_context,
+                                                         domain.id)
+        new_serial = updated_domain.serial
 
         # Ensure all values have been set correctly
-        self.assertIsNotNone(recordset['id'])
-        self.assertEqual(recordset['name'], values['name'])
-        self.assertEqual(recordset['type'], values['type'])
+        self.assertIsNotNone(recordset.id)
+        self.assertEqual('www.%s' % domain.name, recordset.name)
+        self.assertEqual('A', recordset.type)
+
+        self.assertIsNotNone(recordset.records)
+        # The serial number does not get updated is there are no records
+        # in the recordset
+        self.assertEqual(new_serial, original_serial)
+
+    def test_create_recordset_with_records(self):
+        domain = self.create_domain()
+        original_serial = domain.serial
+
+        # Create the Object
+        recordset = objects.RecordSet(
+            name='www.%s' % domain.name,
+            type='A',
+            records=objects.RecordList(objects=[
+                objects.Record(data='192.3.3.15'),
+                objects.Record(data='192.3.3.16'),
+            ])
+        )
+
+        # Persist the Object
+        recordset = self.central_service.create_recordset(
+            self.admin_context, domain.id, recordset=recordset)
+
+        # Get updated serial number
+        updated_zone = self.central_service.get_domain(self.admin_context,
+                                                       domain.id)
+        new_serial = updated_zone.serial
+
+        # Ensure all values have been set correctly
+        self.assertIsNotNone(recordset.records)
+        self.assertEqual(2, len(recordset.records))
+        self.assertIsNotNone(recordset.records[0].id)
+        self.assertIsNotNone(recordset.records[1].id)
+        self.assertThat(new_serial, GreaterThan(original_serial))
 
     # def test_create_recordset_over_quota(self):
     #     self.config(quota_domain_recordsets=1)
@@ -883,7 +1061,9 @@ class CentralServiceTest(CentralTestCase):
         # Attempt to create a CNAME record at the apex
         with testtools.ExpectedException(exceptions.InvalidRecordSetLocation):
             self.central_service.create_recordset(
-                self.admin_context, domain['id'], values=values)
+                self.admin_context,
+                domain['id'],
+                recordset=objects.RecordSet(**values))
 
     def test_create_invalid_recordset_location_cname_sharing(self):
         domain = self.create_domain()
@@ -897,7 +1077,9 @@ class CentralServiceTest(CentralTestCase):
         # Attempt to create a CNAME record alongside another record
         with testtools.ExpectedException(exceptions.InvalidRecordSetLocation):
             self.central_service.create_recordset(
-                self.admin_context, domain['id'], values=values)
+                self.admin_context,
+                domain['id'],
+                recordset=objects.RecordSet(**values))
 
     def test_create_invalid_recordset_location_wrong_domain(self):
         domain = self.create_domain()
@@ -911,7 +1093,46 @@ class CentralServiceTest(CentralTestCase):
         # Attempt to create a record in the incorrect domain
         with testtools.ExpectedException(exceptions.InvalidRecordSetLocation):
             self.central_service.create_recordset(
-                self.admin_context, domain['id'], values=values)
+                self.admin_context,
+                domain['id'],
+                recordset=objects.RecordSet(**values))
+
+    def test_create_invalid_recordset_ttl(self):
+        self.policy({'use_low_ttl': '!'})
+        self.config(min_ttl="100",
+                    group='service:central')
+        domain = self.create_domain()
+
+        values = dict(
+            name='www.%s' % domain['name'],
+            type='A',
+            ttl=10
+        )
+
+        # Attempt to create a A record under the TTL
+        with testtools.ExpectedException(exceptions.InvalidTTL):
+            self.central_service.create_recordset(
+                self.admin_context,
+                domain['id'],
+                recordset=objects.RecordSet(**values))
+
+    def test_create_recordset_no_min_ttl(self):
+        self.policy({'use_low_ttl': '!'})
+        self.config(min_ttl="None",
+                    group='service:central')
+        domain = self.create_domain()
+
+        values = dict(
+            name='www.%s' % domain['name'],
+            type='A',
+            ttl=10
+        )
+
+        recordset = self.central_service.create_recordset(
+            self.admin_context,
+            domain['id'],
+            recordset=objects.RecordSet(**values))
+        self.assertEqual(recordset['ttl'], values['ttl'])
 
     def test_get_recordset(self):
         domain = self.create_domain()
@@ -926,6 +1147,22 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(recordset['id'], expected['id'])
         self.assertEqual(recordset['name'], expected['name'])
         self.assertEqual(recordset['type'], expected['type'])
+
+    def test_get_recordset_with_records(self):
+        domain = self.create_domain()
+
+        # Create a recordset and two records
+        recordset = self.create_recordset(domain)
+        self.create_record(domain, recordset)
+        self.create_record(domain, recordset, fixture=1)
+
+        # Retrieve it, and ensure it's the same
+        recordset = self.central_service.get_recordset(
+            self.admin_context, domain.id, recordset.id)
+
+        self.assertEqual(2, len(recordset.records))
+        self.assertIsNotNone(recordset.records[0].id)
+        self.assertIsNotNone(recordset.records[1].id)
 
     def test_get_recordset_incorrect_domain_id(self):
         domain = self.create_domain()
@@ -944,11 +1181,12 @@ class CentralServiceTest(CentralTestCase):
 
         criterion = {'domain_id': domain['id']}
 
-        # Ensure we have no recordsets to start with.
+        # Ensure we have two recordsets to start with as SOA & NS
+        # recordsets are created automatically
         recordsets = self.central_service.find_recordsets(
             self.admin_context, criterion)
 
-        self.assertEqual(len(recordsets), 0)
+        self.assertEqual(len(recordsets), 2)
 
         # Create a single recordset (using default values)
         self.create_recordset(domain, name='www.%s' % domain['name'])
@@ -957,8 +1195,8 @@ class CentralServiceTest(CentralTestCase):
         recordsets = self.central_service.find_recordsets(
             self.admin_context, criterion)
 
-        self.assertEqual(len(recordsets), 1)
-        self.assertEqual(recordsets[0]['name'], 'www.%s' % domain['name'])
+        self.assertEqual(len(recordsets), 3)
+        self.assertEqual(recordsets[2]['name'], 'www.%s' % domain['name'])
 
         # Create a second recordset
         self.create_recordset(domain, name='mail.%s' % domain['name'])
@@ -967,9 +1205,9 @@ class CentralServiceTest(CentralTestCase):
         recordsets = self.central_service.find_recordsets(
             self.admin_context, criterion)
 
-        self.assertEqual(len(recordsets), 2)
-        self.assertEqual(recordsets[0]['name'], 'www.%s' % domain['name'])
-        self.assertEqual(recordsets[1]['name'], 'mail.%s' % domain['name'])
+        self.assertEqual(len(recordsets), 4)
+        self.assertEqual(recordsets[2]['name'], 'www.%s' % domain['name'])
+        self.assertEqual(recordsets[3]['name'], 'mail.%s' % domain['name'])
 
     def test_find_recordset(self):
         domain = self.create_domain()
@@ -986,71 +1224,191 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(recordset['id'], expected['id'])
         self.assertEqual(recordset['name'], expected['name'])
 
-    def test_update_recordset(self):
+    def test_find_recordset_with_records(self):
         domain = self.create_domain()
 
         # Create a recordset
-        expected = self.create_recordset(domain)
+        recordset = self.create_recordset(domain)
+        self.create_record(domain, recordset)
+        self.create_record(domain, recordset, fixture=1)
+
+        # Retrieve it, and ensure it's the same
+        criterion = {'domain_id': domain.id, 'name': recordset.name}
+
+        recordset = self.central_service.find_recordset(
+            self.admin_context, criterion)
+
+        self.assertEqual(2, len(recordset.records))
+        self.assertIsNotNone(recordset.records[0].id)
+        self.assertIsNotNone(recordset.records[1].id)
+
+    def test_update_recordset(self):
+        # Create a domain
+        domain = self.create_domain()
+        original_serial = domain.serial
+
+        # Create a recordset
+        recordset = self.create_recordset(domain)
 
         # Update the recordset
-        values = dict(ttl=1800)
-        self.central_service.update_recordset(
-            self.admin_context, domain['id'], expected['id'], values=values)
+        recordset.ttl = 1800
 
-        # Fetch the recordset again
+        # Perform the update
+        self.central_service.update_recordset(self.admin_context, recordset)
+
+        # Get domain again to verify that serial number was updated
+        updated_domain = self.central_service.get_domain(self.admin_context,
+                                                         domain.id)
+        new_serial = updated_domain.serial
+
+        # Fetch the resource again
         recordset = self.central_service.get_recordset(
-            self.admin_context, domain['id'], expected['id'])
+            self.admin_context, recordset.domain_id, recordset.id)
 
-        # Ensure the record was updated correctly
-        self.assertEqual(recordset['ttl'], 1800)
+        # Ensure the new value took
+        self.assertEqual(recordset.ttl, 1800)
+        self.assertThat(new_serial, GreaterThan(original_serial))
+
+    def test_update_recordset_with_record_create(self):
+        # Create a domain
+        domain = self.create_domain()
+
+        # Create a recordset
+        recordset = self.create_recordset(domain)
+
+        # Append two new Records
+        recordset.records.append(objects.Record(data='192.0.2.1'))
+        recordset.records.append(objects.Record(data='192.0.2.2'))
+
+        # Perform the update
+        self.central_service.update_recordset(self.admin_context, recordset)
+
+        # Fetch the RecordSet again
+        recordset = self.central_service.get_recordset(
+            self.admin_context, domain.id, recordset.id)
+
+        # Ensure two Records are attached to the RecordSet correctly
+        self.assertEqual(2, len(recordset.records))
+        self.assertIsNotNone(recordset.records[0].id)
+        self.assertIsNotNone(recordset.records[1].id)
+
+    def test_update_recordset_with_record_delete(self):
+        # Create a domain
+        domain = self.create_domain()
+        original_serial = domain.serial
+
+        # Create a recordset and two records
+        recordset = self.create_recordset(domain)
+        self.create_record(domain, recordset)
+        self.create_record(domain, recordset, fixture=1)
+
+        # Append two new Records
+        recordset.records.append(objects.Record(data='192.0.2.1'))
+        recordset.records.append(objects.Record(data='192.0.2.2'))
+
+        # Remove one of the Records
+        recordset.records.pop(0)
+
+        # Perform the update
+        self.central_service.update_recordset(self.admin_context, recordset)
+
+        # Fetch the RecordSet again
+        recordset = self.central_service.get_recordset(
+            self.admin_context, domain.id, recordset.id)
+
+        # Fetch the Domain again
+        updated_domain = self.central_service.get_domain(self.admin_context,
+                                                         domain.id)
+        new_serial = updated_domain.serial
+
+        # Ensure two Records are attached to the RecordSet correctly
+        self.assertEqual(1, len(recordset.records))
+        self.assertIsNotNone(recordset.records[0].id)
+        self.assertThat(new_serial, GreaterThan(original_serial))
+
+    def test_update_recordset_with_record_update(self):
+        # Create a domain
+        domain = self.create_domain()
+
+        # Create a recordset and two records
+        recordset = self.create_recordset(domain, 'A')
+        self.create_record(domain, recordset)
+        self.create_record(domain, recordset, fixture=1)
+
+        # Fetch the RecordSet again
+        recordset = self.central_service.get_recordset(
+            self.admin_context, domain.id, recordset.id)
+
+        # Update one of the Records
+        updated_record_id = recordset.records[0].id
+        recordset.records[0].data = '192.0.2.255'
+
+        # Perform the update
+        self.central_service.update_recordset(self.admin_context, recordset)
+
+        # Fetch the RecordSet again
+        recordset = self.central_service.get_recordset(
+            self.admin_context, domain.id, recordset.id)
+
+        # Ensure the Record has been updated
+        for record in recordset.records:
+            if record.id != updated_record_id:
+                continue
+
+            self.assertEqual('192.0.2.255', record.data)
+            return  # Exits this test early as we suceeded
+
+        raise Exception('Updated record not found')
 
     def test_update_recordset_without_incrementing_serial(self):
         domain = self.create_domain()
 
         # Create a recordset
-        expected = self.create_recordset(domain)
+        recordset = self.create_recordset(domain)
 
         # Fetch the domain so we have the latest serial number
         domain_before = self.central_service.get_domain(
-            self.admin_context, domain['id'])
+            self.admin_context, domain.id)
 
         # Update the recordset
-        values = dict(ttl=1800)
-        self.central_service.update_recordset(
-            self.admin_context, domain['id'], expected['id'], values,
-            increment_serial=False)
+        recordset.ttl = 1800
 
-        # Fetch the recordset again
+        # Perform the update
+        self.central_service.update_recordset(
+            self.admin_context, recordset, increment_serial=False)
+
+        # Fetch the resource again
         recordset = self.central_service.get_recordset(
-            self.admin_context, domain['id'], expected['id'])
+            self.admin_context, recordset.domain_id, recordset.id)
 
         # Ensure the recordset was updated correctly
-        self.assertEqual(recordset['ttl'], 1800)
+        self.assertEqual(recordset.ttl, 1800)
 
         # Ensure the domains serial number was not updated
         domain_after = self.central_service.get_domain(
-            self.admin_context, domain['id'])
+            self.admin_context, domain.id)
 
-        self.assertEqual(domain_before['serial'], domain_after['serial'])
+        self.assertEqual(domain_before.serial, domain_after.serial)
 
-    def test_update_recordset_incorrect_domain_id(self):
+    def test_update_recordset_immutable_domain_id(self):
         domain = self.create_domain()
         other_domain = self.create_domain(fixture=1)
 
         # Create a recordset
-        expected = self.create_recordset(domain)
+        recordset = self.create_recordset(domain)
 
         # Update the recordset
-        values = dict(ttl=1800)
+        recordset.ttl = 1800
+        recordset.domain_id = other_domain.id
 
-        # Ensure we get a 404 if we use the incorrect domain_id
-        with testtools.ExpectedException(exceptions.RecordSetNotFound):
+        # Ensure we get a BadRequest if we change the domain_id
+        with testtools.ExpectedException(exceptions.BadRequest):
             self.central_service.update_recordset(
-                self.admin_context, other_domain['id'], expected['id'],
-                values=values)
+                self.admin_context, recordset)
 
     def test_delete_recordset(self):
         domain = self.create_domain()
+        original_serial = domain.serial
 
         # Create a recordset
         recordset = self.create_recordset(domain)
@@ -1063,6 +1421,12 @@ class CentralServiceTest(CentralTestCase):
         with testtools.ExpectedException(exceptions.RecordSetNotFound):
             self.central_service.get_recordset(
                 self.admin_context, domain['id'], recordset['id'])
+
+        # Fetch the domain again to verify serial number increased
+        updated_domain = self.central_service.get_domain(self.admin_context,
+                                                         domain.id)
+        new_serial = updated_domain.serial
+        self.assertThat(new_serial, GreaterThan(original_serial))
 
     def test_delete_recordset_without_incrementing_serial(self):
         domain = self.create_domain()
@@ -1113,9 +1477,9 @@ class CentralServiceTest(CentralTestCase):
         # Create a recordset
         self.create_recordset(domain)
 
-        # We should have 1 recordset now
+        # We should have 1 recordset now, plus SOA & NS recordsets
         recordsets = self.central_service.count_recordsets(self.admin_context)
-        self.assertEqual(recordsets, 1)
+        self.assertEqual(recordsets, 3)
 
     def test_count_recordsets_policy_check(self):
         # Set the policy to reject the authz
@@ -1135,7 +1499,10 @@ class CentralServiceTest(CentralTestCase):
 
         # Create a record
         record = self.central_service.create_record(
-            self.admin_context, domain['id'], recordset['id'], values=values)
+            self.admin_context,
+            domain['id'],
+            recordset['id'],
+            record=objects.Record(**values))
 
         # Ensure all values have been set correctly
         self.assertIsNotNone(record['id'])
@@ -1143,8 +1510,9 @@ class CentralServiceTest(CentralTestCase):
         self.assertIn('status', record)
 
     def test_create_record_over_quota(self):
-        self.config(quota_domain_records=1)
+        self.config(quota_domain_records=3)
 
+        # Creating the domain automatically creates SOA & NS records
         domain = self.create_domain()
         recordset = self.create_recordset(domain)
 
@@ -1163,7 +1531,10 @@ class CentralServiceTest(CentralTestCase):
 
         # Create a record
         self.central_service.create_record(
-            self.admin_context, domain['id'], recordset['id'], values=values,
+            self.admin_context,
+            domain['id'],
+            recordset['id'],
+            record=objects.Record(**values),
             increment_serial=False)
 
         # Ensure the domains serial number was not updated
@@ -1277,85 +1648,83 @@ class CentralServiceTest(CentralTestCase):
         recordset = self.create_recordset(domain, 'A')
 
         # Create a record
-        expected = self.create_record(domain, recordset)
+        record = self.create_record(domain, recordset)
 
-        # Update the record
-        values = dict(data='127.0.0.2')
-        self.central_service.update_record(
-            self.admin_context, domain['id'], recordset['id'], expected['id'],
-            values=values)
+        # Update the Object
+        record.data = '192.0.2.255'
 
-        # Fetch the record again
+        # Perform the update
+        self.central_service.update_record(self.admin_context, record)
+
+        # Fetch the resource again
         record = self.central_service.get_record(
-            self.admin_context, domain['id'], recordset['id'], expected['id'])
+            self.admin_context, record.domain_id, record.recordset_id,
+            record.id)
 
-        # Ensure the record was updated correctly
-        self.assertEqual(record['data'], '127.0.0.2')
+        # Ensure the new value took
+        self.assertEqual('192.0.2.255', record.data)
 
     def test_update_record_without_incrementing_serial(self):
         domain = self.create_domain()
         recordset = self.create_recordset(domain, 'A')
 
         # Create a record
-        expected = self.create_record(domain, recordset)
+        record = self.create_record(domain, recordset)
 
         # Fetch the domain so we have the latest serial number
         domain_before = self.central_service.get_domain(
-            self.admin_context, domain['id'])
+            self.admin_context, domain.id)
 
-        # Update the record
-        values = dict(data='127.0.0.2')
+        # Update the Object
+        record.data = '192.0.2.255'
 
+        # Perform the update
         self.central_service.update_record(
-            self.admin_context, domain['id'], recordset['id'], expected['id'],
-            values, increment_serial=False)
+            self.admin_context, record, increment_serial=False)
 
-        # Fetch the record again
+        # Fetch the resource again
         record = self.central_service.get_record(
-            self.admin_context, domain['id'], recordset['id'], expected['id'])
+            self.admin_context, record.domain_id, record.recordset_id,
+            record.id)
 
-        # Ensure the record was updated correctly
-        self.assertEqual(record['data'], '127.0.0.2')
+        # Ensure the new value took
+        self.assertEqual('192.0.2.255', record.data)
 
         # Ensure the domains serial number was not updated
         domain_after = self.central_service.get_domain(
-            self.admin_context, domain['id'])
+            self.admin_context, domain.id)
 
-        self.assertEqual(domain_before['serial'], domain_after['serial'])
+        self.assertEqual(domain_before.serial, domain_after.serial)
 
-    def test_update_record_incorrect_domain_id(self):
+    def test_update_record_immutable_domain_id(self):
         domain = self.create_domain()
-        recordset = self.create_recordset(domain, 'A')
+        recordset = self.create_recordset(domain)
         other_domain = self.create_domain(fixture=1)
 
         # Create a record
-        expected = self.create_record(domain, recordset)
+        record = self.create_record(domain, recordset)
 
         # Update the record
-        values = dict(data='127.0.0.2')
+        record.domain_id = other_domain.id
 
-        # Ensure we get a 404 if we use the incorrect domain_id
-        with testtools.ExpectedException(exceptions.RecordNotFound):
-            self.central_service.update_record(
-                self.admin_context, other_domain['id'], recordset['id'],
-                expected['id'], values=values)
+        # Ensure we get a BadRequest if we change the domain_id
+        with testtools.ExpectedException(exceptions.BadRequest):
+            self.central_service.update_record(self.admin_context, record)
 
-    def test_update_record_incorrect_recordset_id(self):
+    def test_update_record_immutable_recordset_id(self):
         domain = self.create_domain()
-        recordset = self.create_recordset(domain, 'A')
-        other_recordset = self.create_recordset(domain, 'A', fixture=1)
+        recordset = self.create_recordset(domain)
+        other_recordset = self.create_recordset(domain, fixture=1)
 
         # Create a record
-        expected = self.create_record(domain, recordset)
+        record = self.create_record(domain, recordset)
 
         # Update the record
-        values = dict(data='127.0.0.2')
+        record.recordset_id = other_recordset.id
 
-        # Ensure we get a 404 if we use the incorrect domain_id
-        with testtools.ExpectedException(exceptions.RecordNotFound):
-            self.central_service.update_record(
-                self.admin_context, domain['id'], other_recordset['id'],
-                expected['id'], values=values)
+        # Ensure we get a BadRequest if we change the recordset_id
+        with testtools.ExpectedException(exceptions.BadRequest):
+            self.central_service.update_record(self.admin_context, record)
 
     def test_delete_record(self):
         domain = self.create_domain()
@@ -1442,9 +1811,9 @@ class CentralServiceTest(CentralTestCase):
         # Create a record
         self.create_record(domain, recordset)
 
-        # we should have 1 record now
+        # we should have 1 record now, plus SOA & NS records
         records = self.central_service.count_records(self.admin_context)
-        self.assertEqual(records, 1)
+        self.assertEqual(records, 3)
 
     def test_count_records_policy_check(self):
         # Set the policy to reject the authz
@@ -1458,7 +1827,7 @@ class CentralServiceTest(CentralTestCase):
 
         context = self.get_context(tenant='a')
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
 
         fip_ptr = self.central_service.get_floatingip(
             context, fip['region'], fip['id'])
@@ -1475,7 +1844,7 @@ class CentralServiceTest(CentralTestCase):
 
         fixture = self.get_ptr_fixture()
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
 
         expected = self.central_service.update_floatingip(
             context, fip['region'], fip['id'], fixture)
@@ -1489,7 +1858,7 @@ class CentralServiceTest(CentralTestCase):
     def test_get_floatingip_not_allocated(self):
         context = self.get_context(tenant='a')
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
         self.network_api.fake.deallocate_floatingip(fip['id'])
 
         with testtools.ExpectedException(exceptions.NotFound):
@@ -1508,7 +1877,7 @@ class CentralServiceTest(CentralTestCase):
         fixture = self.get_ptr_fixture()
 
         # First allocate and create a FIP as tenant a
-        fip = self.network_api.fake.allocate_floatingip(context_a.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context_a.tenant)
 
         self.central_service.update_floatingip(
             context_a, fip['region'], fip['id'], fixture)
@@ -1522,12 +1891,12 @@ class CentralServiceTest(CentralTestCase):
         # Ensure that the record is still in DB (No invalidation)
         criterion = {
             'managed_resource_id': fip['id'],
-            'managed_tenant_id': context_a.tenant_id}
+            'managed_tenant_id': context_a.tenant}
         self.central_service.find_record(elevated_a, criterion)
 
         # Now give the fip id to tenant 'b' and see that it get's deleted
         self.network_api.fake.allocate_floatingip(
-            context_b.tenant_id, fip['id'])
+            context_b.tenant, fip['id'])
 
         # There should be a fip returned with ptrdname of None
         fip_ptr = self.central_service.get_floatingip(
@@ -1549,7 +1918,7 @@ class CentralServiceTest(CentralTestCase):
     def test_list_floatingips_no_record(self):
         context = self.get_context(tenant='a')
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
 
         fips = self.central_service.list_floatingips(context)
 
@@ -1567,7 +1936,7 @@ class CentralServiceTest(CentralTestCase):
 
         fixture = self.get_ptr_fixture()
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
 
         fip_ptr = self.central_service.update_floatingip(
             context, fip['region'], fip['id'], fixture)
@@ -1593,7 +1962,7 @@ class CentralServiceTest(CentralTestCase):
         fixture = self.get_ptr_fixture()
 
         # First allocate and create a FIP as tenant a
-        fip = self.network_api.fake.allocate_floatingip(context_a.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context_a.tenant)
 
         self.central_service.update_floatingip(
             context_a, fip['region'], fip['id'], fixture)
@@ -1606,12 +1975,12 @@ class CentralServiceTest(CentralTestCase):
         # Ensure that the record is still in DB (No invalidation)
         criterion = {
             'managed_resource_id': fip['id'],
-            'managed_tenant_id': context_a.tenant_id}
+            'managed_tenant_id': context_a.tenant}
         self.central_service.find_record(elevated_a, criterion)
 
         # Now give the fip id to tenant 'b' and see that it get's deleted
         self.network_api.fake.allocate_floatingip(
-            context_b.tenant_id, fip['id'])
+            context_b.tenant, fip['id'])
 
         # There should be a fip returned with ptrdname of None
         fips = self.central_service.list_floatingips(context_b)
@@ -1630,7 +1999,7 @@ class CentralServiceTest(CentralTestCase):
 
         fixture = self.get_ptr_fixture()
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
 
         fip_ptr = self.central_service.update_floatingip(
             context, fip['region'], fip['id'], fixture)
@@ -1653,7 +2022,7 @@ class CentralServiceTest(CentralTestCase):
 
         # Test that re-setting as tenant a an already set floatingip leaves
         # only 1 record
-        fip = self.network_api.fake.allocate_floatingip(context_a.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context_a.tenant)
 
         self.central_service.update_floatingip(
             context_a, fip['region'], fip['id'], fixture)
@@ -1672,7 +2041,7 @@ class CentralServiceTest(CentralTestCase):
         # Now test that tenant b allocating the same fip and setting a ptr
         # deletes any records
         fip = self.network_api.fake.allocate_floatingip(
-            context_b.tenant_id, fip['id'])
+            context_b.tenant, fip['id'])
 
         self.central_service.update_floatingip(
             context_b, fip['region'], fip['id'], fixture)
@@ -1686,7 +2055,7 @@ class CentralServiceTest(CentralTestCase):
         context = self.get_context(tenant='a')
         fixture = self.get_ptr_fixture()
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
         self.network_api.fake.deallocate_floatingip(fip['id'])
 
         # If one attempts to assign a de-allocated FIP or not-owned it should
@@ -1702,7 +2071,7 @@ class CentralServiceTest(CentralTestCase):
 
         fixture = self.get_ptr_fixture()
 
-        fip = self.network_api.fake.allocate_floatingip(context.tenant_id)
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
 
         fip_ptr = self.central_service.update_floatingip(
             context, fip['region'], fip['id'], fixture)
@@ -1773,7 +2142,7 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(blacklists[1]['pattern'], values2['pattern'])
 
     def test_find_blacklist(self):
-        #Create a blacklisted zone
+        # Create a blacklisted zone
         expected = self.create_blacklist(fixture=0)
 
         # Retrieve the newly created blacklist
@@ -1785,23 +2154,20 @@ class CentralServiceTest(CentralTestCase):
 
     def test_update_blacklist(self):
         # Create a blacklisted zone
-        expected = self.create_blacklist(fixture=0)
-        new_comment = "This is a different comment."
+        blacklist = self.create_blacklist(fixture=0)
 
-        # Update the blacklist
-        updated_values = dict(
-            description=new_comment
-        )
-        self.central_service.update_blacklist(self.admin_context,
-                                              expected['id'],
-                                              updated_values)
+        # Update the Object
+        blacklist.description = "New Comment"
 
-        # Fetch the blacklist
+        # Perform the update
+        self.central_service.update_blacklist(self.admin_context, blacklist)
+
+        # Fetch the resource again
         blacklist = self.central_service.get_blacklist(self.admin_context,
-                                                       expected['id'])
+                                                       blacklist.id)
 
         # Verify that the record was updated correctly
-        self.assertEqual(blacklist['description'], new_comment)
+        self.assertEqual("New Comment", blacklist.description)
 
     def test_delete_blacklist(self):
         # Create a blacklisted zone
@@ -1815,3 +2181,132 @@ class CentralServiceTest(CentralTestCase):
         with testtools.ExpectedException(exceptions.BlacklistNotFound):
             self.central_service.get_blacklist(self.admin_context,
                                                blacklist['id'])
+
+    # SOA recordset tests
+    def test_create_SOA(self):
+        # A SOA record should automatically be created each time
+        # a zone is created
+        # Create a zone
+        zone = self.create_domain(name='example3.org.')
+
+        # Retrieve SOA
+        criterion = {'domain_id': zone['id'], 'type': 'SOA'}
+
+        soa = self.central_service.find_recordset(self.admin_context,
+                                                  criterion)
+
+        # Split out the various soa values
+        soa_record_values = soa.records[0].data.split()
+
+        zone_email = zone['email'].replace("@", ".")
+        zone_email += (".")
+
+        # Ensure all values have been set correctly
+        self.assertIsNotNone(soa.id)
+        self.assertEqual('SOA', soa.type)
+        self.assertIsNotNone(soa.records)
+        self.assertEqual(int(soa_record_values[2]), zone['serial'])
+        self.assertEqual(soa_record_values[1], zone_email)
+        self.assertEqual(int(soa_record_values[3]), zone['refresh'])
+        self.assertEqual(int(soa_record_values[4]), zone['retry'])
+        self.assertEqual(int(soa_record_values[5]), zone['expire'])
+        self.assertEqual(int(soa_record_values[6]), zone['minimum'])
+
+    def test_update_soa(self):
+        # Anytime the zone's serial number is incremented
+        # the SOA recordset should automatically be updated
+        zone = self.create_domain(email='info@example.org')
+
+        # Update the object
+        zone.email = 'info@example.net'
+
+        # Perform the update
+        self.central_service.update_domain(self.admin_context, zone)
+
+        # Fetch the domain again
+        updated_zone = self.central_service.get_domain(self.admin_context,
+                                                       zone.id)
+
+        # Retrieve SOA
+        criterion = {'domain_id': zone['id'], 'type': 'SOA'}
+
+        soa = self.central_service.find_recordset(self.admin_context,
+                                                  criterion)
+
+        # Split out the various soa values
+        soa_record_values = soa.records[0].data.split()
+
+        self.assertEqual(int(soa_record_values[2]), updated_zone['serial'])
+
+    # NS Recordset tests
+    def test_create_ns(self):
+        # Anytime a zone is created, an NS recordset should be
+        # automatically be created, with a record for each server
+
+        # Create a server
+        server = self.create_server(name='ns1.example.org.')
+
+        # Create a zone
+        zone = self.create_domain(name='example3.org.')
+
+        # Make sure an NS recordset was created
+        ns = self.central_service.find_recordset(self.admin_context,
+                                 criterion={'domain_id': zone['id'],
+                                            'type': "NS"})
+
+        # Ensure all values have been set correctly
+        self.assertIsNotNone(ns.id)
+        self.assertEqual('NS', ns.type)
+        self.assertIsNotNone(ns.records)
+        self.assertEqual(ns.records[0].data, server.name)
+
+    def test_update_ns(self):
+        # Anytime a server is created, the NS recordset for each zone
+        # should be automatically updated to contain the new server
+
+        # Create a server
+        server1 = self.create_server(name='ns1.example.net.')
+
+        servers = self.central_service.find_servers(self.admin_context)
+        if len(servers) == 0:
+            LOG.debug("There are no servers")
+        for s in servers:
+            LOG.debug("Server name is %s" % s.name)
+
+        # Create a zone
+        zone = self.create_domain(name='example3.net.')
+        original_serial = zone.serial
+
+        # Make sure an NS recordset was created
+        ns_rs = self.central_service.find_recordset(
+            self.admin_context,
+            criterion={'domain_id': zone['id'], 'type': "NS"})
+
+        records = ns_rs.records
+        for r in records:
+            LOG.debug("Record data is %s" % r.data)
+
+        # Ensure all values have been set correctly
+        self.assertIsNotNone(ns_rs.id)
+        self.assertEqual('NS', ns_rs.type)
+        self.assertIsNotNone(ns_rs.records)
+        self.assertEqual(ns_rs.records[0].data, server1.name)
+
+        # Create another server
+        server2 = self.create_server(name='ns2.example.net.')
+
+        # Get the NS recordset again
+        ns_rs = self.central_service.find_recordset(
+            self.admin_context,
+            criterion={'domain_id': zone['id'], 'type': "NS"})
+
+        # Get zone again to check serial number
+        updated_zone = self.central_service.get_domain(self.admin_context,
+                                                       zone.id)
+
+        new_serial = updated_zone.serial
+
+        # Ensure another record was added to the recordset
+        self.assertEqual(ns_rs.records[0].data, server1.name)
+        self.assertEqual(ns_rs.records[2].data, server2.name)
+        self.assertThat(new_serial, GreaterThan(original_serial))

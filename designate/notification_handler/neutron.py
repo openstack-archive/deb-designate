@@ -14,8 +14,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+
 from designate.openstack.common import log as logging
 from designate.notification_handler.base import BaseAddressHandler
+
 
 LOG = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ cfg.CONF.register_group(cfg.OptGroup(
 ))
 
 cfg.CONF.register_opts([
-    cfg.ListOpt('notification-topics', default=['monitor']),
+    cfg.ListOpt('notification-topics', default=['notifications']),
     cfg.StrOpt('control-exchange', default='neutron'),
     cfg.StrOpt('domain-id', default=None),
     cfg.StrOpt('format', default=None)
@@ -33,14 +35,13 @@ cfg.CONF.register_opts([
 
 
 class NeutronFloatingHandler(BaseAddressHandler):
-    """ Handler for Neutron's notifications """
+    """Handler for Neutron's notifications"""
     __plugin_name__ = 'neutron_floatingip'
 
     def get_exchange_topics(self):
         exchange = cfg.CONF[self.name].control_exchange
 
-        topics = [topic + ".info"
-                  for topic in cfg.CONF[self.name].notification_topics]
+        topics = [topic for topic in cfg.CONF[self.name].notification_topics]
 
         return (exchange, topics)
 
@@ -50,9 +51,9 @@ class NeutronFloatingHandler(BaseAddressHandler):
             'floatingip.delete.start'
         ]
 
-    def process_notification(self, event_type, payload):
-        LOG.debug('%s received notification - %s',
-                  self.get_canonical_name(), event_type)
+    def process_notification(self, context, event_type, payload):
+        LOG.debug('%s received notification - %s' %
+                  (self.get_canonical_name(), event_type))
 
         # FIXME: Neutron doesn't send ipv in the payload, should maybe
         # determine this?

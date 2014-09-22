@@ -21,10 +21,12 @@ from werkzeug import wrappers
 from werkzeug.routing import BaseConverter
 from werkzeug.routing import ValidationError
 from oslo.config import cfg
+
 from designate.openstack.common import log as logging
 from designate.openstack.common import jsonutils
 from designate import exceptions
 from designate import utils
+
 
 LOG = logging.getLogger(__name__)
 
@@ -80,9 +82,6 @@ def factory(global_config, **local_conf):
     # Install custom converters (URL param varidators)
     app.url_map.converters['uuid'] = UUIDConverter
 
-    # disable strict slashes.  This allows trailing slashes in the URLS.
-    app.url_map.strict_slashes = False
-
     # Ensure all error responses are JSON
     def _json_error(ex):
         code = ex.code if isinstance(ex, wexceptions.HTTPException) else 500
@@ -123,7 +122,7 @@ def factory(global_config, **local_conf):
 
 
 class UUIDConverter(BaseConverter):
-    """ Validates UUID URL paramaters """
+    """Validates UUID URL paramaters"""
 
     def to_python(self, value):
         if not utils.is_uuid_like(value):
@@ -133,3 +132,22 @@ class UUIDConverter(BaseConverter):
 
     def to_url(self, value):
         return str(value)
+
+
+def load_values(request, valid_keys):
+    """Load valid atributes from request"""
+    result = {}
+    error_keys = []
+    values = request.json
+    for k in values:
+        if k in valid_keys:
+            result[k] = values[k]
+        else:
+            error_keys.append(k)
+
+    if error_keys:
+        error_msg = 'Provided object does not match schema. Keys {0} are not \
+                     valid in the request body', error_keys
+        raise exceptions.InvalidObject(error_msg)
+
+    return result

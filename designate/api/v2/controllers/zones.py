@@ -17,6 +17,7 @@ import pecan
 from dns import zone as dnszone
 from dns import rdatatype
 from dns import exception as dnsexception
+
 from designate import exceptions
 from designate import utils
 from designate import schema
@@ -24,11 +25,9 @@ from designate.api.v2.controllers import rest
 from designate.api.v2.controllers import nameservers
 from designate.api.v2.controllers import recordsets
 from designate.api.v2.views import zones as zones_view
-from designate.central import rpcapi as central_rpcapi
-from designate.openstack.common import log as logging
-
-LOG = logging.getLogger(__name__)
-central_api = central_rpcapi.CentralAPI()
+from designate.objects import Domain
+from designate.objects import Record
+from designate.objects import RecordSet
 
 
 class ZonesController(rest.RestController):
@@ -41,19 +40,19 @@ class ZonesController(rest.RestController):
     nameservers = nameservers.NameServersController()
     recordsets = recordsets.RecordSetsController()
 
-    @pecan.expose(template=None, content_type='text/dns')
     @pecan.expose(template='json:', content_type='application/json')
+    @pecan.expose(template=None, content_type='text/dns')
     @utils.validate_uuid('zone_id')
     def get_one(self, zone_id):
-        """ Get Zone """
+        """Get Zone"""
         # TODO(kiall): Validate we have a sane UUID for zone_id
 
         request = pecan.request
         context = request.environ['context']
         if 'Accept' not in request.headers:
             raise exceptions.BadRequest('Missing Accept header')
-        best_match = request.accept.best_match(['text/dns',
-                                                'application/json'])
+        best_match = request.accept.best_match(['application/json',
+                                                'text/dns'])
         if best_match == 'text/dns':
             return self._get_zonefile(request, context, zone_id)
         elif best_match == 'application/json':
@@ -63,18 +62,18 @@ class ZonesController(rest.RestController):
                 'Accept must be text/dns or application/json')
 
     def _get_json(self, request, context, zone_id):
-        """ 'Normal' zone get """
-        zone = central_api.get_domain(context, zone_id)
+        """'Normal' zone get"""
+        zone = self.central_api.get_domain(context, zone_id)
 
         return self._view.show(context, request, zone)
 
     def _get_zonefile(self, request, context, zone_id):
-        """ Export zonefile """
-        servers = central_api.get_domain_servers(context, zone_id)
-        domain = central_api.get_domain(context, zone_id)
+        """Export zonefile"""
+        servers = self.central_api.get_domain_servers(context, zone_id)
+        domain = self.central_api.get_domain(context, zone_id)
 
         criterion = {'domain_id': zone_id}
-        recordsets = central_api.find_recordsets(context, criterion)
+        recordsets = self.central_api.find_recordsets(context, criterion)
 
         records = []
 
@@ -84,7 +83,7 @@ class ZonesController(rest.RestController):
                 'recordset_id': recordset['id']
             }
 
-            raw_records = central_api.find_records(context, criterion)
+            raw_records = self.central_api.find_records(context, criterion)
 
             for record in raw_records:
                 records.append({
@@ -102,7 +101,7 @@ class ZonesController(rest.RestController):
 
     @pecan.expose(template='json:', content_type='application/json')
     def get_all(self, **params):
-        """ List Zones """
+        """List Zones"""
         request = pecan.request
         context = request.environ['context']
 
@@ -113,14 +112,14 @@ class ZonesController(rest.RestController):
         criterion = dict((k, params[k]) for k in accepted_filters
                          if k in params)
 
-        zones = central_api.find_domains(
+        zones = self.central_api.find_domains(
             context, criterion, marker, limit, sort_key, sort_dir)
 
         return self._view.list(context, request, zones)
 
     @pecan.expose(template='json:', content_type='application/json')
     def post_all(self):
-        """ Create Zone """
+        """Create Zone"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
@@ -133,7 +132,7 @@ class ZonesController(rest.RestController):
                 'Content-type must be text/dns or application/json')
 
     def _post_json(self, request, response, context):
-        """ 'Normal' zone creation """
+        """'Normal' zone creation"""
         body = request.body_dict
 
         # Validate the request conforms to the schema
@@ -143,7 +142,7 @@ class ZonesController(rest.RestController):
         values = self._view.load(context, request, body)
 
         # Create the zone
-        zone = central_api.create_domain(context, values)
+        zone = self.central_api.create_domain(context, Domain(**values))
 
         # Prepare the response headers
         # If the zone has been created asynchronously
@@ -160,7 +159,7 @@ class ZonesController(rest.RestController):
         return self._view.show(context, request, zone)
 
     def _post_zonefile(self, request, response, context):
-        """ Import Zone """
+        """Import Zone"""
         dnspython_zone = self._parse_zonefile(request)
         # TODO(artom) This should probably be handled with transactions
         zone = self._create_zone(context, dnspython_zone)
@@ -168,7 +167,7 @@ class ZonesController(rest.RestController):
         try:
             self._create_records(context, zone['id'], dnspython_zone)
         except exceptions.Base as e:
-            central_api.delete_domain(context, zone['id'])
+            self.central_api.delete_domain(context, zone['id'])
             raise e
 
         if zone['status'] == 'PENDING':
@@ -184,7 +183,7 @@ class ZonesController(rest.RestController):
     @pecan.expose(template='json:', content_type='application/json-patch+json')
     @utils.validate_uuid('zone_id')
     def patch_one(self, zone_id):
-        """ Update Zone """
+        """Update Zone"""
         # TODO(kiall): This needs cleanup to say the least..
         request = pecan.request
         context = request.environ['context']
@@ -194,10 +193,10 @@ class ZonesController(rest.RestController):
         # TODO(kiall): Validate we have a sane UUID for zone_id
 
         # Fetch the existing zone
-        zone = central_api.get_domain(context, zone_id)
+        zone = self.central_api.get_domain(context, zone_id)
 
         # Convert to APIv2 Format
-        zone = self._view.show(context, request, zone)
+        zone_data = self._view.show(context, request, zone)
 
         if request.content_type == 'application/json-patch+json':
             # Possible pattern:
@@ -214,15 +213,16 @@ class ZonesController(rest.RestController):
             # 3) ...?
             raise NotImplemented('json-patch not implemented')
         else:
-            zone = utils.deep_dict_merge(zone, body)
+            zone_data = utils.deep_dict_merge(zone_data, body)
 
-            # Validate the request conforms to the schema
-            self._resource_schema.validate(zone)
+            # Validate the new set of data
+            self._resource_schema.validate(zone_data)
 
-            values = self._view.load(context, request, body)
-            zone = central_api.update_domain(context, zone_id, values)
+            # Update and persist the resource
+            zone.update(self._view.load(context, request, body))
+            zone = self.central_api.update_domain(context, zone)
 
-        if zone['status'] == 'PENDING':
+        if zone.status == 'PENDING':
             response.status_int = 202
         else:
             response.status_int = 200
@@ -232,14 +232,14 @@ class ZonesController(rest.RestController):
     @pecan.expose(template=None, content_type='application/json')
     @utils.validate_uuid('zone_id')
     def delete_one(self, zone_id):
-        """ Delete Zone """
+        """Delete Zone"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
 
         # TODO(kiall): Validate we have a sane UUID for zone_id
 
-        zone = central_api.delete_domain(context, zone_id)
+        zone = self.central_api.delete_domain(context, zone_id)
 
         if zone['status'] == 'DELETING':
             response.status_int = 202
@@ -249,11 +249,11 @@ class ZonesController(rest.RestController):
         # NOTE: This is a hack and a half.. But Pecan needs it.
         return ''
 
-    #TODO(artom) Methods below may be useful elsewhere, consider putting them
+    # TODO(artom) Methods below may be useful elsewhere, consider putting them
     # somewhere reusable.
 
     def _create_zone(self, context, dnspython_zone):
-        """ Creates the initial zone """
+        """Creates the initial zone"""
         # dnspython never builds a zone with more than one SOA, even if we give
         # it a zonefile that contains more than one
         soa = dnspython_zone.get_rdataset(dnspython_zone.origin, 'SOA')
@@ -266,7 +266,7 @@ class ZonesController(rest.RestController):
             'email': email,
             'ttl': str(soa.ttl)
         }
-        return central_api.create_domain(context, values)
+        return self.central_api.create_domain(context, Domain(**values))
 
     def _record2json(self, record_type, rdata):
         if record_type == 'MX':
@@ -286,40 +286,43 @@ class ZonesController(rest.RestController):
             }
 
     def _create_records(self, context, zone_id, dnspython_zone):
-        """ Creates the records """
+        """Creates the records"""
         for record_name in dnspython_zone.nodes.keys():
             for rdataset in dnspython_zone.nodes[record_name]:
                 record_type = rdatatype.to_text(rdataset.rdtype)
 
-                if record_type == 'SOA':
-                    continue
+                if (record_type == 'NS') or (record_type == 'SOA'):
+                    # Don't create SOA or NS recordsets, as they are
+                    # created automatically when a domain is
+                    # created
+                    pass
+                else:
+                    # Create the other recordsets
+                    values = {
+                        'domain_id': zone_id,
+                        'name': record_name.to_text(),
+                        'type': record_type
+                    }
 
-                # Create the recordset
-                values = {
-                    'domain_id': zone_id,
-                    'name': record_name.to_text(),
-                    'type': record_type,
-                }
+                    recordset = self.central_api.create_recordset(
+                        context, zone_id, RecordSet(**values))
 
-                recordset = central_api.create_recordset(
-                    context, zone_id, values)
+                    for rdata in rdataset:
+                        if (record_type == 'NS') or (record_type == 'SOA'):
+                            pass
+                        else:
+                            # Everything else, including delegation NS, gets
+                            # created
+                            values = self._record2json(record_type, rdata)
 
-                for rdata in rdataset:
-                    if (record_type == 'NS'
-                            and record_name == dnspython_zone.origin):
-                        # Don't create NS records for the domain, they've been
-                        # taken care of as servers
-                        pass
-                    else:
-                        # Everything else, including delegation NS, gets
-                        # created
-                        values = self._record2json(record_type, rdata)
-
-                        central_api.create_record(
-                            context, zone_id, recordset['id'], values)
+                            self.central_api.create_record(
+                                context,
+                                zone_id,
+                                recordset['id'],
+                                Record(**values))
 
     def _parse_zonefile(self, request):
-        """ Parses a POSTed zonefile into a dnspython zone object """
+        """Parses a POSTed zonefile into a dnspython zone object"""
         try:
             dnspython_zone = dnszone.from_text(
                 request.body,

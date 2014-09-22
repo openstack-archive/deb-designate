@@ -14,12 +14,16 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import os
-from oslo.config import cfg
-from designate.openstack.common import log as logging
-from designate import utils
-from designate.backend import base
 import glob
 import shutil
+
+from oslo.config import cfg
+
+from designate.openstack.common import log as logging
+from designate.i18n import _LW
+from designate import utils
+from designate.backend import base
+
 
 LOG = logging.getLogger(__name__)
 
@@ -50,8 +54,19 @@ class Bind9Backend(base.Backend):
             rndc_op = 'reload'
             rndc_call = self._rndc_base() + [rndc_op]
             rndc_call.extend([domain['name']])
-            LOG.debug('Calling RNDC with: %s' % " ".join(rndc_call))
-            utils.execute(*rndc_call)
+
+            try:
+                LOG.debug('Calling RNDC with: %s' % " ".join(rndc_call))
+                utils.execute(*rndc_call)
+            except utils.processutils.ProcessExecutionError as proc_exec_err:
+                stderr = proc_exec_err.stderr
+                if stderr.count("rndc: 'reload' failed: not found") is not 0:
+                    LOG.warn(_LW("Domain %(d_name)s (%(d_id)s) "
+                                 "missing from backend, recreating") %
+                             {'d_name': domain['name'], 'd_id': domain['id']})
+                    self._sync_domain(domain, new_domain_flag=True)
+                else:
+                    raise proc_exec_err
 
     def create_server(self, context, server):
         LOG.debug('Create Server')
@@ -113,7 +128,7 @@ class Bind9Backend(base.Backend):
         return rndc_call
 
     def _sync_delete_domain(self, domain, new_domain_flag=False):
-        """ Remove domain zone files and reload bind config """
+        """Remove domain zone files and reload bind config"""
         LOG.debug('Delete Domain: %s' % domain['id'])
 
         output_folder = os.path.join(os.path.abspath(cfg.CONF.state_path),
@@ -130,10 +145,10 @@ class Bind9Backend(base.Backend):
 
         utils.execute(*rndc_call)
 
-        #This goes and gets the name of the .nzf file that is a mirror of the
-        #zones.config file we wish to maintain. The file name can change as it
-        #is a hash of rndc view name, we're only interested in the first file
-        #name this returns because there is only one .nzf file
+        # This goes and gets the name of the .nzf file that is a mirror of the
+        # zones.config file we wish to maintain. The file name can change as it
+        # is a hash of rndc view name, we're only interested in the first file
+        # name this returns because there is only one .nzf file
         nzf_name = glob.glob('%s/*.nzf' % cfg.CONF[self.name].nzf_path)
 
         output_file = os.path.join(output_folder, 'zones.config')
@@ -141,7 +156,7 @@ class Bind9Backend(base.Backend):
         shutil.copyfile(nzf_name[0], output_file)
 
     def _sync_domain(self, domain, new_domain_flag=False):
-        """ Sync a single domain's zone file and reload bind config """
+        """Sync a single domain's zone file and reload bind config"""
         LOG.debug('Synchronising Domain: %s' % domain['id'])
 
         servers = self.central_service.find_servers(self.admin_context)

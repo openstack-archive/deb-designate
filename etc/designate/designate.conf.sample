@@ -54,6 +54,8 @@ debug = False
 # Maximum record name length
 #max_record_name_len = 255
 
+# Minimum TTL
+#min_ttl = None
 
 ## Managed resources settings
 
@@ -74,7 +76,7 @@ debug = False
 #api_port = 9001
 
 # Authentication strategy to use - can be either "noauth" or "keystone"
-#auth_strategy = noauth
+#auth_strategy = keystone
 
 # Enable Version 1 API
 #enable_api_v1 = True
@@ -87,6 +89,9 @@ debug = False
 
 # Enabled API Version 1 extensions
 #enabled_extensions_v1 = diagnostics, quotas, reports, sync, touch
+
+# Enabled API Version 2 extensions
+#enabled_extensions_v2 = reports, quotas
 
 #-----------------------
 # Keystone Middleware
@@ -114,6 +119,15 @@ debug = False
 # correspond to a [handler:my_driver] section below or else in the config
 #enabled_notification_handlers = nova_fixed
 
+#-----------------------
+# mDNS Service
+#-----------------------
+[service:mdns]
+#workers = None
+#host = 0.0.0.0
+#port = 5354
+#tcp_backlog =1 00
+
 ##############
 ## Network API
 ##############
@@ -138,7 +152,7 @@ debug = False
 [storage:sqlalchemy]
 # Database connection string - to configure options for a given implementation
 # like sqlalchemy or other see below
-#database_connection = sqlite:///$state_path/designate.sqlite
+#connection = sqlite:///$state_path/designate.sqlite
 #connection_debug = 100
 #connection_trace = False
 #sqlite_synchronous = True
@@ -154,7 +168,7 @@ debug = False
 #-----------------------
 [handler:nova_fixed]
 #domain_id = <random uuid>
-#notification_topics = monitor
+#notification_topics = notifications
 #control_exchange = 'nova'
 #format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
 
@@ -163,7 +177,7 @@ debug = False
 #------------------------
 [handler:neutron_floatingip]
 #domain_id = <random uuid>
-#notification_topics = monitor
+#notification_topics = notifications
 #control_exchange = 'neutron'
 #format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
 
@@ -184,7 +198,7 @@ debug = False
 # Bind9+MySQL Backend
 #-----------------------
 [backend:mysqlbind9]
-#database_connection = mysql://user:password@host/schema
+#connection = mysql://user:password@host/schema
 #rndc_host = 127.0.0.1
 #rndc_port = 953
 #rndc_config_file = /etc/rndc.conf
@@ -196,7 +210,7 @@ debug = False
 # PowerDNS Backend
 #-----------------------
 [backend:powerdns]
-#database_connection = mysql://user:password@host/pdns
+#connection = mysql://user:password@host/pdns
 #connection_debug = 100
 #connection_trace = False
 #sqlite_synchronous = True

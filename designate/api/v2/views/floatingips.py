@@ -21,12 +21,12 @@ LOG = logging.getLogger(__name__)
 
 
 class FloatingIPView(base_view.BaseView):
-    """ Model a FloatingIP PTR record as a python dict """
+    """Model a FloatingIP PTR record as a python dict"""
     _resource_name = 'floatingip'
     _collection_name = 'floatingips'
 
     def _get_base_href(self, parents=None):
-        return '%s/reverse/floatingips' % self.base_uri
+        return '%s/v2/reverse/floatingips' % self.base_uri
 
     def show_basic(self, context, request, item):
         item['id'] = ":".join([item.pop('region'), item.pop('id')])

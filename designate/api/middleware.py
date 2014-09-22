@@ -16,15 +16,21 @@
 import flask
 import webob.dec
 from oslo.config import cfg
+from oslo import messaging
+
 from designate import exceptions
 from designate import notifications
 from designate import wsgi
-from designate.context import DesignateContext
+from designate import context
 from designate.openstack.common import jsonutils as json
-from designate.openstack.common import local
 from designate.openstack.common import log as logging
 from designate.openstack.common import strutils
-from designate.openstack.common.rpc import common as rpc_common
+from designate.openstack.common.middleware import request_id
+from designate.i18n import _LI
+from designate.i18n import _LW
+from designate.i18n import _LE
+from designate.i18n import _LC
+
 
 LOG = logging.getLogger(__name__)
 
@@ -36,31 +42,6 @@ cfg.CONF.register_opts([
 ], group='service:api')
 
 
-class MaintenanceMiddleware(wsgi.Middleware):
-    def __init__(self, application):
-        super(MaintenanceMiddleware, self).__init__(application)
-
-        LOG.info('Starting designate maintenance middleware')
-
-        self.enabled = cfg.CONF['service:api'].maintenance_mode
-        self.role = cfg.CONF['service:api'].maintenance_mode_role
-
-    def process_request(self, request):
-        # If maintaince mode is not enabled, pass the request on as soon as
-        # possible
-        if not self.enabled:
-            return None
-
-        # If the caller has the bypass role, let them through
-        if ('context' in request.environ
-                and self.role in request.environ['context'].roles):
-            LOG.warning('Request authorized to bypass maintenance mode')
-            return None
-
-        # Otherwise, reject the request with a 503 Service Unavailable
-        return flask.Response(status=503, headers={'Retry-After': 60})
-
-
 def auth_pipeline_factory(loader, global_conf, **local_conf):
     """
     A paste pipeline replica that keys off of auth_strategy.
@@ -69,7 +50,7 @@ def auth_pipeline_factory(loader, global_conf, **local_conf):
     """
     pipeline = local_conf[cfg.CONF['service:api'].auth_strategy]
     pipeline = pipeline.split()
-    LOG.info('Getting auth pipeline: %s' % pipeline[:-1])
+    LOG.info(_LI('Getting auth pipeline: %s') % pipeline[:-1])
     filters = [loader.get_filter(n) for n in pipeline[:-1]]
     app = loader.get_app(pipeline[-1])
     filters.reverse()
@@ -79,23 +60,37 @@ def auth_pipeline_factory(loader, global_conf, **local_conf):
 
 
 class ContextMiddleware(wsgi.Middleware):
-    def process_response(self, response):
-        try:
-            context = local.store.context
-        except Exception:
-            pass
-        else:
-            # Add the Request ID as a response header
-            response.headers['X-DNS-Request-ID'] = context.request_id
+    def make_context(self, request, *args, **kwargs):
+        req_id = request.environ.get(request_id.ENV_REQUEST_ID)
+        kwargs.setdefault('request_id', req_id)
 
-        return response
+        ctxt = context.DesignateContext(*args, **kwargs)
+
+        headers = request.headers
+        params = request.params
+
+        if headers.get('X-Auth-All-Projects'):
+            ctxt.all_tenants = \
+                strutils.bool_from_string(headers.get('X-Auth-All-Projects'))
+        elif 'all_projects' in params:
+            ctxt.all_tenants = \
+                strutils.bool_from_string(params['all_projects'])
+        elif 'all_tenants' in params:
+            ctxt.all_tenants = \
+                strutils.bool_from_string(params['all_tenants'])
+        else:
+            ctxt.all_tenants = False
+
+        request.environ['context'] = ctxt
+
+        return ctxt
 
 
 class KeystoneContextMiddleware(ContextMiddleware):
     def __init__(self, application):
         super(KeystoneContextMiddleware, self).__init__(application)
 
-        LOG.info('Starting designate keystonecontext middleware')
+        LOG.info(_LI('Starting designate keystonecontext middleware'))
 
     def process_request(self, request):
         headers = request.headers
@@ -115,50 +110,39 @@ class KeystoneContextMiddleware(ContextMiddleware):
 
         roles = headers.get('X-Roles').split(',')
 
-        context = DesignateContext(auth_token=headers.get('X-Auth-Token'),
-                                   user=headers.get('X-User-ID'),
-                                   tenant=headers.get('X-Tenant-ID'),
-                                   roles=roles,
-                                   service_catalog=catalog)
-
-        # Store the context where oslo-log exepcts to find it.
-        local.store.context = context
-
-        # Attach the context to the request environment
-        request.environ['context'] = context
+        self.make_context(
+            request,
+            auth_token=headers.get('X-Auth-Token'),
+            user=headers.get('X-User-ID'),
+            tenant=headers.get('X-Tenant-ID'),
+            roles=roles,
+            service_catalog=catalog)
 
 
 class NoAuthContextMiddleware(ContextMiddleware):
     def __init__(self, application):
         super(NoAuthContextMiddleware, self).__init__(application)
 
-        LOG.info('Starting designate noauthcontext middleware')
+        LOG.info(_LI('Starting designate noauthcontext middleware'))
 
     def process_request(self, request):
-        # NOTE(kiall): This makes the assumption that disabling authentication
-        #              means you wish to allow full access to everyone.
         headers = request.headers
 
-        context = DesignateContext(
+        self.make_context(
+            request,
             auth_token=headers.get('X-Auth-Token', None),
             user=headers.get('X-Auth-User-ID', 'noauth-user'),
             tenant=headers.get('X-Auth-Project-ID', 'noauth-project'),
-            is_admin=True,
+            roles=headers.get('X-Roles', 'admin').split(',')
         )
-
-        # Store the context where oslo-log exepcts to find it.
-        local.store.context = context
-
-        # Attach the context to the request environment
-        request.environ['context'] = context
 
 
 class TestContextMiddleware(ContextMiddleware):
     def __init__(self, application, tenant_id=None, user_id=None):
         super(TestContextMiddleware, self).__init__(application)
 
-        LOG.critical('Starting designate testcontext middleware')
-        LOG.critical('**** DO NOT USE IN PRODUCTION ****')
+        LOG.critical(_LC('Starting designate testcontext middleware'))
+        LOG.critical(_LC('**** DO NOT USE IN PRODUCTION ****'))
 
         self.default_tenant_id = tenant_id
         self.default_user_id = user_id
@@ -169,23 +153,52 @@ class TestContextMiddleware(ContextMiddleware):
         all_tenants = strutils.bool_from_string(
             headers.get('X-Test-All-Tenants', 'False'))
 
-        context = DesignateContext(
+        self.make_context(
+            request,
             user=headers.get('X-Test-User-ID', self.default_user_id),
             tenant=headers.get('X-Test-Tenant-ID', self.default_tenant_id),
             all_tenants=all_tenants)
 
-        # Store the context where oslo-log exepcts to find it.
-        local.store.context = context
 
-        # Attach the context to the request environment
-        request.environ['context'] = context
+class MaintenanceMiddleware(wsgi.Middleware):
+    def __init__(self, application):
+        super(MaintenanceMiddleware, self).__init__(application)
+
+        LOG.info(_LI('Starting designate maintenance middleware'))
+
+        self.enabled = cfg.CONF['service:api'].maintenance_mode
+        self.role = cfg.CONF['service:api'].maintenance_mode_role
+
+    def process_request(self, request):
+        # If maintaince mode is not enabled, pass the request on as soon as
+        # possible
+        if not self.enabled:
+            return None
+
+        # If the caller has the bypass role, let them through
+        if ('context' in request.environ
+                and self.role in request.environ['context'].roles):
+            LOG.warn(_LW('Request authorized to bypass maintenance mode'))
+            return None
+
+        # Otherwise, reject the request with a 503 Service Unavailable
+        return flask.Response(status=503, headers={'Retry-After': 60})
+
+
+class NormalizeURIMiddleware(wsgi.Middleware):
+    @webob.dec.wsgify
+    def __call__(self, request):
+        # Remove any trailing /'s.
+        request.environ['PATH_INFO'] = request.environ['PATH_INFO'].rstrip('/')
+
+        return request.get_response(self.application)
 
 
 class FaultWrapperMiddleware(wsgi.Middleware):
     def __init__(self, application):
         super(FaultWrapperMiddleware, self).__init__(application)
 
-        LOG.info('Starting designate faultwrapper middleware')
+        LOG.info(_LI('Starting designate faultwrapper middleware'))
 
     @webob.dec.wsgify
     def __call__(self, request):
@@ -210,7 +223,7 @@ class FaultWrapperMiddleware(wsgi.Middleware):
                 response['errors'] = e.errors
 
             return self._handle_exception(request, e, status, response)
-        except rpc_common.Timeout as e:
+        except messaging.MessagingTimeout as e:
             # Special case for RPC timeout's
             response = {
                 'code': 504,
@@ -222,9 +235,12 @@ class FaultWrapperMiddleware(wsgi.Middleware):
             # Handle all other exception types
             return self._handle_exception(request, e)
 
-    def _handle_exception(self, request, e, status=500, response={}):
-        # Log the exception ASAP
-        LOG.exception(e)
+    def _handle_exception(self, request, e, status=500, response=None):
+
+        response = response or {}
+        # Log the exception ASAP unless it is a 404 Not Found
+        if not getattr(e, 'expected', False):
+            LOG.exception(e)
 
         headers = [
             ('Content-Type', 'application/json'),
@@ -239,15 +255,16 @@ class FaultWrapperMiddleware(wsgi.Middleware):
         if 'type' not in response:
             response['type'] = 'unknown'
 
+        # Return the new response
         if 'context' in request.environ:
             response['request_id'] = request.environ['context'].request_id
 
-            notifications.send_api_fault(url, response['code'], e)
+            notifications.send_api_fault(request.environ['context'], url,
+                                         response['code'], e)
         else:
-            #TODO(ekarlso): Remove after verifying that there's actually a
+            # TODO(ekarlso): Remove after verifying that there's actually a
             # context always set
-            LOG.error('Missing context in request, please check.')
+            LOG.error(_LE('Missing context in request, please check.'))
 
-        # Return the new response
         return flask.Response(status=status, headers=headers,
                               response=json.dumps(response))

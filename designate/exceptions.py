@@ -149,6 +149,11 @@ class InvalidRecordSetLocation(Base):
     error_type = 'invalid_recordset_location'
 
 
+class InvalidTTL(Base):
+    error_code = 400
+    error_type = 'invalid_ttl'
+
+
 class DomainHasSubdomain(Base):
     error_code = 400
     error_type = 'domain_has_subdomain'
@@ -157,9 +162,11 @@ class DomainHasSubdomain(Base):
 class Forbidden(Base):
     error_code = 403
     error_type = 'forbidden'
+    expected = True
 
 
 class Duplicate(Base):
+    expected = True
     error_code = 409
     error_type = 'duplicate'
 
@@ -180,7 +187,7 @@ class DuplicateDomain(Duplicate):
     error_type = 'duplicate_domain'
 
 
-class DuplicateTLD(Duplicate):
+class DuplicateTld(Duplicate):
     error_type = 'duplicate_tld'
 
 
@@ -196,7 +203,14 @@ class DuplicateBlacklist(Duplicate):
     error_type = 'duplicate_blacklist'
 
 
+class MethodNotAllowed(Base):
+    expected = True
+    error_code = 405
+    error_type = 'method_not_allowed'
+
+
 class NotFound(Base):
+    expected = True
     error_code = 404
     error_type = 'not_found'
 
@@ -221,7 +235,7 @@ class DomainNotFound(NotFound):
     error_type = 'domain_not_found'
 
 
-class TLDNotFound(NotFound):
+class TldNotFound(NotFound):
     error_type = 'tld_not_found'
 
 
@@ -231,6 +245,10 @@ class RecordSetNotFound(NotFound):
 
 class RecordNotFound(NotFound):
     error_type = 'record_not_found'
+
+
+class ReportNotFound(NotFound):
+    error_type = 'report_not_found'
 
 
 class LastServerDeleteNotAllowed(BadRequest):

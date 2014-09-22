@@ -21,17 +21,19 @@ LOG = logging.getLogger(__name__)
 
 
 class LimitsView(base_view.BaseView):
-    """ Model a Limits API response as a python dictionary """
+    """Model a Limits API response as a python dictionary"""
 
     _resource_name = 'limits'
     _collection_name = 'limits'
 
     def show_basic(self, context, request, absolute_limits):
-        """ Basic view of the limits """
+        """Basic view of the limits"""
 
         return {
             "absolute": {
-                "maxZones": absolute_limits['domains'],
-                "maxZoneRecords": absolute_limits['domain_records']
+                "max_zones": absolute_limits['domains'],
+                "max_zone_recordsets": absolute_limits['domain_recordsets'],
+                "max_zone_records": absolute_limits['domain_records'],
+                "max_recordset_records": absolute_limits['recordset_records']
             }
         }

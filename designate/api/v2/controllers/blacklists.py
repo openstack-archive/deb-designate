@@ -15,15 +15,16 @@
 # under the License.
 
 import pecan
-from designate.central import rpcapi as central_rpcapi
+
 from designate.openstack.common import log as logging
 from designate import schema
 from designate import utils
 from designate.api.v2.controllers import rest
 from designate.api.v2.views import blacklists as blacklists_view
+from designate.objects import Blacklist
+
 
 LOG = logging.getLogger(__name__)
-central_api = central_rpcapi.CentralAPI()
 
 
 class BlacklistsController(rest.RestController):
@@ -35,18 +36,18 @@ class BlacklistsController(rest.RestController):
     @pecan.expose(template='json:', content_type='application/json')
     @utils.validate_uuid('blacklist_id')
     def get_one(self, blacklist_id):
-        """ Get Blacklist """
+        """Get Blacklist"""
 
         request = pecan.request
         context = request.environ['context']
 
-        blacklist = central_api.get_blacklist(context, blacklist_id)
+        blacklist = self.central_api.get_blacklist(context, blacklist_id)
 
         return self._view.show(context, request, blacklist)
 
     @pecan.expose(template='json:', content_type='application/json')
     def get_all(self, **params):
-        """ List all Blacklisted Zones """
+        """List all Blacklisted Zones"""
         request = pecan.request
         context = request.environ['context']
 
@@ -58,14 +59,14 @@ class BlacklistsController(rest.RestController):
         criterion = dict((k, params[k]) for k in accepted_filters
                          if k in params)
 
-        blacklist = central_api.find_blacklists(
+        blacklist = self.central_api.find_blacklists(
             context, criterion, marker, limit, sort_key, sort_dir)
 
         return self._view.list(context, request, blacklist)
 
     @pecan.expose(template='json:', content_type='application/json')
     def post_all(self):
-        """ Create Blacklisted Zone """
+        """Create Blacklisted Zone"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
@@ -79,7 +80,8 @@ class BlacklistsController(rest.RestController):
         values = self._view.load(context, request, body)
 
         # Create the blacklist
-        blacklist = central_api.create_blacklist(context, values)
+        blacklist = self.central_api.create_blacklist(
+            context, Blacklist(**values))
 
         response.status_int = 201
 
@@ -93,30 +95,29 @@ class BlacklistsController(rest.RestController):
     @pecan.expose(template='json:', content_type='application/json-patch+json')
     @utils.validate_uuid('blacklist_id')
     def patch_one(self, blacklist_id):
-        """ Update Blacklisted Zone """
+        """Update Blacklisted Zone"""
         request = pecan.request
         context = request.environ['context']
         body = request.body_dict
         response = pecan.response
 
-        # Fetch the existing blacklisted zone
-        blacklist = central_api.get_blacklist(context, blacklist_id)
+        # Fetch the existing blacklist entry
+        blacklist = self.central_api.get_blacklist(context, blacklist_id)
 
         # Convert to APIv2 Format
-        blacklist = self._view.show(context, request, blacklist)
+        blacklist_data = self._view.show(context, request, blacklist)
 
         if request.content_type == 'application/json-patch+json':
             raise NotImplemented('json-patch not implemented')
         else:
-            blacklist = utils.deep_dict_merge(blacklist, body)
+            blacklist_data = utils.deep_dict_merge(blacklist_data, body)
 
-            # Validate the request conforms to the schema
-            self._resource_schema.validate(blacklist)
+            # Validate the new set of data
+            self._resource_schema.validate(blacklist_data)
 
-            values = self._view.load(context, request, body)
-
-            blacklist = central_api.update_blacklist(context,
-                                                     blacklist_id, values)
+            # Update and persist the resource
+            blacklist.update(self._view.load(context, request, body))
+            blacklist = self.central_api.update_blacklist(context, blacklist)
 
         response.status_int = 200
 
@@ -125,12 +126,12 @@ class BlacklistsController(rest.RestController):
     @pecan.expose(template=None, content_type='application/json')
     @utils.validate_uuid('blacklist_id')
     def delete_one(self, blacklist_id):
-        """ Delete Blacklisted Zone """
+        """Delete Blacklisted Zone"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
 
-        central_api.delete_blacklist(context, blacklist_id)
+        self.central_api.delete_blacklist(context, blacklist_id)
 
         response.status_int = 204
 

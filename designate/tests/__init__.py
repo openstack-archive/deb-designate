@@ -14,29 +14,32 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import copy
-import fixtures
 import functools
 import os
 import inspect
-from migrate.versioning import repository
 import shutil
-import sqlalchemy
 import tempfile
-from migrate.versioning import api as versioning_api
-from testtools import testcase
+
+import fixtures
+from oslotest import base
 from oslo.config import cfg
+from oslo.messaging import conffixture as messaging_fixture
+from oslo.messaging.notify import _impl_test as test_notifier
+from testtools import testcase
+
 from designate.openstack.common import log as logging
-from designate.openstack.common.notifier import test_notifier
-from designate.openstack.common.fixture import config
+from designate.openstack.common.fixture import config as cfg_fixture
 from designate.openstack.common import importutils
-from designate.openstack.common import policy
-from designate.openstack.common import test
+from designate import policy
 from designate import utils
 from designate.context import DesignateContext
 from designate.tests import resources
 from designate import exceptions
 from designate.network_api import fake as fake_network_api
 from designate import network_api
+from designate import objects
+from designate.manage import database as manage_database
+from designate.sqlalchemy import utils as sqlalchemy_utils
 
 LOG = logging.getLogger(__name__)
 
@@ -46,31 +49,27 @@ cfg.CONF.import_opt('backend_driver', 'designate.agent',
                     group='service:agent')
 cfg.CONF.import_opt('auth_strategy', 'designate.api',
                     group='service:api')
-cfg.CONF.import_opt('database_connection', 'designate.storage.impl_sqlalchemy',
+cfg.CONF.import_opt('connection', 'designate.storage.impl_sqlalchemy',
                     group='storage:sqlalchemy')
-# NOTE: Since we're importing service classes in start_service this breaks
-# if not here.
-cfg.CONF.import_opt(
-    'notification_driver', 'designate.openstack.common.notifier.api')
 
 
 class NotifierFixture(fixtures.Fixture):
     def setUp(self):
         super(NotifierFixture, self).setUp()
-        self.addCleanup(self.clear)
+        self.addCleanup(test_notifier.reset)
 
     def get(self):
         return test_notifier.NOTIFICATIONS
 
     def clear(self):
-        test_notifier.NOTIFICATIONS = []
+        return test_notifier.reset()
 
 
 class ServiceFixture(fixtures.Fixture):
     def __init__(self, svc_name, *args, **kw):
         cls = importutils.import_class(
             'designate.%s.service.Service' % svc_name)
-        self.svc = cls(*args, **kw)
+        self.svc = cls.create(binary='designate-' + svc_name, *args, **kw)
 
     def setUp(self):
         super(ServiceFixture, self).setUp()
@@ -95,9 +94,10 @@ class DatabaseFixture(fixtures.Fixture):
     fixtures = {}
 
     @staticmethod
-    def get_fixture(repo_path):
+    def get_fixture(repo_path, init_version=None):
         if repo_path not in DatabaseFixture.fixtures:
-            DatabaseFixture.fixtures[repo_path] = DatabaseFixture(repo_path)
+            DatabaseFixture.fixtures[repo_path] = DatabaseFixture(
+                repo_path, init_version)
         return DatabaseFixture.fixtures[repo_path]
 
     def _mktemp(self):
@@ -105,13 +105,19 @@ class DatabaseFixture(fixtures.Fixture):
                                    dir='/tmp')
         return path
 
-    def __init__(self, repo_path):
+    def __init__(self, repo_path, init_version=None):
         super(DatabaseFixture, self).__init__()
+
+        # Create the Golden DB
         self.golden_db = self._mktemp()
-        engine = sqlalchemy.create_engine('sqlite:///%s' % self.golden_db)
-        repo = repository.Repository(repo_path)
-        versioning_api.version_control(engine, repository=repo)
-        versioning_api.upgrade(engine, repository=repo)
+        self.golden_url = 'sqlite:///%s' % self.golden_db
+
+        # Migrate the Golden DB
+        manager = sqlalchemy_utils.get_migration_manager(
+            repo_path, self.golden_url, init_version)
+        manager.upgrade(None)
+
+        # Prepare the Working Copy DB
         self.working_copy = self._mktemp()
         self.url = 'sqlite:///%s' % self.working_copy
 
@@ -128,7 +134,7 @@ class NetworkAPIFixture(fixtures.Fixture):
         self.addCleanup(self.fake.reset_floatingips)
 
 
-class TestCase(test.BaseTestCase):
+class TestCase(base.BaseTestCase):
     quota_fixtures = [{
         'resource': 'domains',
         'hard_limit': 5,
@@ -199,6 +205,10 @@ class TestCase(test.BaseTestCase):
             {'name': '_sip._tcp.%s', 'type': 'SRV'},
             {'name': '_sip._udp.%s', 'type': 'SRV'},
         ],
+        'CNAME': [
+            {'name': 'www.%s', 'type': 'CNAME'},
+            {'name': 'sub1.%s', 'type': 'CNAME'},
+        ]
     }
 
     record_fixtures = {
@@ -213,6 +223,10 @@ class TestCase(test.BaseTestCase):
         'SRV': [
             {'data': '0 5060 server1.example.org.', 'priority': 5},
             {'data': '1 5060 server2.example.org.', 'priority': 10},
+        ],
+        'CNAME': [
+            {'data': 'www.somedomain.org.'},
+            {'data': 'www.someotherdomain.com.'},
         ]
     }
 
@@ -233,15 +247,15 @@ class TestCase(test.BaseTestCase):
     def setUp(self):
         super(TestCase, self).setUp()
 
-        self.useFixture(fixtures.FakeLogger('designate', level='DEBUG'))
-        self.CONF = self.useFixture(config.Config(cfg.CONF)).conf
+        self.CONF = self.useFixture(cfg_fixture.Config(cfg.CONF)).conf
 
-        self.config(
-            notification_driver=[
-                'designate.openstack.common.notifier.test_notifier',
-            ],
-            rpc_backend='designate.openstack.common.rpc.impl_fake',
-        )
+        self.messaging_conf = self.useFixture(
+            messaging_fixture.ConfFixture(cfg.CONF))
+        self.messaging_conf.transport_driver = 'fake'
+
+        self.config(notification_driver='test')
+
+        self.notifications = self.useFixture(NotifierFixture())
 
         self.config(
             storage_driver='sqlalchemy',
@@ -266,9 +280,11 @@ class TestCase(test.BaseTestCase):
                                                   'impl_sqlalchemy',
                                                   'migrate_repo'))
         self.db_fixture = self.useFixture(
-            DatabaseFixture.get_fixture(REPOSITORY))
+            DatabaseFixture.get_fixture(
+                REPOSITORY, manage_database.INIT_VERSION))
         self.config(
-            database_connection=self.db_fixture.url,
+            connection=self.db_fixture.url,
+            connection_debug=100,
             group='storage:sqlalchemy'
         )
 
@@ -277,15 +293,13 @@ class TestCase(test.BaseTestCase):
             managed_resource_tenant_id='managing_tenant',
             group='service:central')
 
+        # "Read" Configuration
         self.CONF([], project='designate')
 
-        self.notifications = NotifierFixture()
-        self.useFixture(self.notifications)
-
         self.useFixture(PolicyFixture())
-
         self.network_api = NetworkAPIFixture()
         self.useFixture(self.network_api)
+        self.central_service = self.start_service('central')
 
         self.admin_context = self.get_admin_context()
 
@@ -296,17 +310,13 @@ class TestCase(test.BaseTestCase):
         for k, v in kwargs.iteritems():
             cfg.CONF.set_override(k, v, group)
 
-    def policy(self, rules, default_rule='allow'):
+    def policy(self, rules, default_rule='allow', overwrite=True):
         # Inject an allow and deny rule
         rules['allow'] = '@'
         rules['deny'] = '!'
 
-        # Parse the rules
-        rules = dict((k, policy.parse_rule(v)) for k, v in rules.items())
-        rules = policy.Rules(rules, default_rule)
-
         # Set the rules
-        policy.set_rules(rules)
+        policy.set_rules(rules, default_rule, overwrite)
 
     # Other Utility Methods
     def get_notifications(self):
@@ -333,38 +343,52 @@ class TestCase(test.BaseTestCase):
             user=utils.generate_uuid())
 
     # Fixture methods
-    def get_quota_fixture(self, fixture=0, values={}):
+    def get_quota_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.quota_fixtures[fixture])
         _values.update(values)
         return _values
 
-    def get_server_fixture(self, fixture=0, values={}):
+    def get_server_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.server_fixtures[fixture])
         _values.update(values)
         return _values
 
-    def get_tld_fixture(self, fixture=0, values={}):
+    def get_tld_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.tld_fixtures[fixture])
         _values.update(values)
         return _values
 
-    def get_default_tld_fixture(self, fixture=0, values={}):
+    def get_default_tld_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.default_tld_fixtures[fixture])
         _values.update(values)
         return _values
 
-    def get_tsigkey_fixture(self, fixture=0, values={}):
+    def get_tsigkey_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.tsigkey_fixtures[fixture])
         _values.update(values)
         return _values
 
-    def get_domain_fixture(self, fixture=0, values={}):
+    def get_domain_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.domain_fixtures[fixture])
         _values.update(values)
         return _values
 
     def get_recordset_fixture(self, domain_name, type='A', fixture=0,
-                              values={}):
+                              values=None):
+        values = values or {}
+
         _values = copy.copy(self.recordset_fixtures[type][fixture])
         _values.update(values)
 
@@ -375,12 +399,16 @@ class TestCase(test.BaseTestCase):
 
         return _values
 
-    def get_record_fixture(self, recordset_type, fixture=0, values={}):
+    def get_record_fixture(self, recordset_type, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.record_fixtures[recordset_type][fixture])
         _values.update(values)
         return _values
 
-    def get_ptr_fixture(self, fixture=0, values={}):
+    def get_ptr_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.ptr_fixtures[fixture])
         _values.update(values)
         return _values
@@ -394,44 +422,42 @@ class TestCase(test.BaseTestCase):
         with open(path) as zonefile:
             return zonefile.read()
 
-    def get_blacklist_fixture(self, fixture=0, values={}):
+    def get_blacklist_fixture(self, fixture=0, values=None):
+        values = values or {}
+
         _values = copy.copy(self.blacklist_fixtures[fixture])
         _values.update(values)
         return _values
-
-    def create_quota(self, **kwargs):
-        context = kwargs.pop('context', self.admin_context)
-        fixture = kwargs.pop('fixture', 0)
-
-        values = self.get_quota_fixture(fixture=fixture, values=kwargs)
-        return self.central_service.create_quota(context, values=values)
 
     def create_server(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_server_fixture(fixture=fixture, values=kwargs)
-        return self.central_service.create_server(context, values=values)
+        return self.central_service.create_server(
+            context, objects.Server(**values))
 
     def create_tld(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_tld_fixture(fixture=fixture, values=kwargs)
-        return self.central_service.create_tld(context, values=values)
+        tld = objects.Tld(**values)
+        return self.central_service.create_tld(context, tld=tld)
 
     def create_default_tld(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_default_tld_fixture(fixture=fixture, values=kwargs)
-        return self.central_service.create_tld(context, values=values)
+        tld = objects.Tld(**values)
+        return self.central_service.create_tld(context, tld=tld)
 
     def create_default_tlds(self):
         for index in range(len(self.default_tld_fixtures)):
             try:
                 self.create_default_tld(fixture=index)
-            except exceptions.DuplicateTLD:
+            except exceptions.DuplicateTld:
                 pass
 
     def create_tsigkey(self, **kwargs):
@@ -439,14 +465,15 @@ class TestCase(test.BaseTestCase):
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_tsigkey_fixture(fixture=fixture, values=kwargs)
-        return self.central_service.create_tsigkey(context, values=values)
+        return self.central_service.create_tsigkey(
+            context, objects.TsigKey(**values))
 
     def create_domain(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
-        # We always need a server to create a domain..
         try:
+            # We always need a server to create a domain..
             self.create_server()
         except exceptions.DuplicateServer:
             pass
@@ -454,9 +481,10 @@ class TestCase(test.BaseTestCase):
         values = self.get_domain_fixture(fixture=fixture, values=kwargs)
 
         if 'tenant_id' not in values:
-            values['tenant_id'] = context.tenant_id
+            values['tenant_id'] = context.tenant
 
-        return self.central_service.create_domain(context, values=values)
+        return self.central_service.create_domain(
+            context, objects.Domain(**values))
 
     def create_recordset(self, domain, type='A', **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -465,9 +493,8 @@ class TestCase(test.BaseTestCase):
         values = self.get_recordset_fixture(domain['name'], type=type,
                                             fixture=fixture,
                                             values=kwargs)
-        return self.central_service.create_recordset(context,
-                                                     domain['id'],
-                                                     values=values)
+        return self.central_service.create_recordset(
+            context, domain['id'], recordset=objects.RecordSet(**values))
 
     def create_record(self, domain, recordset, **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -475,17 +502,20 @@ class TestCase(test.BaseTestCase):
 
         values = self.get_record_fixture(recordset['type'], fixture=fixture,
                                          values=kwargs)
-        return self.central_service.create_record(context,
-                                                  domain['id'],
-                                                  recordset['id'],
-                                                  values=values)
+        return self.central_service.create_record(
+            context,
+            domain['id'],
+            recordset['id'],
+            record=objects.Record(**values))
 
     def create_blacklist(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_blacklist_fixture(fixture=fixture, values=kwargs)
-        return self.central_service.create_blacklist(context, values=values)
+        blacklist = objects.Blacklist(**values)
+        return self.central_service.create_blacklist(
+            context, blacklist=blacklist)
 
     def _ensure_interface(self, interface, implementation):
         for name in interface.__abstractmethods__:

@@ -15,8 +15,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from mock import patch
+from oslo import messaging
+
 from designate.openstack.common import log as logging
-from designate.openstack.common.rpc import common as rpc_common
 from designate.central import service as central_service
 from designate.tests.test_api.test_v1 import ApiV1Test
 
@@ -64,20 +65,54 @@ class ApiV1RecordsTest(ApiV1Test):
         self.assertIn('name', response.json)
         self.assertEqual(response.json['name'], fixture['name'])
 
-    @patch.object(central_service.Service, 'create_record')
-    def test_create_record_trailing_slash(self, mock):
-        fixture = self.get_record_fixture(self.recordset['type'])
-        fixture.update({
+    def test_create_record_name_reuse(self):
+        fixture_1 = self.get_record_fixture(self.recordset['type'])
+        fixture_1.update({
             'name': self.recordset['name'],
             'type': self.recordset['type'],
         })
 
-        # Create a record with a trailing slash
-        self.post('domains/%s/records/' % self.domain['id'],
-                  data=fixture)
+        fixture_2 = self.get_record_fixture(self.recordset['type'], fixture=1)
+        fixture_2.update({
+            'name': self.recordset['name'],
+            'type': self.recordset['type'],
+        })
 
-        # verify that the central service is called
-        self.assertTrue(mock.called)
+        # Create 2 records
+        record_1 = self.post('domains/%s/records' % self.domain['id'],
+                             data=fixture_1)
+        record_2 = self.post('domains/%s/records' % self.domain['id'],
+                             data=fixture_2)
+
+        # Delete record 1, this should not have any side effects
+        self.delete('domains/%s/records/%s' % (self.domain['id'],
+                                               record_1.json['id']))
+
+        # Get the record 2 to ensure recordset did not get deleted
+        rec_2_get_response = self.get('domains/%s/records/%s' %
+                                     (self.domain['id'], record_2.json['id']))
+
+        self.assertIn('id', rec_2_get_response.json)
+        self.assertIn('name', rec_2_get_response.json)
+        self.assertEqual(rec_2_get_response.json['name'], fixture_1['name'])
+
+        # Delete record 2, this should delete the null recordset too
+        self.delete('domains/%s/records/%s' % (self.domain['id'],
+                                               record_2.json['id']))
+
+        # Re-create as a different type, but use the same name
+        fixture = self.get_record_fixture('CNAME')
+        fixture.update({
+            'name': self.recordset['name'],
+            'type': 'CNAME'
+        })
+
+        response = self.post('domains/%s/records' % self.domain['id'],
+                             data=fixture)
+
+        self.assertIn('id', response.json)
+        self.assertIn('name', response.json)
+        self.assertEqual(response.json['name'], fixture['name'])
 
     def test_create_record_junk(self):
         fixture = self.get_record_fixture(self.recordset['type'])
@@ -100,7 +135,7 @@ class ApiV1RecordsTest(ApiV1Test):
             'type': self.recordset['type'],
         })
 
-        #Add a UTF-8 riddled description
+        # Add a UTF-8 riddled description
         fixture['description'] = "utf-8:2H₂+O₂⇌2H₂O,R=4.7kΩ,⌀200mm∮E⋅da=Q,n" \
                                  ",∑f(i)=∏g(i),∀x∈ℝ:⌈x⌉"
 
@@ -136,7 +171,7 @@ class ApiV1RecordsTest(ApiV1Test):
                   status_code=400)
 
     @patch.object(central_service.Service, 'create_record',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_create_record_timeout(self, _):
         fixture = self.get_record_fixture(self.recordset['type'])
         fixture.update({
@@ -262,34 +297,30 @@ class ApiV1RecordsTest(ApiV1Test):
     def test_get_records(self):
         response = self.get('domains/%s/records' % self.domain['id'])
 
+        # Verify that the SOA & NS records are already created
         self.assertIn('records', response.json)
-        self.assertEqual(0, len(response.json['records']))
+        self.assertEqual(2, len(response.json['records']))
 
         # Create a record
         self.create_record(self.domain, self.recordset)
 
         response = self.get('domains/%s/records' % self.domain['id'])
 
+        # Verify that one more record has been added
         self.assertIn('records', response.json)
-        self.assertEqual(1, len(response.json['records']))
+        self.assertEqual(3, len(response.json['records']))
 
         # Create a second record
         self.create_record(self.domain, self.recordset, fixture=1)
 
         response = self.get('domains/%s/records' % self.domain['id'])
 
+        # Verfiy that all 4 records are there
         self.assertIn('records', response.json)
-        self.assertEqual(2, len(response.json['records']))
-
-    @patch.object(central_service.Service, 'find_records')
-    def test_get_records_trailing_slash(self, mock):
-        self.get('domains/%s/records/' % self.domain['id'])
-
-        # verify that the central service is called
-        self.assertTrue(mock.called)
+        self.assertEqual(4, len(response.json['records']))
 
     @patch.object(central_service.Service, 'find_records',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_get_records_timeout(self, _):
         self.get('domains/%s/records' % self.domain['id'],
                  status_code=504)
@@ -313,17 +344,6 @@ class ApiV1RecordsTest(ApiV1Test):
         self.assertEqual(response.json['id'], record['id'])
         self.assertEqual(response.json['name'], self.recordset['name'])
         self.assertEqual(response.json['type'], self.recordset['type'])
-
-    @patch.object(central_service.Service, 'get_recordset')
-    def test_get_record_trailing_slash(self, mock):
-        # Create a record
-        record = self.create_record(self.domain, self.recordset)
-
-        self.get('domains/%s/records/%s/' % (self.domain['id'],
-                                             record['id']))
-
-        # verify that the central service is called
-        self.assertTrue(mock.called)
 
     def test_update_record(self):
         # Create a record
@@ -359,20 +379,6 @@ class ApiV1RecordsTest(ApiV1Test):
         self.assertEqual(response.json['type'], self.recordset['type'])
         self.assertEqual(response.json['ttl'], 100)
 
-    @patch.object(central_service.Service, 'update_record')
-    def test_update_record_trailing_slash(self, mock):
-        # Create a record
-        record = self.create_record(self.domain, self.recordset)
-
-        data = {'ttl': 100}
-
-        self.put('domains/%s/records/%s/' % (self.domain['id'],
-                                             record['id']),
-                 data=data)
-
-        # verify that the central service is called
-        self.assertTrue(mock.called)
-
     def test_update_record_junk(self):
         # Create a record
         record = self.create_record(self.domain, self.recordset)
@@ -392,7 +398,7 @@ class ApiV1RecordsTest(ApiV1Test):
                  data=data, status_code=400)
 
     @patch.object(central_service.Service, 'get_domain',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_update_record_timeout(self, _):
         # Create a record
         record = self.create_record(self.domain, self.recordset)
@@ -446,19 +452,8 @@ class ApiV1RecordsTest(ApiV1Test):
                                             record['id']),
                  status_code=404)
 
-    @patch.object(central_service.Service, 'get_domain')
-    def test_delete_record_trailing_slash(self, mock):
-        # Create a record
-        record = self.create_record(self.domain, self.recordset)
-
-        self.delete('domains/%s/records/%s/' % (self.domain['id'],
-                                                record['id']))
-
-        # verify that the central service is called
-        self.assertTrue(mock.called)
-
     @patch.object(central_service.Service, 'get_domain',
-                  side_effect=rpc_common.Timeout())
+                  side_effect=messaging.MessagingTimeout())
     def test_delete_record_timeout(self, _):
         # Create a record
         record = self.create_record(self.domain, self.recordset)

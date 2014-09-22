@@ -14,11 +14,14 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import sys
+
 from oslo.config import cfg
+
 from designate.openstack.common import log as logging
-from designate.openstack.common import service
+from designate import service
 from designate import utils
 from designate.sink import service as sink_service
+
 
 CONF = cfg.CONF
 CONF.import_opt('workers', 'designate.sink', group='service:sink')
@@ -27,6 +30,7 @@ CONF.import_opt('workers', 'designate.sink', group='service:sink')
 def main():
     utils.read_config('designate', sys.argv)
     logging.setup('designate')
-    launcher = service.launch(sink_service.Service(),
-                              CONF['service:sink'].workers)
-    launcher.wait()
+
+    server = sink_service.Service()
+    service.serve(server, workers=CONF['service:sink'].workers)
+    service.wait()

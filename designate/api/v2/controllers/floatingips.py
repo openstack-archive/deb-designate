@@ -13,16 +13,14 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-import pecan
 import re
+
+import pecan
+
 from designate import exceptions
 from designate import schema
 from designate.api.v2.controllers import rest
 from designate.api.v2.views import floatingips as floatingips_views
-from designate.central import rpcapi as central_rpcapi
-
-
-central_api = central_rpcapi.CentralAPI()
 
 
 FIP_REGEX = '^(?P<region>[A-Za-z0-9\\.\\-_]{1,100}):' \
@@ -48,11 +46,11 @@ class FloatingIPController(rest.RestController):
 
     @pecan.expose(template='json:', content_type='application/json')
     def get_all(self, **params):
-        """ List Floating IP PTRs for a Tenant """
+        """List Floating IP PTRs for a Tenant"""
         request = pecan.request
         context = request.environ['context']
 
-        fips = central_api.list_floatingips(context)
+        fips = self.central_api.list_floatingips(context)
         return self._view.list(context, request, fips)
 
     @pecan.expose(template='json:', content_type='application/json')
@@ -69,7 +67,7 @@ class FloatingIPController(rest.RestController):
         # Validate the request conforms to the schema
         self._resource_schema.validate(body)
 
-        fip = central_api.update_floatingip(
+        fip = self.central_api.update_floatingip(
             context, region, id_, body['floatingip'])
 
         if fip:
@@ -85,6 +83,6 @@ class FloatingIPController(rest.RestController):
 
         region, id_ = fip_key_to_data(fip_key)
 
-        fip = central_api.get_floatingip(context, region, id_)
+        fip = self.central_api.get_floatingip(context, region, id_)
 
         return self._view.show(context, request, fip)

@@ -16,7 +16,9 @@
 import mock
 from mock import call
 from mock import MagicMock
+
 from designate import exceptions
+from designate import objects
 from designate import tests
 from designate.tests.test_backend import BackendTestMixin
 
@@ -105,8 +107,12 @@ class MultiBackendTestCase(tests.TestCase, BackendTestMixin):
         # Since multi's delete fetches the domain from central to be able to
         # recreate it if something goes wrong, create the domain first
         self.backend.central_service.create_server(
-            self.get_admin_context(), self.get_server_fixture())
-        self.backend.central_service.create_domain(context, domain)
+            self.get_admin_context(),
+            objects.Server(**self.get_server_fixture()))
+        created_domain = self.backend.central_service.create_domain(
+            context, objects.Domain(**domain))
+        records = self.backend.central_service.find_records(
+            context, criterion={'domain_id': created_domain['id']})
         self.backend.master.delete_domain = MagicMock(
             side_effect=exceptions.Backend)
         self.assertRaises(exceptions.Backend, self.backend.delete_domain,
@@ -114,7 +120,11 @@ class MultiBackendTestCase(tests.TestCase, BackendTestMixin):
         self.assertEqual(self.backends.mock_calls,
                          [call.slave.delete_domain(context, domain),
                           call.master.delete_domain(context, domain),
-                          call.slave.create_domain(context, domain)])
+                          call.slave.create_domain(context, domain),
+                          call.slave.create_record(context, domain,
+                                                   records[0]),
+                          call.slave.create_record(context, domain,
+                                                   records[1])])
 
     def test_create_server(self):
         context = self.get_context()

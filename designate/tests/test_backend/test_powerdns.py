@@ -15,12 +15,14 @@
 # under the License.
 
 import os
+
 from mock import MagicMock
 
 from designate import tests
 from designate.tests import DatabaseFixture
 from designate.tests.test_backend import BackendTestMixin
 from designate import utils
+
 
 # impl_powerdns needs to register its options before being instanciated.
 # Import it and pretend to use it to avoid flake8 unused import errors.
@@ -67,11 +69,10 @@ class PowerDNSBackendTestCase(tests.TestCase, BackendTestMixin):
         self.db_fixture = DatabaseFixture.get_fixture(REPOSITORY)
         self.useFixture(self.db_fixture)
         self.config(backend_driver='powerdns', group='service:agent')
-        self.config(database_connection=self.db_fixture.url,
+        self.config(connection=self.db_fixture.url,
                     group='backend:powerdns')
         self.backend = self.get_backend_driver()
         self.backend.start()
-        self.central_service = self.start_service('central')
         # Since some CRUD methods in impl_powerdns call central's find_servers
         # method, mock it up to return our fixture.
         self.backend.central_service.find_servers = MagicMock(

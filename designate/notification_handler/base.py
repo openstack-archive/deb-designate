@@ -15,16 +15,19 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import abc
+
 from oslo.config import cfg
+
 from designate import exceptions
 from designate.openstack.common import log as logging
 from designate.central import rpcapi as central_rpcapi
 from designate.context import DesignateContext
+from designate.objects import Record
+from designate.objects import RecordSet
 from designate.plugin import ExtensionPlugin
 
 
 LOG = logging.getLogger(__name__)
-central_api = central_rpcapi.CentralAPI()
 
 
 def get_ip_data(addr_dict):
@@ -45,9 +48,13 @@ def get_ip_data(addr_dict):
 
 
 class NotificationHandler(ExtensionPlugin):
-    """ Base class for notification handlers """
+    """Base class for notification handlers"""
     __plugin_ns__ = 'designate.notification.handler'
     __plugin_type__ = 'handler'
+
+    def __init__(self, *args, **kw):
+        super(NotificationHandler, self).__init__(*args, **kw)
+        self.central_api = central_rpcapi.CentralAPI()
 
     @abc.abstractmethod
     def get_exchange_topics(self):
@@ -63,30 +70,32 @@ class NotificationHandler(ExtensionPlugin):
         """
 
     @abc.abstractmethod
-    def process_notification(self, event_type, payload):
-        """ Processes a given notification """
+    def process_notification(self, context, event_type, payload):
+        """Processes a given notification"""
 
     def get_domain(self, domain_id):
         """
         Return the domain for this context
         """
         context = DesignateContext.get_admin_context(all_tenants=True)
-        return central_api.get_domain(context, domain_id)
+        return self.central_api.get_domain(context, domain_id)
 
     def _find_or_create_recordset(self, context, domain_id, name, type,
                                   ttl=None):
         try:
-            recordset = central_api.find_recordset(context, {
+            recordset = self.central_api.find_recordset(context, {
                 'domain_id': domain_id,
                 'name': name,
                 'type': type,
             })
         except exceptions.RecordSetNotFound:
-            recordset = central_api.create_recordset(context, domain_id, {
+            values = {
                 'name': name,
                 'type': type,
                 'ttl': ttl,
-            })
+            }
+            recordset = self.central_api.create_recordset(
+                context, domain_id, RecordSet(**values))
 
         return recordset
 
@@ -142,18 +151,23 @@ class BaseAddressHandler(NotificationHandler):
                     'managed_resource_type': resource_type,
                     'managed_resource_id': resource_id})
 
-            LOG.debug('Creating record in %s / %s with values %r',
-                      domain['id'], recordset['id'], record_values)
-            central_api.create_record(context, domain['id'], recordset['id'],
-                                      record_values)
+            LOG.debug('Creating record in %s / %s with values %r' %
+                      (domain['id'], recordset['id'], record_values))
+            self.central_api.create_record(context,
+                                           domain['id'],
+                                           recordset['id'],
+                                           Record(**record_values))
 
     def _delete(self, managed=True, resource_id=None, resource_type='instance',
-                criterion={}):
+                criterion=None):
         """
         Handle a generic delete of a fixed ip within a domain
 
         :param criterion: Criterion to search and destroy records
         """
+
+        criterion = criterion or {}
+
         context = DesignateContext.get_admin_context(all_tenants=True)
 
         criterion.update({'domain_id': cfg.CONF[self.name].domain_id})
@@ -167,10 +181,12 @@ class BaseAddressHandler(NotificationHandler):
                 'managed_resource_type': resource_type
             })
 
-        records = central_api.find_records(context, criterion)
+        records = self.central_api.find_records(context, criterion)
 
         for record in records:
             LOG.debug('Deleting record %s' % record['id'])
 
-            central_api.delete_record(context, cfg.CONF[self.name].domain_id,
-                                      record['recordset_id'], record['id'])
+            self.central_api.delete_record(context,
+                                           cfg.CONF[self.name].domain_id,
+                                           record['recordset_id'],
+                                           record['id'])

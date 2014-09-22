@@ -14,14 +14,14 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+
 from designate import backend
 
 
 class BackendTestMixin(object):
     def get_backend_driver(self):
-        central_service = self.start_service('central')
         return backend.get_backend(cfg.CONF['service:agent'].backend_driver,
-                                   central_service=central_service)
+                                   central_service=self.central_service)
 
     def test_constructor(self):
         self.get_backend_driver()

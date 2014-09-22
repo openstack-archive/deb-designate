@@ -22,9 +22,10 @@ from neutronclient.common import exceptions as neutron_exceptions
 from oslo.config import cfg
 
 from designate import exceptions
-
 from designate.openstack.common import log as logging
 from designate.openstack.common import threadgroup
+from designate.i18n import _LW
+from designate.i18n import _LE
 from designate.network_api.base import NetworkAPI
 
 
@@ -109,20 +110,22 @@ class NeutronNetworkAPI(NetworkAPI):
 
         def _call(endpoint, region, *args, **kw):
             client = get_client(context, endpoint=endpoint)
-            LOG.debug("Attempting to fetch FloatingIPs from %s @ %s",
-                      endpoint, region)
+            LOG.debug("Attempting to fetch FloatingIPs from %s @ %s" %
+                      (endpoint, region))
             try:
                 fips = client.list_floatingips(*args, **kw)
             except neutron_exceptions.Unauthorized as e:
                 # NOTE: 401 might be that the user doesn't have neutron
                 # activated in a particular region, we'll just log the failure
                 # and go on with our lives.
-                msg = "Calling Neutron resulted in a 401, please investigate."
-                LOG.warning(msg)
+                LOG.warn(_LW("Calling Neutron resulted in a 401, "
+                             "please investigate."))
                 LOG.exception(e)
                 return
             except Exception as e:
-                LOG.error('Failed calling Neutron %s - %s', region, endpoint)
+                LOG.error(_LE('Failed calling Neutron '
+                              '%(region)s - %(endpoint)s') %
+                          {'region': region, 'endpoint': endpoint})
                 LOG.exception(e)
                 failed.append((e, endpoint, region))
                 return
@@ -134,12 +137,12 @@ class NeutronNetworkAPI(NetworkAPI):
                     'region': region
                 })
 
-            LOG.debug("Added %i FloatingIPs from %s @ %s", len(data),
-                      endpoint, region)
+            LOG.debug("Added %i FloatingIPs from %s @ %s" %
+                      (len(data), endpoint, region))
 
         for endpoint, region in endpoints:
             tg.add_thread(_call, endpoint, region,
-                          tenant_id=context.tenant_id)
+                          tenant_id=context.tenant)
         tg.wait()
 
         # NOTE: Sadly tg code doesn't give us a good way to handle failures.

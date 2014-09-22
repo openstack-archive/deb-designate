@@ -14,8 +14,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+
 from designate.openstack.common import log as logging
 from designate.notification_handler.base import BaseAddressHandler
+
 
 LOG = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ cfg.CONF.register_group(cfg.OptGroup(
 ))
 
 cfg.CONF.register_opts([
-    cfg.ListOpt('notification-topics', default=['monitor']),
+    cfg.ListOpt('notification-topics', default=['notifications']),
     cfg.StrOpt('control-exchange', default='nova'),
     cfg.StrOpt('domain-id', default=None),
     cfg.StrOpt('format', default=None)
@@ -33,14 +35,13 @@ cfg.CONF.register_opts([
 
 
 class NovaFixedHandler(BaseAddressHandler):
-    """ Handler for Nova's notifications """
+    """Handler for Nova's notifications"""
     __plugin_name__ = 'nova_fixed'
 
     def get_exchange_topics(self):
         exchange = cfg.CONF[self.name].control_exchange
 
-        topics = [topic + ".info"
-                  for topic in cfg.CONF[self.name].notification_topics]
+        topics = [topic for topic in cfg.CONF[self.name].notification_topics]
 
         return (exchange, topics)
 
@@ -50,7 +51,7 @@ class NovaFixedHandler(BaseAddressHandler):
             'compute.instance.delete.start',
         ]
 
-    def process_notification(self, event_type, payload):
+    def process_notification(self, context, event_type, payload):
         LOG.debug('NovaFixedHandler received notification - %s' % event_type)
 
         if event_type == 'compute.instance.create.end':

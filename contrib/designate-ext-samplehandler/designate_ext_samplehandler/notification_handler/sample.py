@@ -14,8 +14,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+
 from designate.openstack.common import log as logging
+from designate.objects import Record
 from designate.notification_handler.base import NotificationHandler
+
 
 LOG = logging.getLogger(__name__)
 
@@ -35,7 +38,7 @@ cfg.CONF.register_opts([
 
 
 class SampleHandler(NotificationHandler):
-    """ Sample Handler """
+    """Sample Handler"""
     __plugin_name__ = 'sample'
 
     def get_exchange_topics(self):
@@ -55,7 +58,7 @@ class SampleHandler(NotificationHandler):
             'compute.instance.create.end'
         ]
 
-    def process_notification(self, event_type, payload):
+    def process_notification(self, context, event_type, payload):
         # Do something with the notification.. e.g:
         domain_id = cfg.CONF['handler:sample'].domain_id
         domain_name = cfg.CONF['handler:sample'].domain_name
@@ -64,13 +67,17 @@ class SampleHandler(NotificationHandler):
 
         for fixed_ip in payload['fixed_ips']:
             if fixed_ip['version'] == 4:
-                self.central_api.create_record(domain_id,
-                                               type='A',
-                                               name=hostname,
-                                               data=fixed_ip['address'])
+                values = dict(
+                    type='A',
+                    name=hostname,
+                    data=fixed_ip['address']
+                )
+                self.central_api.create_record(domain_id, Record(**values))
 
             elif fixed_ip['version'] == 6:
-                self.central_api.create_record(domain_id,
-                                               type='AAAA',
-                                               name=hostname,
-                                               data=fixed_ip['address'])
+                values = dict(
+                    type='AAAA',
+                    name=hostname,
+                    data=fixed_ip['address']
+                )
+                self.central_api.create_record(domain_id, Record(**values))

@@ -14,12 +14,13 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from paste import deploy
-from designate.openstack.common import log as logging
-from designate.openstack.deprecated import wsgi
 from oslo.config import cfg
+
+from designate.openstack.common import log as logging
+from designate.i18n import _LI
+from designate.openstack.deprecated import wsgi
 from designate import exceptions
 from designate import utils
-from designate import policy
 
 
 LOG = logging.getLogger(__name__)
@@ -35,9 +36,7 @@ class Service(wsgi.Service):
             msg = 'Unable to determine appropriate api-paste-config file'
             raise exceptions.ConfigurationError(msg)
 
-        LOG.info('Using api-paste-config found at: %s' % config_paths[0])
-
-        policy.init_policy()
+        LOG.info(_LI('Using api-paste-config found at: %s') % config_paths[0])
 
         application = deploy.loadapp("config:%s" % config_paths[0],
                                      name='osapi_dns')

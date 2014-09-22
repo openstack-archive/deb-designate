@@ -38,7 +38,7 @@
                 "type": {
                     "type": "string",
                     "description": "RecordSet type (TODO: Make types extensible)",
-                    "enum": ["A", "AAAA", "CNAME", "MX", "SRV", "TXT", "SPF", "NS", "PTR", "SSHFP"]
+                    "enum": ["A", "AAAA", "CNAME", "MX", "SRV", "TXT", "SPF", "NS", "PTR", "SSHFP", "SOA"]
                 },
                 "description": {
                     "type": ["string", "null"],
@@ -48,8 +48,13 @@
                 "ttl": {
                     "type": ["integer", "null"],
                     "description": "Default time to live",
-                    "min": 0,
-                    "max": 2147483647,
+                    "minimum": 0,
+                    "maximum": 2147483647,
+                    "default": null
+                },
+                "records": {
+                    "type": ["array", "null"],
+                    "description": "Records in the RecordSet",
                     "default": null
                 },
                 "version": {

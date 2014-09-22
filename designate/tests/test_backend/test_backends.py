@@ -14,6 +14,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from testscenarios import load_tests_apply_scenarios as load_tests  # noqa
+
 from designate import tests
 from designate.tests.test_backend.test_nsd4slave import NSD4Fixture
 from designate.tests.test_backend import BackendTestMixin
@@ -25,7 +26,8 @@ class BackendTestCase(tests.TestCase, BackendTestMixin):
         ('fake', dict(backend_driver='fake', group='service:agent')),
         ('nsd4slave', dict(backend_driver='nsd4slave', group='service:agent',
                            server_fixture=NSD4Fixture)),
-        ('powerdns', dict(backend_driver='powerdns', group='service:agent'))
+        ('powerdns', dict(backend_driver='powerdns', group='service:agent')),
+        ('ipa', dict(backend_driver='ipa', group='service:agent'))
     ]
 
     def setUp(self):

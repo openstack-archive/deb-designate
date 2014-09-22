@@ -14,17 +14,19 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import abc
+
+import six
 from stevedore import driver
 from stevedore import enabled
+
 from designate.openstack.common import log as logging
 
 
 LOG = logging.getLogger(__name__)
 
 
+@six.add_metaclass(abc.ABCMeta)
 class Plugin(object):
-    __metaclass__ = abc.ABCMeta
-
     __plugin_ns__ = None
 
     __plugin_name__ = None
@@ -32,7 +34,7 @@ class Plugin(object):
 
     def __init__(self):
         self.name = self.get_canonical_name()
-        LOG.debug("Loaded plugin %s", self.name)
+        LOG.debug("Loaded plugin %s" % self.name)
 
     @classmethod
     def get_canonical_name(cls):
@@ -62,9 +64,9 @@ class DriverPlugin(Plugin):
 
     @classmethod
     def get_driver(cls, name):
-        """ Load a single driver """
+        """Load a single driver"""
 
-        LOG.debug('Looking for driver %s in %s', name, cls.__plugin_ns__)
+        LOG.debug('Looking for driver %s in %s' % (name, cls.__plugin_ns__))
 
         mgr = driver.DriverManager(cls.__plugin_ns__, name)
 
@@ -81,9 +83,9 @@ class ExtensionPlugin(Plugin):
 
     @classmethod
     def get_extensions(cls, enabled_extensions=None):
-        """ Load a series of extensions """
+        """Load a series of extensions"""
 
-        LOG.debug('Looking for extensions in %s', cls.__plugin_ns__)
+        LOG.debug('Looking for extensions in %s' % cls.__plugin_ns__)
 
         def _check_func(ext):
             if enabled_extensions is None:

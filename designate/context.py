@@ -14,18 +14,30 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import itertools
+import copy
+
 from designate.openstack.common import context
+from designate.openstack.common import local
 from designate.openstack.common import log as logging
+from designate import policy
+
 
 LOG = logging.getLogger(__name__)
 
 
 class DesignateContext(context.RequestContext):
+
+    _all_tenants = False
+
     def __init__(self, auth_token=None, user=None, tenant=None, domain=None,
                  user_domain=None, project_domain=None, is_admin=False,
                  read_only=False, show_deleted=False, request_id=None,
-                 instance_uuid=None, roles=[], service_catalog=None,
-                 all_tenants=False):
+                 instance_uuid=None, roles=None, service_catalog=None,
+                 all_tenants=False, user_identity=None):
+        # NOTE: user_identity may be passed in, but will be silently dropped as
+        #       it is a generated field based on several others.
+
+        roles = roles or []
         super(DesignateContext, self).__init__(
             auth_token=auth_token,
             user=user,
@@ -41,15 +53,17 @@ class DesignateContext(context.RequestContext):
 
         self.roles = roles
         self.service_catalog = service_catalog
+
         self.all_tenants = all_tenants
+
+        if not hasattr(local.store, 'context'):
+            self.update_store()
+
+    def update_store(self):
+        local.store.context = self
 
     def deepcopy(self):
         d = self.to_dict()
-
-        # Remove the user and tenant id fields, this map to user and tenant
-        d.pop('user_id')
-        d.pop('tenant_id')
-        d.pop('user_identity')
 
         return self.from_dict(d)
 
@@ -57,20 +71,15 @@ class DesignateContext(context.RequestContext):
         d = super(DesignateContext, self).to_dict()
 
         d.update({
-            'user_id': self.user_id,
-            'tenant_id': self.tenant_id,
             'roles': self.roles,
             'service_catalog': self.service_catalog,
             'all_tenants': self.all_tenants,
         })
 
-        return d
+        return copy.deepcopy(d)
 
     @classmethod
     def from_dict(cls, values):
-        if 'user_identity' in values:
-            values.pop('user_identity')
-
         return cls(**values)
 
     def elevated(self, show_deleted=None):
@@ -85,22 +94,6 @@ class DesignateContext(context.RequestContext):
             context.show_deleted = show_deleted
 
         return context
-
-    @property
-    def user_id(self):
-        return self.user
-
-    @user_id.setter
-    def user_id(self, value):
-        self.user = value
-
-    @property
-    def tenant_id(self):
-        return self.tenant
-
-    @tenant_id.setter
-    def tenant_id(self, value):
-        self.tenant = value
 
     @classmethod
     def get_admin_context(cls, **kwargs):
@@ -124,3 +117,13 @@ class DesignateContext(context.RequestContext):
                 return arg
 
         return None
+
+    @property
+    def all_tenants(self):
+        return self._all_tenants
+
+    @all_tenants.setter
+    def all_tenants(self, value):
+        if value:
+            policy.check('all_tenants', self)
+        self._all_tenants = value

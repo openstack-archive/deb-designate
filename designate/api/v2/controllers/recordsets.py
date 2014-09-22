@@ -14,16 +14,17 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import pecan
-from designate.central import rpcapi as central_rpcapi
+
 from designate.openstack.common import log as logging
+from designate import exceptions
 from designate import schema
 from designate import utils
 from designate.api.v2.controllers import rest
 from designate.api.v2.views import recordsets as recordsets_view
-from designate.api.v2.controllers import records
+from designate.objects import RecordSet
+
 
 LOG = logging.getLogger(__name__)
-central_api = central_rpcapi.CentralAPI()
 
 
 class RecordSetsController(rest.RestController):
@@ -31,25 +32,24 @@ class RecordSetsController(rest.RestController):
     _resource_schema = schema.Schema('v2', 'recordset')
     _collection_schema = schema.Schema('v2', 'recordsets')
     SORT_KEYS = ['created_at', 'id', 'updated_at', 'domain_id', 'tenant_id',
-                 'name', 'type', 'ttl']
-
-    records = records.RecordsController()
+                 'name', 'type', 'ttl', 'records', 'priority']
 
     @pecan.expose(template='json:', content_type='application/json')
     @utils.validate_uuid('zone_id', 'recordset_id')
     def get_one(self, zone_id, recordset_id):
-        """ Get RecordSet """
+        """Get RecordSet"""
         request = pecan.request
         context = request.environ['context']
 
-        recordset = central_api.get_recordset(context, zone_id, recordset_id)
+        recordset = self.central_api.get_recordset(context, zone_id,
+                                                   recordset_id)
 
         return self._view.show(context, request, recordset)
 
     @pecan.expose(template='json:', content_type='application/json')
     @utils.validate_uuid('zone_id')
     def get_all(self, zone_id, **params):
-        """ List RecordSets """
+        """List RecordSets"""
         request = pecan.request
         context = request.environ['context']
 
@@ -57,21 +57,35 @@ class RecordSetsController(rest.RestController):
         marker, limit, sort_key, sort_dir = self._get_paging_params(params)
 
         # Extract any filter params.
-        accepted_filters = ('name', 'type', 'ttl', )
+        accepted_filters = ('name', 'type', 'ttl', 'data', )
         criterion = dict((k, params[k]) for k in accepted_filters
                          if k in params)
 
         criterion['domain_id'] = zone_id
 
-        recordsets = central_api.find_recordsets(
+        # Data must be filtered separately, through the Records table
+        recordsets_with_data = set()
+        data = criterion.pop('data', None)
+
+        # Retrieve recordsets
+        recordsets = self.central_api.find_recordsets(
             context, criterion, marker, limit, sort_key, sort_dir)
+
+        # 'data' filter param: only return recordsets with matching data
+        if data:
+            records = self.central_api.find_records(
+                context, criterion={'data': data, 'domain_id': zone_id})
+            recordsets_with_data.update(
+                [record.recordset_id for record in records])
+            recordsets = [recordset for recordset in recordsets
+                          if recordset.id in recordsets_with_data]
 
         return self._view.list(context, request, recordsets, [zone_id])
 
     @pecan.expose(template='json:', content_type='application/json')
     @utils.validate_uuid('zone_id')
     def post_all(self, zone_id):
-        """ Create RecordSet """
+        """Create RecordSet"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
@@ -84,8 +98,14 @@ class RecordSetsController(rest.RestController):
         # Convert from APIv2 -> Central format
         values = self._view.load(context, request, body)
 
+        # SOA recordsets cannot be created manually
+        if values['type'] == 'SOA':
+            raise exceptions.BadRequest(
+                "Creating a SOA recordset is now allowed")
+
         # Create the recordset
-        recordset = central_api.create_recordset(context, zone_id, values)
+        recordset = self.central_api.create_recordset(
+            context, zone_id, RecordSet(**values))
 
         # Prepare the response headers
         response.status_int = 201
@@ -96,32 +116,40 @@ class RecordSetsController(rest.RestController):
         return self._view.show(context, request, recordset)
 
     @pecan.expose(template='json:', content_type='application/json')
-    @pecan.expose(template='json:', content_type='application/json-patch+json')
     @utils.validate_uuid('zone_id', 'recordset_id')
-    def patch_one(self, zone_id, recordset_id):
-        """ Update RecordSet """
+    def put_one(self, zone_id, recordset_id):
+        """Update RecordSet"""
         request = pecan.request
         context = request.environ['context']
         body = request.body_dict
         response = pecan.response
 
         # Fetch the existing recordset
-        recordset = central_api.get_recordset(context, zone_id, recordset_id)
+        recordset = self.central_api.get_recordset(context, zone_id,
+                                                   recordset_id)
+
+        # SOA recordsets cannot be updated manually
+        if recordset['type'] == 'SOA':
+            raise exceptions.BadRequest(
+                'Updating SOA recordsets is now allowed')
+
+        # NS recordsets at the zone root cannot be manually updated
+        if recordset['type'] == 'NS':
+            zone = self.central_api.get_domain(context, zone_id)
+            if recordset['name'] == zone['name']:
+                raise exceptions.BadRequest(
+                    'Updating a root zone NS record is not allowed')
 
         # Convert to APIv2 Format
-        recordset = self._view.show(context, request, recordset)
+        recordset_data = self._view.show(context, request, recordset)
+        recordset_data = utils.deep_dict_merge(recordset_data, body)
 
-        if request.content_type == 'application/json-patch+json':
-            raise NotImplemented('json-patch not implemented')
-        else:
-            recordset = utils.deep_dict_merge(recordset, body)
+        # Validate the new set of data
+        self._resource_schema.validate(recordset_data)
 
-            # Validate the request conforms to the schema
-            self._resource_schema.validate(recordset)
-
-            values = self._view.load(context, request, body)
-            recordset = central_api.update_recordset(
-                context, zone_id, recordset_id, values)
+        # Update and persist the resource
+        recordset.update(self._view.load(context, request, body))
+        recordset = self.central_api.update_recordset(context, recordset)
 
         response.status_int = 200
 
@@ -130,12 +158,19 @@ class RecordSetsController(rest.RestController):
     @pecan.expose(template=None, content_type='application/json')
     @utils.validate_uuid('zone_id', 'recordset_id')
     def delete_one(self, zone_id, recordset_id):
-        """ Delete RecordSet """
+        """Delete RecordSet"""
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
 
-        central_api.delete_recordset(context, zone_id, recordset_id)
+        # Fetch the existing recordset
+        recordset = self.central_api.get_recordset(context, zone_id,
+                                                   recordset_id)
+        if recordset['type'] == 'SOA':
+            raise exceptions.BadRequest(
+                'Deleting a SOA recordset is now allowed')
+
+        self.central_api.delete_recordset(context, zone_id, recordset_id)
 
         response.status_int = 204
 

@@ -1,9 +1,13 @@
 {
     "admin": "role:admin or is_admin:True",
-    "owner": "tenant_id:%(tenant_id)s",
+    "owner": "tenant:%(tenant_id)s",
     "admin_or_owner": "rule:admin or rule:owner",
 
     "default": "rule:admin_or_owner",
+
+    "all_tenants": "rule:admin",
+
+    "use_low_ttl": "rule:admin",
 
     "get_quotas": "rule:admin_or_owner",
     "get_quota": "rule:admin_or_owner",

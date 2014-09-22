@@ -13,13 +13,21 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-from designate.api.v2 import patches  # flake8: noqa
 import pecan.deploy
 from oslo.config import cfg
+
+from designate.api.v2 import patches  # flake8: noqa
 from designate.openstack.common import log as logging
+
 
 LOG = logging.getLogger(__name__)
 
+OPTS = [
+    cfg.ListOpt('enabled-extensions-v2', default=[],
+                help='Enabled API Extensions'),
+]
+
+cfg.CONF.register_opts(OPTS, group='service:api')
 
 def factory(global_config, **local_conf):
     if not cfg.CONF['service:api'].enable_api_v2:
@@ -33,7 +41,12 @@ def factory(global_config, **local_conf):
     conf = {
         'app': {
             'root': 'designate.api.v2.controllers.root.RootController',
-            'modules': ['designate.api.v2']
+            'modules': ['designate.api.v2'],
+            'errors': {
+                404: '/errors/not_found',
+                405: '/errors/method_not_allowed',
+                '__force_dict__' : True
+            }
         }
     }
 

@@ -14,6 +14,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import jsonschema
+
 from designate.openstack.common import log as logging
 from designate import utils
 
@@ -34,5 +35,5 @@ class LocalResolver(jsonschema.RefResolver):
         return resolver
 
     def resolve_remote(self, uri):
-        LOG.debug('Loading remote schema: %s', uri)
+        LOG.debug('Loading remote schema: %s' % uri)
         return utils.load_schema(self.api_version, uri)

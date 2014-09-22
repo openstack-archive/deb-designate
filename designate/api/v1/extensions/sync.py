@@ -14,8 +14,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import flask
+
 from designate.openstack.common import log as logging
 from designate.central import rpcapi as central_rpcapi
+
 
 LOG = logging.getLogger(__name__)
 central_api = central_rpcapi.CentralAPI()
@@ -45,6 +47,8 @@ def sync_domain(domain_id):
 def sync_record(domain_id, record_id):
     context = flask.request.environ.get('context')
 
-    central_api.sync_record(context, domain_id, record_id)
+    record = central_api.find_record(context, {'id': record_id})
+    central_api.sync_record(context, domain_id, record['recordset_id'],
+                            record_id)
 
     return flask.Response(status=200)

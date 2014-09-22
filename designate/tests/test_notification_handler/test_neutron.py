@@ -26,8 +26,6 @@ class NeutronFloatingHandlerTest(TestCase, NotificationHandlerMixin):
     def setUp(self):
         super(NeutronFloatingHandlerTest, self).setUp()
 
-        self.central_service = self.start_service('central')
-
         domain = self.create_domain()
         self.domain_id = domain['id']
         self.config(domain_id=domain['id'], group='handler:neutron_floatingip')
@@ -43,25 +41,27 @@ class NeutronFloatingHandlerTest(TestCase, NotificationHandlerMixin):
 
         criterion = {'domain_id': self.domain_id}
 
-        # Ensure we start with 0 records
+        # Ensure we start with only SOA and NS records
         records = self.central_service.find_records(self.admin_context,
                                                     criterion)
 
-        self.assertEqual(0, len(records))
+        self.assertEqual(2, len(records))
 
-        self.plugin.process_notification(event_type, fixture['payload'])
+        self.plugin.process_notification(
+            self.admin_context, event_type, fixture['payload'])
 
-        # Ensure we now have exactly 1 record
+        # Ensure we now have exactly 1 record, plus SOA & NS
         records = self.central_service.find_records(self.admin_context,
                                                     criterion)
 
-        self.assertEqual(1, len(records))
+        self.assertEqual(3, len(records))
 
     def test_floatingip_disassociate(self):
         start_event_type = 'floatingip.update.end'
         start_fixture = self.get_notification_fixture(
             'neutron', start_event_type + '_associate')
-        self.plugin.process_notification(start_event_type,
+        self.plugin.process_notification(self.admin_context,
+                                         start_event_type,
                                          start_fixture['payload'])
 
         event_type = 'floatingip.update.end'
@@ -72,25 +72,27 @@ class NeutronFloatingHandlerTest(TestCase, NotificationHandlerMixin):
 
         criterion = {'domain_id': self.domain_id}
 
-        # Ensure we start with at least 1 record
+        # Ensure we start with at least 1 record, plus NS and SOA
         records = self.central_service.find_records(self.admin_context,
                                                     criterion)
 
-        self.assertEqual(1, len(records))
+        self.assertEqual(3, len(records))
 
-        self.plugin.process_notification(event_type, fixture['payload'])
+        self.plugin.process_notification(
+            self.admin_context, event_type, fixture['payload'])
 
         # Ensure we now have exactly 0 records
         records = self.central_service.find_records(self.admin_context,
                                                     criterion)
 
-        self.assertEqual(0, len(records))
+        self.assertEqual(2, len(records))
 
     def test_floatingip_delete(self):
         start_event_type = 'floatingip.update.end'
         start_fixture = self.get_notification_fixture(
             'neutron', start_event_type + '_associate')
-        self.plugin.process_notification(start_event_type,
+        self.plugin.process_notification(self.admin_context,
+                                         start_event_type,
                                          start_fixture['payload'])
 
         event_type = 'floatingip.delete.start'
@@ -101,15 +103,16 @@ class NeutronFloatingHandlerTest(TestCase, NotificationHandlerMixin):
 
         criterion = {'domain_id': self.domain_id}
 
-        # Ensure we start with at least 1 record
+        # Ensure we start with at least 1 record, plus SOA & NS
         records = self.central_service.find_records(self.admin_context,
                                                     criterion)
-        self.assertEqual(1, len(records))
+        self.assertEqual(3, len(records))
 
-        self.plugin.process_notification(event_type, fixture['payload'])
+        self.plugin.process_notification(
+            self.admin_context, event_type, fixture['payload'])
 
         # Ensure we now have exactly 0 records
         records = self.central_service.find_records(self.admin_context,
                                                     criterion)
 
-        self.assertEqual(0, len(records))
+        self.assertEqual(2, len(records))

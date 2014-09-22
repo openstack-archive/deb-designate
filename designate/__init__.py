@@ -13,14 +13,18 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import eventlet
+
+eventlet.monkey_patch(os=False)
+
 import os
 import socket
+
 from oslo.config import cfg
+from oslo import messaging
+
 
 cfg.CONF.import_opt('default_log_levels', 'designate.openstack.common.log')
-cfg.CONF.import_opt('control_exchange', 'designate.openstack.common.rpc')
-cfg.CONF.import_opt('allowed_rpc_exception_modules',
-                    'designate.openstack.common.rpc')
 
 cfg.CONF.register_opts([
     cfg.StrOpt('host', default=socket.gethostname(),
@@ -32,9 +36,9 @@ cfg.CONF.register_opts([
     cfg.StrOpt('state-path', default='/var/lib/designate',
                help='Top-level directory for maintaining designate\'s state'),
 
-
     cfg.StrOpt('central-topic', default='central', help='Central Topic'),
     cfg.StrOpt('agent-topic', default='agent', help='Agent Topic'),
+    cfg.StrOpt('mdns-topic', default='mdns', help='mDNS Topic'),
 
     # Default TTL
     cfg.IntOpt('default-ttl', default=3600),
@@ -56,10 +60,7 @@ cfg.CONF.set_default('default_log_levels',
                       'keystone=INFO',
                       'eventlet.wsgi.server=WARN',
                       'stevedore=WARN',
-                      'keystoneclient.middleware.auth_token=INFO'])
+                      'keystonemiddleware.auth_token=INFO'])
 
 # Set some Oslo RPC defaults
-cfg.CONF.set_default('control_exchange', 'designate')
-cfg.CONF.set_default('allowed_rpc_exception_modules',
-                     ['designate.exceptions',
-                      'designate.openstack.common.exception'])
+messaging.set_transport_defaults('designate')

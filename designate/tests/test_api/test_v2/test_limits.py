@@ -14,6 +14,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+
 from designate.tests.test_api.test_v2 import ApiV2TestCase
 
 
@@ -26,11 +27,15 @@ class ApiV2LimitsTest(ApiV2TestCase):
 
         self.assertIn('limits', response.json)
         self.assertIn('absolute', response.json['limits'])
-        self.assertIn('maxZones', response.json['limits']['absolute'])
-        self.assertIn('maxZoneRecords', response.json['limits']['absolute'])
+        self.assertIn('max_zones', response.json['limits']['absolute'])
+        self.assertIn('max_zone_records', response.json['limits']['absolute'])
+        self.assertIn('max_zone_recordsets',
+                      response.json['limits']['absolute'])
+        self.assertIn('max_recordset_records',
+                      response.json['limits']['absolute'])
 
         absolutelimits = response.json['limits']['absolute']
 
-        self.assertEqual(cfg.CONF.quota_domains, absolutelimits['maxZones'])
+        self.assertEqual(cfg.CONF.quota_domains, absolutelimits['max_zones'])
         self.assertEqual(cfg.CONF.quota_domain_records,
-                         absolutelimits['maxZoneRecords'])
+                         absolutelimits['max_zone_recordsets'])

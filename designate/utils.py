@@ -18,9 +18,9 @@ import json
 import functools
 import inspect
 import os
-import pkg_resources
 import uuid
 
+import pkg_resources
 from jinja2 import Template
 from oslo.config import cfg
 
@@ -29,6 +29,7 @@ from designate.openstack.common import log as logging
 from designate.openstack.common import processutils
 from designate.openstack.common import timeutils
 
+
 LOG = logging.getLogger(__name__)
 
 
@@ -36,6 +37,24 @@ cfg.CONF.register_opts([
     cfg.StrOpt('root-helper',
                default='sudo designate-rootwrap /etc/designate/rootwrap.conf')
 ])
+
+
+# Set some proxy options (Used for clients that need to communicate via a
+# proxy)
+cfg.CONF.register_group(cfg.OptGroup(
+    name='proxy', title="Configuration for Client Proxy"
+))
+
+proxy_opts = [
+    cfg.StrOpt('http_proxy', default=None,
+               help='Proxy HTTP requests via this proxy.'),
+    cfg.StrOpt('https_proxy', default=None,
+               help='Proxy HTTPS requests via this proxy'),
+    cfg.ListOpt('no_proxy', default=[],
+                help='These addresses should not be proxied')
+]
+
+cfg.CONF.register_opts(proxy_opts, group='proxy')
 
 
 def find_config(config_path):
@@ -127,7 +146,7 @@ def execute(*cmd, **kw):
                                 root_helper=root_helper, **kw)
 
 
-def get_item_properties(item, fields, mixed_case_fields=[], formatters={}):
+def get_item_properties(item, fields, mixed_case_fields=None, formatters=None):
     """Return a tuple containing the item properties.
 
     :param item: a single item resource (e.g. Server, Tenant, etc)
@@ -137,6 +156,8 @@ def get_item_properties(item, fields, mixed_case_fields=[], formatters={}):
         to format the values
     """
     row = []
+    mixed_case_fields = mixed_case_fields or []
+    formatters = formatters or {}
 
     for field in fields:
         if field in formatters:
@@ -290,3 +311,22 @@ def validate_uuid(*check):
             return f(*args, **kwargs)
         return functools.wraps(f)(wrapper)
     return inner
+
+
+def get_proxies():
+    """Return a requests compatible dict like seen here
+    http://docs.python-requests.org/en/latest/user/advanced/#proxies for
+    consumption in clients when we need to proxy requests.
+    """
+    proxies = {}
+    if cfg.CONF.proxy.no_proxy:
+        proxies['no_proxy'] = cfg.CONF.proxy.no_proxy
+    if cfg.CONF.proxy.http_proxy is not None:
+        proxies['http'] = cfg.CONF.proxy.http_proxy
+
+    if cfg.CONF.proxy.https_proxy is not None:
+        proxies['https'] = cfg.CONF.proxy.https_proxy
+    elif 'http' in proxies:
+        proxies['https'] = proxies['http']
+
+    return proxies

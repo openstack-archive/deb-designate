@@ -33,19 +33,21 @@ class ApiV1Test(ApiTestCase):
         # Create the application
         self.app = api_v1.factory({})
 
+        # Inject the NormalizeURIMiddleware middleware
+        self.app.wsgi_app = middleware.NormalizeURIMiddleware(
+            self.app.wsgi_app)
+
         # Inject the FaultWrapper middleware
         self.app.wsgi_app = middleware.FaultWrapperMiddleware(
             self.app.wsgi_app)
 
         # Inject the TestAuth middleware
         self.app.wsgi_app = middleware.TestContextMiddleware(
-            self.app.wsgi_app, self.admin_context.tenant_id,
-            self.admin_context.user_id)
+            self.app.wsgi_app, self.admin_context.tenant,
+            self.admin_context.user)
 
         # Obtain a test client
         self.client = self.app.test_client()
-
-        self.central_service = self.start_service('central')
 
     def get(self, path, **kw):
         expected_status_code = kw.pop('status_code', 200)

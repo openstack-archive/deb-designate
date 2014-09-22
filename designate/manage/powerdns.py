@@ -14,74 +14,46 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import os
-from migrate.exceptions import (DatabaseAlreadyControlledError,
-                                DatabaseNotControlledError)
+
 from migrate.versioning import api as versioning_api
-from designate.openstack.common import log as logging
 from oslo.config import cfg
+from oslo.db.sqlalchemy.migration_cli import manager as migration_manager
+
+from designate.openstack.common import log as logging
 from designate.manage import base
 
+
 LOG = logging.getLogger(__name__)
+
 REPOSITORY = os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
                                           'backend', 'impl_powerdns',
                                           'migrate_repo'))
-cfg.CONF.import_opt('database_connection', 'designate.backend.impl_powerdns',
+cfg.CONF.import_opt('connection', 'designate.backend.impl_powerdns',
                     group='backend:powerdns')
 
-
-class DatabaseInitCommand(base.Command):
-    """ Init PowerDNS database """
-
-    def execute(self, parsed_args):
-        url = cfg.CONF['backend:powerdns'].database_connection
-
-        if not os.path.exists(REPOSITORY):
-            raise Exception('Migration Repository Not Found')
-
-        try:
-            LOG.info('Attempting to initialize PowerDNS database')
-            versioning_api.version_control(url=url, repository=REPOSITORY)
-            LOG.info('PowerDNS database initialized successfully')
-        except DatabaseAlreadyControlledError:
-            raise Exception('PowerDNS Database already initialized')
+CONF = cfg.CONF
 
 
-class DatabaseSyncCommand(base.Command):
-    """ Sync PowerDNS database """
+def get_manager():
+    migration_config = {
+        'migration_repo_path': REPOSITORY,
+        'db_url': CONF['backend:powerdns'].connection}
+    return migration_manager.MigrationManager(migration_config)
 
-    def get_parser(self, prog_name):
-        parser = super(DatabaseSyncCommand, self).get_parser(prog_name)
 
-        parser.add_argument('--to-version', help="Migrate to version",
-                            default=None, type=int)
+class DatabaseCommands(base.Commands):
+    def version(self):
+        current = get_manager().version()
+        latest = versioning_api.version(repository=REPOSITORY).value
+        print("Current: %s Latest: %s" % (current, latest))
 
-        return parser
+    def sync(self):
+        get_manager().upgrade(None)
 
-    def execute(self, parsed_args):
-        url = cfg.CONF['backend:powerdns'].database_connection
+    @base.args('revision', nargs='?')
+    def upgrade(self, revision):
+        get_manager().upgrade(revision)
 
-        if not os.path.exists(REPOSITORY):
-            raise Exception('Migration Repository Not Found')
-
-        try:
-            target_version = int(parsed_args.to_version) \
-                if parsed_args.to_version else None
-
-            current_version = versioning_api.db_version(url=url,
-                                                        repository=REPOSITORY)
-        except DatabaseNotControlledError:
-            raise Exception('PowerDNS database not yet initialized')
-
-        LOG.info("Attempting to synchronize PowerDNS database from version "
-                 "'%s' to '%s'",
-                 current_version,
-                 target_version if target_version is not None else "latest")
-
-        if target_version and target_version < current_version:
-            versioning_api.downgrade(url=url, repository=REPOSITORY,
-                                     version=parsed_args.to_version)
-        else:
-            versioning_api.upgrade(url=url, repository=REPOSITORY,
-                                   version=parsed_args.to_version)
-
-        LOG.info('PowerDNS database synchronized successfully')
+    @base.args('revision', nargs='?')
+    def downgrade(self, revision):
+        get_manager().downgrade(revision)

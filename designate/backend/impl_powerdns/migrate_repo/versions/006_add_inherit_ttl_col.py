@@ -15,7 +15,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from sqlalchemy import MetaData, Table, Column, Boolean
+
 from designate.openstack.common import log as logging
+from designate.i18n import _LW
+
 
 LOG = logging.getLogger(__name__)
 meta = MetaData()
@@ -50,8 +53,8 @@ def upgrade(migrate_engine):
                'dns.records.ttl = designate.domains.ttl WHERE powerdns.records'
                '.inherit_ttl = 1;')
 
-        LOG.warning('**** A manual post-migration step is required ****')
-        LOG.warning('Please issue this query: %s' % pmq)
+        LOG.warn(_LW('**** A manual post-migration step is required ****'))
+        LOG.warn(_LW('Please issue this query: %s' % pmq))
 
 
 def downgrade(migrate_engine):

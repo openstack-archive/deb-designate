@@ -14,7 +14,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import itertools
+
 from webtest import TestApp
+
 from designate.openstack.common import log as logging
 from designate.api import v2 as api_v2
 from designate.api import middleware
@@ -41,19 +43,19 @@ class ApiV2TestCase(ApiTestCase):
         # Create the application
         self.app = api_v2.factory({})
 
+        # Inject the NormalizeURIMiddleware middleware
+        self.app = middleware.NormalizeURIMiddleware(self.app)
+
         # Inject the FaultWrapper middleware
         self.app = middleware.FaultWrapperMiddleware(self.app)
 
         # Inject the TestContext middleware
         self.app = middleware.TestContextMiddleware(
-            self.app, self.admin_context.tenant_id,
-            self.admin_context.tenant_id)
+            self.app, self.admin_context.tenant,
+            self.admin_context.tenant)
 
         # Obtain a test client
         self.client = TestApp(self.app)
-
-        # Create and start an instance of the central service
-        self.central_service = self.start_service('central')
 
     def tearDown(self):
         self.app = None

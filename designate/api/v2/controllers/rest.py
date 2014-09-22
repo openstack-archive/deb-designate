@@ -24,14 +24,18 @@
 # ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-import six
 import inspect
+
+import six
 import pecan
 import pecan.rest
 import pecan.routing
+
 from designate import exceptions
+from designate import api
 from designate.openstack.common import log as logging
-from designate.openstack.common.gettextutils import _
+from designate.i18n import _
+
 
 LOG = logging.getLogger(__name__)
 
@@ -46,6 +50,10 @@ class RestController(pecan.rest.RestController):
 
     # default sort_keys.  The Controllers can override this.
     SORT_KEYS = ['created_at', 'id']
+
+    @property
+    def central_api(self):
+        return api.get_central_api()
 
     def _get_paging_params(self, params):
         """

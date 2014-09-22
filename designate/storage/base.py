@@ -14,23 +14,26 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import abc
+
+import six
+
 from designate.plugin import DriverPlugin
 
 
+@six.add_metaclass(abc.ABCMeta)
 class Storage(DriverPlugin):
 
-    """ Base class for storage plugins """
-    __metaclass__ = abc.ABCMeta
+    """Base class for storage plugins"""
     __plugin_ns__ = 'designate.storage'
     __plugin_type__ = 'storage'
 
     @abc.abstractmethod
-    def create_quota(self, context, values):
+    def create_quota(self, context, quota):
         """
         Create a Quota.
 
         :param context: RPC Context.
-        :param values: Values to create the new Quota from.
+        :param quota: Quota object with the values to be created.
         """
 
     @abc.abstractmethod
@@ -68,13 +71,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_quota(self, context, quota_id, values):
+    def update_quota(self, context, quota):
         """
-        Update a Quota via ID
+        Update a Quota
 
         :param context: RPC Context.
-        :param quota_id: Quota ID to update.
-        :param values: Values to update the Quota from
+        :param quota: Quota to update.
         """
 
     @abc.abstractmethod
@@ -87,12 +89,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_server(self, context, values):
+    def create_server(self, context, server):
         """
         Create a Server.
 
         :param context: RPC Context.
-        :param values: Values to create the new Domain from.
+        :param server: Server object with the values to be created.
         """
 
     @abc.abstractmethod
@@ -121,13 +123,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_server(self, context, server_id, values):
+    def update_server(self, context, server):
         """
-        Update a Server via ID
+        Update a Server
 
         :param context: RPC Context.
-        :param server_id: Server ID to update.
-        :param values: Values to update the Server from
+        :param server: Server object
         """
 
     @abc.abstractmethod
@@ -140,12 +141,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_tld(self, context, values):
+    def create_tld(self, context, tld):
         """
         Create a TLD.
 
         :param context: RPC Context.
-        :param values: Values to create the new TLD from.
+        :param tld: Tld object with the values to be created.
         """
 
     @abc.abstractmethod
@@ -189,13 +190,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_tld(self, context, tld_id, values):
+    def update_tld(self, context, tld):
         """
-        Update a TLD via ID
+        Update a TLD
 
         :param context: RPC Context.
-        :param tld_id: TLD ID to update.
-        :param values: Values to update the TLD from
+        :param tld: TLD to update.
         """
 
     @abc.abstractmethod
@@ -208,11 +208,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_tsigkey(self, context, values):
+    def create_tsigkey(self, context, tsigkey):
         """
         Create a TSIG Key.
 
         :param context: RPC Context.
+        :param tsigkey: TsigKey object with the values to be created.
         """
 
     @abc.abstractmethod
@@ -241,13 +242,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_tsigkey(self, context, tsigkey_id, values):
+    def update_tsigkey(self, context, tsigkey):
         """
-        Update a TSIG Key via ID
+        Update a TSIG Key
 
         :param context: RPC Context.
-        :param tsigkey_id: TSIG Key ID to update.
-        :param values: Values to update the TSIG Key from
+        :param tsigkey: TSIG Keyto update.
         """
 
     @abc.abstractmethod
@@ -285,12 +285,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_domain(self, context, values):
+    def create_domain(self, context, domain):
         """
         Create a new Domain.
 
         :param context: RPC Context.
-        :param values: Values to create the new Domain from.
+        :param domain: Domain object with the values to be created.
         """
 
     @abc.abstractmethod
@@ -328,13 +328,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_domain(self, context, domain_id, values):
+    def update_domain(self, context, domain):
         """
-        Update a Domain via ID.
+        Update a Domain
 
         :param context: RPC Context.
-        :param domain_id: Values to update the Domain with
-        :param values: Values to update the Domain from.
+        :param domain: Domain object.
         """
 
     @abc.abstractmethod
@@ -356,13 +355,13 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_recordset(self, context, domain_id, values):
+    def create_recordset(self, context, domain_id, recordset):
         """
         Create a recordset on a given Domain ID
 
         :param context: RPC Context.
         :param domain_id: Domain ID to create the recordset in.
-        :param values: Values to create the new RecordSet from.
+        :param recordset: RecordSet object with the values to be created.
         """
 
     @abc.abstractmethod
@@ -401,12 +400,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_recordset(self, context, recordset_id, values):
+    def update_recordset(self, context, recordset):
         """
-        Update a recordset via ID
+        Update a recordset
 
         :param context: RPC Context
-        :param recordset_id: RecordSet ID to update
+        :param recordset: RecordSet to update
         """
 
     @abc.abstractmethod
@@ -428,15 +427,15 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_record(self, context, domain_id, recordset_id, values):
+    def create_record(self, context, domain_id, recordset_id, record):
         """
         Create a record on a given Domain ID
 
         :param context: RPC Context.
         :param domain_id: Domain ID to create the record in.
         :param recordset_id: RecordSet ID to create the record in.
-        :param values: Values to create the new Record from.
-        """
+        :param record: Record object with the values to be created.
+       """
 
     @abc.abstractmethod
     def get_record(self, context, record_id):
@@ -473,12 +472,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_record(self, context, record_id, values):
+    def update_record(self, context, record):
         """
-        Update a record via ID
+        Update a record
 
         :param context: RPC Context
-        :param record_id: Record ID to update
+        :param record: Record to update
         """
 
     @abc.abstractmethod
@@ -500,12 +499,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_blacklist(self, context, values):
+    def create_blacklist(self, context, blacklist):
         """
         Create a Blacklist.
 
         :param context: RPC Context.
-        :param values: Values to create the new Blacklist from.
+        :param blacklist: Blacklist object with the values to be created.
         """
 
     @abc.abstractmethod
@@ -543,13 +542,12 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def update_blacklist(self, context, blacklist_id, values):
+    def update_blacklist(self, context, blacklist):
         """
-        Update a Blacklist via ID
+        Update a Blacklist
 
         :param context: RPC Context.
-        :param blacklist_id: Blacklist ID to update.
-        :param values: Values to update the Blacklist from
+        :param blacklist: Blacklist to update.
         """
 
     @abc.abstractmethod
@@ -562,7 +560,7 @@ class Storage(DriverPlugin):
         """
 
     def ping(self, context):
-        """ Ping the Storage connection """
+        """Ping the Storage connection"""
         return {
             'status': None
         }

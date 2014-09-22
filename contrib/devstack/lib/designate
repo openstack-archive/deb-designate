@@ -2,7 +2,7 @@
 # Install and start **Designate** service
 
 # To enable Designate services, add the following to localrc
-# enable_service designate,designate-api,designate-central,designate-agent,designate-sink
+# enable_service designate,designate-api,designate-central,designate-mdns,designate-agent,designate-sink
 
 # stack.sh
 # ---------
@@ -20,14 +20,16 @@ set +o xtrace
 
 # Defaults
 # --------
+DESIGNATE_PLUGINS=$TOP_DIR/lib/designate_plugins
 
 # Set up default repos
-DESIGNATE_REPO=${DESIGNATE_REPO:-${GIT_BASE}/stackforge/designate.git}
+DESIGNATE_REPO=${DESIGNATE_REPO:-${GIT_BASE}/openstack/designate.git}
 DESIGNATE_BRANCH=${DESIGNATE_BRANCH:-master}
-DESIGNATECLIENT_REPO=${DESIGNATECLIENT_REPO:-${GIT_BASE}/stackforge/python-designateclient.git}
+DESIGNATECLIENT_REPO=${DESIGNATECLIENT_REPO:-${GIT_BASE}/openstack/python-designateclient.git}
 DESIGNATECLIENT_BRANCH=${DESIGNATECLIENT_BRANCH:-master}
 
 # Set up default paths
+DESIGNATE_BIN_DIR=$(get_python_exec_prefix)
 DESIGNATE_DIR=$DEST/designate
 DESIGNATECLIENT_DIR=$DEST/python-designateclient
 DESIGNATE_CONF_DIR=/etc/designate
@@ -39,54 +41,172 @@ DESIGNATE_ROOTWRAP_CONF=$DESIGNATE_CONF_DIR/rootwrap.conf
 DESIGNATE_APIPASTE_CONF=$DESIGNATE_CONF_DIR/api-paste.ini
 
 # Set up default options
-DESIGNATE_BACKEND_DRIVER=${DESIGNATE_BACKEND_DRIVER:=fake}
+DESIGNATE_BACKEND_DRIVER=${DESIGNATE_BACKEND_DRIVER:=powerdns}
 
-# Support potential entry-points console scripts
-DESIGNATE_BIN_DIR=$(get_python_exec_prefix)
+# Public IP/Port Settings
+DESIGNATE_SERVICE_HOST=${DESIGNATE_SERVICE_HOST:-$SERVICE_HOST}
+DESIGNATE_SERVICE_PORT=${DESIGNATE_SERVICE_PORT:-9001}
+DESIGNATE_MDNS_PORT=${DESIGNATE_MDNS_PORT:-5354}
+DESIGNATE_SERVICE_PORT_INT=${DESIGNATE_SERVICE_PORT_INT:-19001}
+DESIGNATE_SERVICE_PORT_DNS=${DESIGNATE_SERVICE_PORT_DNS:-53}
+DESIGNATE_SERVICE_PROTOCOL=${DESIGNATE_SERVICE_PROTOCOL:-$SERVICE_PROTOCOL}
+DESIGNATE_TEST_NSREC=${DESIGNATE_TEST_NSREC:-ns1.devstack.org.}
+
+# used with dig to look up in DNS
+DESIGNATE_DIG_FLAGS="-p $DESIGNATE_SERVICE_PORT_DNS @$DESIGNATE_SERVICE_HOST"
+
+# used with dig to do an AXFR against MDNS
+DESIGNATE_DIG_AXFR_FLAGS="-p $DESIGNATE_MDNS_PORT @$DESIGNATE_SERVICE_HOST AXFR +tcp +nocmd"
+
+# Get backend configuration
+# ----------------------------
+if is_service_enabled designate && [[ -r $DESIGNATE_PLUGINS/backend-$DESIGNATE_BACKEND_DRIVER ]]; then
+    # Load plugin
+    source $DESIGNATE_PLUGINS/backend-$DESIGNATE_BACKEND_DRIVER
+fi
 
 # Functions
 # ---------
+
+# lookup the given name and type in DNS
+# if it does not match the expected value, give an error
+# if $4 is given, reverse the test - assert the value is not present
+function verify_name_type_dns {
+    if [ "$DESIGNATE_BACKEND_DRIVER" = "fake" ] ; then
+        # if the backend is fake, there will be no actual DNS records
+        return 0
+    fi
+
+    # give DNS changes time to show up
+    sleep 1
+
+    # Display for debugging
+    dig $DESIGNATE_DIG_FLAGS "$1" "$2"
+    if [ -n "$4" ] ; then
+        if dig +short $DESIGNATE_DIG_FLAGS "$1" "$2" | grep "$3"; then
+            die $LINENO "Error: record $3 found in DNS, should have been removed"
+        fi
+        return 0
+    else
+        if dig +short $DESIGNATE_DIG_FLAGS "$1" "$2" | grep "$3"; then
+            return 0
+        fi
+        die $LINENO "Error: record $3 not found in DNS"
+    fi
+}
+
+# do an AXFR request to MDNS
+# if it does not match the expected value, give an error
+function verify_axfr_in_mdns {
+    # Display for debugging
+    dig $DESIGNATE_DIG_AXFR_FLAGS "$1"
+    if dig $DESIGNATE_DIG_AXFR_FLAGS "$1"; then
+        if [ -n "$2" ] ; then
+            local AXFR_RECORDS=$(dig $DESIGNATE_DIG_AXFR_FLAGS "$1" | grep "$1" | wc -l)
+            if [ "$AXFR_RECORDS" = "$2" ] ; then
+                return 0
+            else
+                die $LINENO "Error: AXFR to MDNS did not return the expected number of records"
+            fi
+        fi
+        return 0
+    else
+        die $LINENO "Error: AXFR to MDNS did not return a correct response"
+    fi
+}
+
+# get the domain id (uuid) given the domain name
+# if REQUIRED is set, die with an error if name not found
+function get_domain_id {
+    local DOMAIN_NAME=$1
+    local REQUIRED=$2
+    local DOMAIN_ID=$(designate domain-list | egrep " $DOMAIN_NAME " | get_field 1)
+    if [ "$REQUIRED" = "1" ] ; then
+        die_if_not_set $LINENO DOMAIN_ID "Failure retrieving DOMAIN_ID"
+    fi
+    echo "$DOMAIN_ID"
+}
+
+
+# get the domain_name given the id
+function get_domain_name() {
+    designate domain-list | grep "$1" | get_field 2
+}
+
+# if the given domain does not exist, it will be created
+# the domain_id of the domain will be returned
+function get_or_create_domain_id() {
+    domainid=$(get_domain_id "$1")
+    if [[ -z "$domainid" ]]; then
+        designate domain-create --name $1 --email admin@devstack.org --ttl 86400 --description "domain $1" 1>&2
+        domainid=$(designate domain-list | grep "$1" | get_field 1)
+    fi
+    echo $domainid
+}
+
+# get the record id (uuid) given the record name and domain id
+# if REQUIRED is set, die with an error if name not found
+function get_record_id {
+    local DOMAIN_ID=$1
+    local RECORD_NAME=$2
+    local RECORD_TYPE=$3
+    local REQUIRED=$4
+    local RECORD_ID=$(designate record-list $DOMAIN_ID | egrep " $RECORD_NAME " | egrep " $RECORD_TYPE " | get_field 1)
+    if [ "$REQUIRED" = "1" ] ; then
+        die_if_not_set $LINENO RECORD_ID "Failure retrieving RECORD_ID"
+    fi
+    echo "$RECORD_ID"
+}
 
 # cleanup_designate() - Remove residual data files, anything left over from previous
 # runs that a clean run would need to clean up
 function cleanup_designate() {
     sudo rm -rf $DESIGNATE_STATE_PATH $DESIGNATE_AUTH_CACHE_DIR
+    cleanup_designate_backend
 }
 
 # configure_designate() - Set config files, create data dirs, etc
 function configure_designate() {
     [ ! -d $DESIGNATE_CONF_DIR ] && sudo mkdir -m 755 -p $DESIGNATE_CONF_DIR
-    sudo chown $USER $DESIGNATE_CONF_DIR
+    sudo chown $STACK_USER $DESIGNATE_CONF_DIR
 
     [ ! -d $DESIGNATE_LOG_DIR ] &&  sudo mkdir -m 755 -p $DESIGNATE_LOG_DIR
-    sudo chown $USER $DESIGNATE_LOG_DIR
+    sudo chown $STACK_USER $DESIGNATE_LOG_DIR
 
     # (Re)create ``designate.conf``
     rm -f $DESIGNATE_CONF
+
     iniset_rpc_backend designate $DESIGNATE_CONF DEFAULT
+    iniset $DESIGNATE_CONF DEFAULT debug $ENABLE_DEBUG_LOG_LEVEL
     iniset $DESIGNATE_CONF DEFAULT verbose True
     iniset $DESIGNATE_CONF DEFAULT state_path $DESIGNATE_STATE_PATH
-    iniset $DESIGNATE_CONF storage:sqlalchemy database_connection `database_connection_url designate`
+    iniset $DESIGNATE_CONF DEFAULT root-helper sudo designate-rootwrap $DESIGNATE_ROOTWRAP_CONF
+    iniset $DESIGNATE_CONF storage:sqlalchemy connection `database_connection_url designate`
+
     sudo cp $DESIGNATE_DIR/etc/designate/rootwrap.conf.sample $DESIGNATE_ROOTWRAP_CONF
     iniset $DESIGNATE_ROOTWRAP_CONF DEFAULT filters_path $DESIGNATE_DIR/etc/designate/rootwrap.d root-helper
-    iniset $DESIGNATE_CONF DEFAULT root-helper sudo designate-rootwrap $DESIGNATE_ROOTWRAP_CONF
+
     sudo cp $DESIGNATE_DIR/etc/designate/api-paste.ini $DESIGNATE_APIPASTE_CONF
 
-    if [[ "$DESIGNATE_BACKEND_DRIVER" = 'powerdns' ]]; then
-        iniset $DESIGNATE_CONF backend:powerdns database_connection `database_connection_url designate_pdns`
+    if [ "$SYSLOG" != "False" ]; then
+        iniset $DESIGNATE_CONF DEFAULT use_syslog True
     fi
 
-    if [[ "$DESIGNATE_BACKEND_DRIVER" = 'bind9' ]]; then
-        configure_bind
+    # Format logging
+    if [ "$LOG_COLOR" == "True" ] && [ "$SYSLOG" == "False" ]; then
+        setup_colorized_logging $DESIGNATE_CONF DEFAULT "tenant" "user"
     fi
 
     if is_service_enabled key; then
         # Setup the Keystone Integration
         iniset $DESIGNATE_CONF service:api auth_strategy keystone
-        iniset $DESIGNATE_CONF keystone_authtoken auth_protocol http
+        iniset $DESIGNATE_CONF keystone_authtoken auth_host $KEYSTONE_AUTH_HOST
+        iniset $DESIGNATE_CONF keystone_authtoken auth_port $KEYSTONE_AUTH_PORT
+        iniset $DESIGNATE_CONF keystone_authtoken auth_protocol $KEYSTONE_AUTH_PROTOCOL
+        iniset $DESIGNATE_CONF keystone_authtoken admin_tenant_name $SERVICE_TENANT_NAME
+        iniset $DESIGNATE_CONF keystone_authtoken cafile $KEYSTONE_SSL_CA
         iniset $DESIGNATE_CONF keystone_authtoken admin_user designate
         iniset $DESIGNATE_CONF keystone_authtoken admin_password $SERVICE_PASSWORD
-        iniset $DESIGNATE_CONF keystone_authtoken admin_tenant_name $SERVICE_TENANT_NAME
         iniset $DESIGNATE_CONF keystone_authtoken signing_dir $DESIGNATE_AUTH_CACHE_DIR
     fi
 
@@ -97,11 +217,22 @@ function configure_designate() {
         iniset $DESIGNATE_CONF service:central backend_driver $DESIGNATE_BACKEND_DRIVER
     fi
 
+    iniset $DESIGNATE_CONF service:api api_host $DESIGNATE_SERVICE_HOST
+    iniset $DESIGNATE_CONF service:api api_base_uri $DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/
+    iniset $DESIGNATE_CONF service:api enable_api_v1 True
+    iniset $DESIGNATE_CONF service:api enable_api_v2 True
+    if is_service_enabled tls-proxy; then
+        # Set the service port for a proxy to take the original
+        iniset $DESIGNATE_CONF service:api api_port $DESIGNATE_SERVICE_PORT_INT
+    else
+        iniset $DESIGNATE_CONF service:api api_port $DESIGNATE_SERVICE_PORT
+    fi
+
     # Install the policy file for the API server
     cp $DESIGNATE_DIR/etc/designate/policy.json $DESIGNATE_CONF_DIR/policy.json
     iniset $DESIGNATE_CONF DEFAULT policy_file $DESIGNATE_CONF_DIR/policy.json
 
-    cleanup_designate
+    configure_designate_backend
 }
 
 # create_designate_accounts() - Set up common required designate accounts
@@ -111,42 +242,40 @@ function configure_designate() {
 # service              designate  admin        # if enabled
 function create_designate_accounts() {
 
-    SERVICE_TENANT=$(keystone tenant-list | awk "/ $SERVICE_TENANT_NAME / { print \$2 }")
-    ADMIN_ROLE=$(keystone role-list | awk "/ admin / { print \$2 }")
+    SERVICE_TENANT=$(openstack project list | awk "/ $SERVICE_TENANT_NAME / { print \$2 }")
+    ADMIN_ROLE=$(openstack role list | awk "/ admin / { print \$2 }")
 
     if [[ "$ENABLED_SERVICES" =~ "designate-api" ]]; then
-        DESIGNATE_USER=$(keystone user-create \
-            --name=designate \
-            --pass="$SERVICE_PASSWORD" \
-            --tenant_id $SERVICE_TENANT \
-            --email=designate@example.com \
+        DESIGNATE_USER=$(openstack user create \
+            designate \
+            --password "$SERVICE_PASSWORD" \
+            --project $SERVICE_TENANT \
+            --email designate@example.com \
             | grep " id " | get_field 2)
-        keystone user-role-add \
-            --tenant_id $SERVICE_TENANT \
-            --user_id $DESIGNATE_USER \
-            --role_id $ADMIN_ROLE
+        openstack role add \
+            $ADMIN_ROLE \
+            --project $SERVICE_TENANT \
+            --user $DESIGNATE_USER
         if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-            DESIGNATE_SERVICE=$(keystone service-create \
-                --name=designate \
+            DESIGNATE_SERVICE=$(openstack service create \
+                designate \
                 --type=dns \
-                --description="Designate Service" \
+                --description="Designate DNS Service" \
                 | grep " id " | get_field 2)
-            keystone endpoint-create \
+             openstack endpoint create \
+                $DESIGNATE_SERVICE \
                 --region RegionOne \
-                --service_id $DESIGNATE_SERVICE \
-                --publicurl "http://$SERVICE_HOST:9001/" \
-                --adminurl "http://$SERVICE_HOST:9001/" \
-                --internalurl "http://$SERVICE_HOST:9001/"
+                --publicurl "$DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/" \
+                --adminurl "$DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/" \
+                --internalurl "$DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/"
         fi
     fi
 }
 
 function create_designate_initial_resources() {
     #ADMIN_TENANT_ID=$(keystone tenant-list | grep " admin " | get_field 1)
-    designate server-create --name ns1.devstack.org.
+    designate server-create --name $DESIGNATE_TEST_NSREC
 }
-
-
 
 # init_designate() - Initialize etc.
 function init_designate() {
@@ -159,31 +288,22 @@ function init_designate() {
     recreate_database designate utf8
 
     # Init and migrate designate database
-    designate-manage database-init
-    designate-manage database-sync
+    designate-manage database sync
 
-    if [[ "$DESIGNATE_BACKEND_DRIVER" = 'powerdns' ]]; then
-        # (Re)create designate_pdns database
-        recreate_database designate_pdns utf8
-
-        # Init and migrate designate_pdns database
-        designate-manage powerdns database-init
-        designate-manage powerdns database-sync
-    fi
+    init_designate_backend
 }
 
 # install_designate() - Collect source and prepare
 function install_designate() {
+    if is_fedora; then
+        # This package provides `dig`
+        install_package bind-utils
+    fi
+
     git_clone $DESIGNATE_REPO $DESIGNATE_DIR $DESIGNATE_BRANCH
     setup_develop $DESIGNATE_DIR
 
-    if [[ "$DESIGNATE_BACKEND_DRIVER" = 'powerdns' ]]; then
-        install_package pdns-server pdns-backend-mysql
-    fi
-
-    if [[ "$DESIGNATE_BACKEND_DRIVER" = 'bind9' ]]; then
-        install_package bind9
-    fi
+    install_designate_backend
 }
 
 # install_designateclient() - Collect source and prepare
@@ -194,61 +314,43 @@ function install_designateclient() {
 
 # start_designate() - Start running processes, including screen
 function start_designate() {
-    screen_it designate-api "designate-api --config-file $DESIGNATE_CONF"
-    screen_it designate-central "designate-central --config-file $DESIGNATE_CONF"
-    screen_it designate-agent "designate-agent --config-file $DESIGNATE_CONF"
-    screen_it designate-sink "designate-sink --config-file $DESIGNATE_CONF"
+    start_designate_backend
+
+    # If using bind9, central must have access to the bind zone/db files.
+    # The configure phase has already added the $STACK_USER to the bind
+    # system daemon group - we need to start central using that group using sg.
+    # nova does a similar "trick" with libvirtd and compute.
+    if [[ "$DESIGNATE_BACKEND_DRIVER" = 'bind9' ]]; then
+        screen_it designate-central "sg $BIND_GROUP designate-central --config-file $DESIGNATE_CONF"
+    else
+        screen_it designate-central "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-central --config-file $DESIGNATE_CONF"
+    fi
+    screen_it designate-api "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-api --config-file $DESIGNATE_CONF"
+    screen_it designate-mdns "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-mdns --config-file $DESIGNATE_CONF"
+    screen_it designate-agent "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-agent --config-file $DESIGNATE_CONF"
+    screen_it designate-sink "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-sink --config-file $DESIGNATE_CONF"
+
+    # Start proxies if enabled
+    if is_service_enabled designate-api && is_service_enabled tls-proxy; then
+        start_tls_proxy '*' $DESIGNATE_SERVICE_PORT $DESIGNATE_SERVICE_HOST $DESIGNATE_SERVICE_PORT_INT &
+    fi
+
+    if ! timeout $SERVICE_TIMEOUT sh -c "while ! wget --no-proxy -q -O- $DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT; do sleep 1; done"; then
+        die $LINENO "Designate did not start"
+    fi
 }
 
 # stop_designate() - Stop running processes
 function stop_designate() {
     # Kill the designate screen windows
-    for serv in designate-api designate-central designate-agent designate-sink; do
-        screen -S $SCREEN_NAME -p $serv -X kill
-    done
-}
+    screen_stop designate-api
+    screen_stop designate-central
+    screen_stop designate-mdns
+    screen_stop designate-agent
+    screen_stop designate-sink
 
-function configure_bind() {
-    iniset $DESIGNATE_CONF backend:bind9 rndc_port '953'
-    iniset $DESIGNATE_CONF backend:bind9 rndc_host '127.0.0.1'
-    iniset $DESIGNATE_CONF backend:bind9 rndc_config_file  '/etc/bind/rndc.conf'
-    iniset $DESIGNATE_CONF backend:bind9 rndc_key_file  '/etc/bind/rndc.key'
-    iniset $DESIGNATE_CONF service:central backend_driver 'bind9'
-
-    sudo chown $USER /etc/bind/
-
-    if is_ubuntu; then
-        sudo touch /etc/apparmor.d/disable/usr.sbin.named
-        sudo service apparmor reload
-        sudo cat << EOF > /etc/bind/named.conf.options
-        options {
-        directory "/var/cache/bind";
-        allow-new-zones yes;
-        dnssec-validation auto;
-        auth-nxdomain no;    # conform to RFC1035
-        listen-on-v6 { any; };
-        };
-EOF
-
-        sudo cat << EOF > /etc/bind/rndc.conf
-        include "/etc/bind/rndc.key";
-        options {
-            default-key "rndc-key";
-            default-server 127.0.0.1;
-            default-port 953;
-        };
-EOF
-    else
-        echo "Designate DevStack bind9 implementation is Ubuntu-only"
-        exit 1
-    fi
-
-    sudo service bind9 restart
+    stop_designate_backend
 }
 
 # Restore xtrace
 $XTRACE
-
-# Local variables:
-# mode: shell-script
-# End:

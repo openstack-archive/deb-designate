@@ -11,6 +11,7 @@ venv
 .venv
 *.sublime-workspace
 *.sqlite
+*.sqlite3
 var/*
 etc/designate/*.conf
 AUTHORS
@@ -25,3 +26,4 @@ designate/versioninfo
 /bind9
 /dnsmasq
 .testrepository/*
+contrib/devstack/.vagrant/
