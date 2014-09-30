@@ -1,3 +1,9 @@
+designate (2014.2~rc1-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 30 Sep 2014 15:15:05 +0800
+
 designate (2014.2~b3-1) experimental; urgency=medium
 
   * New upstream release.
