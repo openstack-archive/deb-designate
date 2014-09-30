@@ -1,0 +1,17 @@
+Description: Allow SQLAlchemy 0.9.x
+Author: Thomas Goirand <zigo@debian.org>
+Bug-Debian: https://bugs.debian.org/754673
+Forwarded: no
+Last-Update: 2014-09-30
+
+--- designate-2014.1.orig/requirements.txt
++++ designate-2014.1/requirements.txt
+@@ -18,7 +18,7 @@ python-keystoneclient>=0.6.0
+ python-neutronclient>=2.3.4,<3
+ Routes>=1.12.3
+ six>=1.5.2
+-SQLAlchemy>=0.7.8,<=0.8.99
++SQLAlchemy>=0.7.8
+ sqlalchemy-migrate>=0.8.2,!=0.8.4
+ stevedore>=0.14
+ WebOb>=1.2.3

@@ -1,3 +1,9 @@
+designate (2014.1-11) unstable; urgency=medium
+
+  * Added a patch to allow SQLAlchemy 0.9.x (Closes: #754673).
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 30 Sep 2014 06:38:53 +0000
+
 designate (2014.1-10) unstable; urgency=medium
 
   * Added Italian debconf translation thanks to Beatrice Torracca
