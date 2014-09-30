@@ -1,6 +1,7 @@
 designate (2014.2~rc1-1) experimental; urgency=medium
 
   * New upstream release.
+  * Added --fail-missing when calling dh_install.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 30 Sep 2014 15:15:05 +0800
 
