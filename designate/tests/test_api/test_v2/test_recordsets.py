@@ -173,8 +173,8 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         data = [self.create_recordset(self.domain,
                 name='x-%s.%s' % (i, self.domain['name']))
                 for i in xrange(0, 10)]
-        data.insert(0, ns)
         data.insert(0, soa)
+        data.insert(0, ns)
 
         self._assert_paging(data, url, key='recordsets')
 
@@ -225,12 +225,28 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
     def test_get_recordsets_invalid_id(self):
         self._assert_invalid_uuid(self.client.get, '/zones/%s/recordsets')
 
-    @patch.object(central_service.Service, 'find_recordsets',
+    @patch.object(central_service.Service, 'get_domain',
                   side_effect=messaging.MessagingTimeout())
     def test_get_recordsets_timeout(self, _):
         url = '/zones/ba751950-6193-11e3-949a-0800200c9a66/recordsets'
 
         self._assert_exception('timeout', 504, self.client.get, url)
+
+    def test_get_deleted_recordsets(self):
+        zone = self.create_domain(fixture=1)
+        self.create_recordset(zone)
+        url = '/zones/%s/recordsets' % zone['id']
+
+        response = self.client.get(url)
+
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+
+        # now delete the domain and get the recordsets
+        self.client.delete('/zones/%s' % zone['id'], status=204)
+
+        # Check that we get a domain_not_found error
+        self._assert_exception('domain_not_found', 404, self.client.get, url)
 
     def test_get_recordset(self):
         # Create a recordset

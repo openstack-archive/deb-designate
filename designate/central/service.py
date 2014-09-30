@@ -69,7 +69,7 @@ def transaction(f):
     return wrapper
 
 
-class Service(service.Service):
+class Service(service.RPCService):
     RPC_API_VERSION = '4.0'
 
     target = messaging.Target(version=RPC_API_VERSION)
@@ -347,7 +347,7 @@ class Service(service.Service):
 
         soa_values = [self._build_soa_record(zone, servers)]
         recordlist = objects.RecordList(objects=[
-            objects.Record(data=r) for r in soa_values])
+            objects.Record(data=r, managed=True) for r in soa_values])
         values = {
             'name': zone['name'],
             'type': "SOA",
@@ -380,7 +380,7 @@ class Service(service.Service):
         for s in servers:
             ns_values.append(s.name)
         recordlist = objects.RecordList(objects=[
-            objects.Record(data=r) for r in ns_values])
+            objects.Record(data=r, managed=True) for r in ns_values])
         values = {
             'name': zone['name'],
             'type': "NS",
@@ -778,9 +778,11 @@ class Service(service.Service):
             subdomain.parent_domain_id = domain.id
             self.update_domain(context, subdomain)
 
-        # Create the SOA and NS recordsets for the new domain
-        self._create_soa(context, created_domain)
+        # Create the NS and SOA recordsets for the new domain. SOA must be
+        # last, in order to ensure BIND etc do not read the zone file before
+        # all changes have been committed to the zone file.
         self._create_ns(context, created_domain, servers)
+        self._create_soa(context, created_domain)
 
         return created_domain
 
@@ -857,12 +859,15 @@ class Service(service.Service):
         if increment_serial:
             # Increment the serial number
             domain.serial = utils.increment_serial(domain.serial)
-            self._update_soa(context, domain)
 
         domain = self.storage.update_domain(context, domain)
 
         with wrap_backend_call():
             self.backend.update_domain(context, domain)
+
+        if increment_serial:
+            # Update the SOA Record
+            self._update_soa(context, domain)
 
         self.notifier.info(context, 'dns.domain.update', domain)
         self.mdns_api.notify_zone_changed(context, domain.name)

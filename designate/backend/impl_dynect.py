@@ -45,7 +45,7 @@ OPTS = [
     cfg.IntOpt('job_timeout', default=30,
                help="Timeout in seconds for pulling a job in DynECT."),
     cfg.IntOpt('timeout', help="Timeout in seconds for API Requests.",
-               default=3),
+               default=10),
     cfg.BoolOpt('timings', help="Measure requests timings.", default=False)
 ]
 
@@ -123,7 +123,7 @@ class DynClient(object):
     def __init__(self, customer_name, user_name, password,
                  endpoint="https://api.dynect.net:443",
                  api_version='3.5.6', headers=None, verify=True, retries=1,
-                 timeout=3, timings=False, pool_maxsize=10,
+                 timeout=10, timings=False, pool_maxsize=10,
                  pool_connections=10):
         self.customer_name = customer_name
         self.user_name = user_name
@@ -348,7 +348,17 @@ class DynECTBackend(base.Backend):
             data['tsig_key_name'] = cfg.CONF[GROUP].tsig_key_name
 
         client = self.get_client()
-        client.post(url, data=data)
+
+        try:
+            client.post(url, data=data)
+        except DynClientError as e:
+            msg = _LI(
+                "Domain already exists, updating existing domain instead %s")
+            LOG.info(msg % domain['name'])
+            for emsg in e.msgs:
+                if emsg['ERR_CD'] == 'TARGET_EXISTS':
+                    client.put(url, data=data)
+
         client.put(url, data={'activate': True})
         client.logout()
 
@@ -372,6 +382,9 @@ class DynECTBackend(base.Backend):
                 raise
         client.logout()
 
+    def create_recordset(self, context, domain, recordset):
+        LOG.debug('Discarding create_recordset call, not-applicable')
+
     def update_recordset(self, context, domain, recordset):
         LOG.debug('Discarding update_recordset call, not-applicable')
 
@@ -386,12 +399,3 @@ class DynECTBackend(base.Backend):
 
     def delete_record(self, context, domain, recordset, record):
         LOG.debug('Discarding delete_record call, not-applicable')
-
-    def create_server(self, context, server):
-        LOG.debug('Discarding create_server call, not-applicable')
-
-    def update_server(self, context, server):
-        LOG.debug('Discarding update_server call, not-applicable')
-
-    def delete_server(self, context, server):
-        LOG.debug('Discarding delete_server call, not-applicable')

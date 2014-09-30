@@ -20,29 +20,27 @@ import threading
 
 from oslo.config import cfg
 from oslo.db import options
-from sqlalchemy import func
 from sqlalchemy.sql import select
-from sqlalchemy.sql.expression import and_
-from sqlalchemy.orm import exc as sqlalchemy_exceptions
 
 from designate.openstack.common import excutils
 from designate.openstack.common import log as logging
 from designate.i18n import _LC
 from designate import exceptions
 from designate.backend import base
-from designate.backend.impl_powerdns import models
+from designate.backend.impl_powerdns import tables
 from designate.sqlalchemy import session
 from designate.sqlalchemy.expressions import InsertFromSelect
 
 
 LOG = logging.getLogger(__name__)
+CONF = cfg.CONF
 TSIG_SUPPORTED_ALGORITHMS = ['hmac-md5']
 
-cfg.CONF.register_group(cfg.OptGroup(
+CONF.register_group(cfg.OptGroup(
     name='backend:powerdns', title="Configuration for Powerdns Backend"
 ))
 
-cfg.CONF.register_opts([
+CONF.register_opts([
     cfg.StrOpt('domain-type', default='NATIVE', help='PowerDNS Domain Type'),
     cfg.ListOpt('also-notify', default=[], help='List of additional IPs to '
                                                 'send NOTIFYs to'),
@@ -50,9 +48,12 @@ cfg.CONF.register_opts([
 
 # Overide the default DB connection registered above, to avoid name conflicts
 # between the Designate and PowerDNS databases.
-cfg.CONF.set_default('connection',
-                     'sqlite:///$state_path/powerdns.sqlite',
-                     group='backend:powerdns')
+CONF.set_default('connection', 'sqlite:///$state_path/powerdns.sqlite',
+                 group='backend:powerdns')
+
+
+def _map_col(keys, col):
+    return dict([(keys[i], col[i]) for i in range(len(keys))])
 
 
 class PowerDNSBackend(base.Backend):
@@ -79,6 +80,67 @@ class PowerDNSBackend(base.Backend):
 
         return self.local_store.session
 
+    def _create(self, table, values):
+        query = table.insert()
+
+        resultproxy = self.session.execute(query, values)
+
+        # Refetch the row, for generated columns etc
+        query = select([table])\
+            .where(table.c.id == resultproxy.inserted_primary_key[0])
+        resultproxy = self.session.execute(query)
+
+        return _map_col(query.columns.keys(), resultproxy.fetchone())
+
+    def _update(self, table, values, exc_notfound, id_col=None):
+        if id_col is None:
+            id_col = table.c.id
+
+        query = table.update()\
+            .where(id_col == values[id_col.name])\
+            .values(**values)
+
+        resultproxy = self.session.execute(query)
+
+        if resultproxy.rowcount != 1:
+            raise exc_notfound()
+
+        # Refetch the row, for generated columns etc
+        query = select([table])\
+            .where(id_col == values[id_col.name])
+        resultproxy = self.session.execute(query)
+
+        return _map_col(query.columns.keys(), resultproxy.fetchone())
+
+    def _get(self, table, id_, exc_notfound, id_col=None):
+        if id_col is None:
+            id_col = table.c.id
+
+        query = select([table])\
+            .where(id_col == id_)
+
+        resultproxy = self.session.execute(query)
+
+        results = resultproxy.fetchall()
+
+        if len(results) != 1:
+            raise exc_notfound()
+
+        # Map col keys to values in result
+        return _map_col(query.columns.keys(), results[0])
+
+    def _delete(self, table, id_, exc_notfound, id_col=None):
+        if id_col is None:
+            id_col = table.c.id
+
+        query = table.delete()\
+            .where(id_col == id_)
+
+        resultproxy = self.session.execute(query)
+
+        if resultproxy.rowcount != 1:
+            raise exc_notfound()
+
     # TSIG Key Methods
     def create_tsigkey(self, context, tsigkey):
         """Create a TSIG Key"""
@@ -86,33 +148,31 @@ class PowerDNSBackend(base.Backend):
         if tsigkey['algorithm'] not in TSIG_SUPPORTED_ALGORITHMS:
             raise exceptions.NotImplemented('Unsupported algorithm')
 
-        tsigkey_m = models.TsigKey()
-
-        tsigkey_m.update({
+        values = {
             'designate_id': tsigkey['id'],
             'name': tsigkey['name'],
             'algorithm': tsigkey['algorithm'],
             'secret': base64.b64encode(tsigkey['secret'])
-        })
+        }
 
-        tsigkey_m.save(self.session)
+        self._create(tables.tsigkeys, values)
 
         # NOTE(kiall): Prepare and execute query to install this TSIG Key on
         #              every domain. We use a manual query here since anything
         #              else would be impossibly slow.
         query_select = select([
-            models.Domain.__table__.c.id,
+            tables.domains.c.id,
             "'TSIG-ALLOW-AXFR'",
             "'%s'" % tsigkey['name']]
         )
 
         columns = [
-            models.DomainMetadata.__table__.c.domain_id,
-            models.DomainMetadata.__table__.c.kind,
-            models.DomainMetadata.__table__.c.content,
+            tables.domain_metadata.c.domain_id,
+            tables.domain_metadata.c.kind,
+            tables.domain_metadata.c.content,
         ]
 
-        query = InsertFromSelect(models.DomainMetadata.__table__, query_select,
+        query = InsertFromSelect(tables.domain_metadata, query_select,
                                  columns)
 
         # NOTE(kiall): A TX is required for, at the least, SQLite.
@@ -122,31 +182,42 @@ class PowerDNSBackend(base.Backend):
 
     def update_tsigkey(self, context, tsigkey):
         """Update a TSIG Key"""
-        tsigkey_m = self._get_tsigkey(tsigkey['id'])
+        values = self._get(
+            tables.tsigkeys,
+            tsigkey['id'],
+            exceptions.TsigKeyNotFound,
+            id_col=tables.tsigkeys.c.designate_id)
 
         # Store a copy of the original name..
-        original_name = tsigkey_m.name
+        original_name = values['name']
 
-        tsigkey_m.update({
+        values.update({
             'name': tsigkey['name'],
             'algorithm': tsigkey['algorithm'],
             'secret': base64.b64encode(tsigkey['secret'])
         })
 
-        tsigkey_m.save(self.session)
+        self._update(tables.tsigkeys, values,
+                     id_col=tables.tsigkeys.c.designate_id,
+                     exc_notfound=exceptions.TsigKeyNotFound)
 
         # If the name changed, Update the necessary DomainMetadata records
         if original_name != tsigkey['name']:
-            self.session.query(models.DomainMetadata)\
-                .filter_by(kind='TSIG-ALLOW-AXFR', content=original_name)\
-                .update(content=tsigkey['name'])
+            query = tables.domain_metadata.update()\
+                .where(tables.domain_metadata.c.kind == 'TSIG_ALLOW_AXFR')\
+                .where(tables.domain_metadata.c.content == original_name)
+
+            query.values(content=tsigkey['name'])
+            self.session.execute(query)
 
     def delete_tsigkey(self, context, tsigkey):
         """Delete a TSIG Key"""
         try:
             # Delete this TSIG Key itself
-            tsigkey_m = self._get_tsigkey(tsigkey['id'])
-            tsigkey_m.delete(self.session)
+            self._delete(
+                tables.tsigkeys, tsigkey['id'],
+                exceptions.TsigKeyNotFound,
+                id_col=tables.tsigkeys.c.designate_id)
         except exceptions.TsigKeyNotFound:
             # If the TSIG Key is already gone, that's ok. We're deleting it
             # anyway, so just log and continue.
@@ -155,89 +226,58 @@ class PowerDNSBackend(base.Backend):
                          tsigkey['id'])
             return
 
-        # Delete this TSIG Key from every domain's metadata
-        self.session.query(models.DomainMetadata)\
-            .filter_by(kind='TSIG-ALLOW-AXFR', content=tsigkey['name'])\
-            .delete()
-
-    def create_server(self, context, server):
-        LOG.debug('Create Server')
-        self._update_domains_on_server_create(server)
-
-    def update_server(self, context, server):
-        LOG.debug('Update Server')
-        self._update_domains_on_server_update(server)
-
-    def delete_server(self, context, server):
-        LOG.debug('Delete Server')
-        self._update_domains_on_server_delete(server)
+        query = tables.domain_metadata.delete()\
+            .where(tables.domain_metadata.c.kind == 'TSIG-ALLOW-AXFR')\
+            .where(tables.domain_metadata.c.content == tsigkey['name'])
+        self.session.execute(query)
 
     # Domain Methods
     def create_domain(self, context, domain):
-        servers = self.central_service.find_servers(self.admin_context)
+        try:
+            self.session.begin()
+            servers = self.central_service.find_servers(self.admin_context)
 
-        domain_m = models.Domain()
-        domain_m.update({
-            'designate_id': domain['id'],
-            'name': domain['name'].rstrip('.'),
-            'master': servers[0]['name'].rstrip('.'),
-            'type': cfg.CONF['backend:powerdns'].domain_type,
-            'account': context.tenant
-        })
-        domain_m.save(self.session)
-
-        for server in servers:
-            record_m = models.Record()
-            record_m.update({
-                'designate_id': server['id'],
-                'domain_id': domain_m.id,
+            domain_values = {
+                'designate_id': domain['id'],
                 'name': domain['name'].rstrip('.'),
-                'type': 'NS',
-                'content': server['name'].rstrip('.'),
-                'ttl': domain['ttl'],
-                'auth': True
-            })
-            record_m.save(self.session)
+                'master': servers[0]['name'].rstrip('.'),
+                'type': CONF['backend:powerdns'].domain_type,
+                'account': context.tenant
+            }
 
-        # Install all TSIG Keys on this domain
-        tsigkeys = self.session.query(models.TsigKey).all()
-        values = [t.name for t in tsigkeys]
+            domain_ref = self._create(tables.domains, domain_values)
 
-        self._update_domainmetadata(domain_m.id, 'TSIG-ALLOW-AXFR', values)
+            # Install all TSIG Keys on this domain
+            query = select([tables.tsigkeys.c.name])
+            resultproxy = self.session.execute(query)
+            values = [i for i in resultproxy.fetchall()]
 
-        # Install all Also Notify's on this domain
-        self._update_domainmetadata(domain_m.id, 'ALSO-NOTIFY',
-                                    cfg.CONF['backend:powerdns'].also_notify)
+            self._update_domainmetadata(domain_ref['id'], 'TSIG-ALLOW-AXFR',
+                                        values)
 
-        # NOTE(kiall): Do the SOA last, ensuring we don't trigger a NOTIFY
-        #              before the NS records are in place.
-        record_m = models.Record()
-        record_m.update({
-            'designate_id': domain['id'],
-            'domain_id': domain_m.id,
-            'name': domain['name'].rstrip('.'),
-            'type': 'SOA',
-            'content': self._build_soa_content(domain, servers),
-            'auth': True
-        })
-        record_m.save(self.session)
+            # Install all Also Notify's on this domain
+            self._update_domainmetadata(domain_ref['id'], 'ALSO-NOTIFY',
+                                        CONF['backend:powerdns'].also_notify)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.session.rollback()
+        else:
+            self.session.commit()
 
     def update_domain(self, context, domain):
-        # TODO(kiall): Sync Server List
-
-        domain_m = self._get_domain(domain['id'])
+        domain_ref = self._get(tables.domains, domain['id'],
+                               exceptions.DomainNotFound,
+                               id_col=tables.domains.c.designate_id)
 
         try:
             self.session.begin()
 
-            # Update the Domains SOA
-            self._update_soa(domain)
-
             # Update the Records TTLs where necessary
-            self.session.query(models.Record)\
-                        .filter_by(domain_id=domain_m.id, inherit_ttl=True)\
-                        .update({'ttl': domain['ttl']})
-
+            query = tables.records.update()\
+                .where(tables.records.c.domain_id == domain_ref['id'])
+            query = query.where(tables.records.c.inherit_ttl == True)  # noqa\
+            query = query.values(ttl=domain['ttl'])
+            self.session.execute(query)
         except Exception:
             with excutils.save_and_reraise_exception():
                 self.session.rollback()
@@ -246,7 +286,9 @@ class PowerDNSBackend(base.Backend):
 
     def delete_domain(self, context, domain):
         try:
-            domain_m = self._get_domain(domain['id'])
+            domain_ref = self._get(tables.domains, domain['id'],
+                                   exceptions.DomainNotFound,
+                                   id_col=tables.domains.c.designate_id)
         except exceptions.DomainNotFound:
             # If the Domain is already gone, that's ok. We're deleting it
             # anyway, so just log and continue.
@@ -255,45 +297,68 @@ class PowerDNSBackend(base.Backend):
                          domain['id'])
             return
 
-        domain_m.delete(self.session)
+        self._delete(tables.domains, domain['id'],
+                     exceptions.DomainNotFound,
+                     id_col=tables.domains.c.designate_id)
 
         # Ensure the records are deleted
-        query = self.session.query(models.Record)
-        query.filter_by(domain_id=domain_m.id).delete()
+        query = tables.records.delete()\
+            .where(tables.records.c.domain_id == domain_ref['id'])
+        self.session.execute(query)
 
         # Ensure domainmetadata is deleted
-        query = self.session.query(models.DomainMetadata)
-        query.filter_by(domain_id=domain_m.id).delete()
+        query = tables.domain_metadata.delete()\
+            .where(tables.domain_metadata.c.domain_id == domain_ref['id'])
+        self.session.execute(query)
 
     # RecordSet Methods
+    def create_recordset(self, context, domain, recordset):
+        try:
+            self.session.begin(subtransactions=True)
+
+            # Create all the records..
+            for record in recordset.records:
+                self.create_record(context, domain, recordset, record)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.session.rollback()
+        else:
+            self.session.commit()
+
     def update_recordset(self, context, domain, recordset):
-        # Ensure records are updated
-        values = {'ttl': recordset['ttl']}
+        # TODO(kiall): This is a total kludge. Intended as the simplest
+        #              possible fix for the issue. This needs to be
+        #              re-implemented correctly.
+        try:
+            self.session.begin(subtransactions=True)
 
-        query = self.session.query(models.Record)
-        query.filter_by(designate_recordset_id=recordset['id']).update(values)
-
-        self._update_soa(domain)
+            self.delete_recordset(context, domain, recordset)
+            self.create_recordset(context, domain, recordset)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                self.session.rollback()
+        else:
+            self.session.commit()
 
     def delete_recordset(self, context, domain, recordset):
         # Ensure records are deleted
-        query = self.session.query(models.Record)
-        query.filter_by(designate_recordset_id=recordset['id']).delete()
-
-        self._update_soa(domain)
+        query = tables.records.delete()\
+            .where(tables.records.c.designate_recordset_id == recordset['id'])
+        self.session.execute(query)
 
     # Record Methods
     def create_record(self, context, domain, recordset, record):
-        domain_m = self._get_domain(domain['id'])
-        record_m = models.Record()
+        domain_ref = self._get(tables.domains, domain['id'],
+                               exceptions.DomainNotFound,
+                               id_col=tables.domains.c.designate_id)
 
         content = self._sanitize_content(recordset['type'], record['data'])
         ttl = domain['ttl'] if recordset['ttl'] is None else recordset['ttl']
 
-        record_m.update({
+        record_values = {
             'designate_id': record['id'],
             'designate_recordset_id': record['recordset_id'],
-            'domain_id': domain_m.id,
+            'domain_id': domain_ref['id'],
             'name': recordset['name'].rstrip('.'),
             'type': recordset['type'],
             'content': content,
@@ -301,19 +366,17 @@ class PowerDNSBackend(base.Backend):
             'inherit_ttl': True if recordset['ttl'] is None else False,
             'prio': record['priority'],
             'auth': self._is_authoritative(domain, recordset, record)
-        })
+        }
 
-        record_m.save(self.session)
-
-        self._update_soa(domain)
+        self._create(tables.records, record_values)
 
     def update_record(self, context, domain, recordset, record):
-        record_m = self._get_record(record['id'])
+        record_ref = self._get_record(record['id'])
 
         content = self._sanitize_content(recordset['type'], record['data'])
         ttl = domain['ttl'] if recordset['ttl'] is None else recordset['ttl']
 
-        record_m.update({
+        record_ref.update({
             'content': content,
             'ttl': ttl,
             'inherit_ttl': True if recordset['ttl'] is None else False,
@@ -321,13 +384,14 @@ class PowerDNSBackend(base.Backend):
             'auth': self._is_authoritative(domain, recordset, record)
         })
 
-        record_m.save(self.session)
-
-        self._update_soa(domain)
+        self._update(tables.records, record_ref,
+                     exc_notfound=exceptions.RecordNotFound)
 
     def delete_record(self, context, domain, recordset, record):
         try:
-            record_m = self._get_record(record['id'])
+            record_ref = self._get(tables.records, record['id'],
+                                   exceptions.RecordNotFound,
+                                   id_col=tables.records.c.designate_id)
         except exceptions.RecordNotFound:
             # If the Record is already gone, that's ok. We're deleting it
             # anyway, so just log and continue.
@@ -335,52 +399,47 @@ class PowerDNSBackend(base.Backend):
                              'not present in the backend. ID: %s') %
                          record['id'])
         else:
-            record_m.delete(self.session)
-
-        self._update_soa(domain)
+            self._delete(tables.records, record_ref['id'],
+                         exceptions.RecordNotFound)
 
     # Internal Methods
-    def _update_soa(self, domain):
-        servers = self.central_service.find_servers(self.admin_context)
-        domain_m = self._get_domain(domain['id'])
-        record_m = self._get_record(domain=domain_m, type='SOA')
-
-        record_m.update({
-            'content': self._build_soa_content(domain, servers),
-            'ttl': domain['ttl']
-        })
-
-        record_m.save(self.session)
-
     def _update_domainmetadata(self, domain_id, kind, values=None,
                                delete=True):
         """Updates a domain's metadata with new values"""
         # Fetch all current metadata of the specified kind
         values = values or []
 
-        query = self.session.query(models.DomainMetadata)
-        query = query.filter_by(domain_id=domain_id, kind=kind)
+        query = select([tables.domain_metadata.c.content])\
+            .where(tables.domain_metadata.c.domain_id == domain_id)\
+            .where(tables.domain_metadata.c.kind == kind)
+        resultproxy = self.session.execute(query)
+        results = resultproxy.fetchall()
 
-        metadatas = query.all()
-
-        for metadata in metadatas:
-            if metadata.content not in values:
+        for metadata_id, content in results:
+            if content not in values:
                 if delete:
                     LOG.debug('Deleting stale domain metadata: %r' %
-                              tuple([domain_id, kind, metadata.value]))
+                              ([domain_id, kind, content],))
                     # Delete no longer necessary values
-                    metadata.delete(self.session)
+                    # We should never get a notfound here, so UnknownFailure is
+                    # a reasonable choice.
+                    self._delete(tables.domain_metadata, metadata_id,
+                                 exceptions.UnknownFailure)
             else:
                 # Remove pre-existing values from the list of values to insert
-                values.remove(metadata.content)
+                values.remove(content)
 
         # Insert new values
         for value in values:
             LOG.debug('Inserting new domain metadata: %r' %
-                      tuple([domain_id, kind, value]))
-            m = models.DomainMetadata(domain_id=domain_id, kind=kind,
-                                      content=value)
-            m.save(self.session)
+                      ([domain_id, kind, value],))
+            self._create(
+                tables.domain_metadata,
+                {
+                    "domain_id": domain_id,
+                    "kind": kind,
+                    "content": value
+                })
 
     def _is_authoritative(self, domain, recordset, record):
         # NOTE(kiall): See http://doc.powerdns.com/dnssec-modes.html
@@ -398,231 +457,24 @@ class PowerDNSBackend(base.Backend):
 
         return content
 
-    def _sanitize_uuid_str(self, uuid):
-        return uuid.replace("-", "")
-
-    def _build_soa_content(self, domain, servers):
-        return "%s %s. %d %d %d %d %d" % (servers[0]['name'],
-                                          domain['email'].replace("@", "."),
-                                          domain['serial'],
-                                          domain['refresh'],
-                                          domain['retry'],
-                                          domain['expire'],
-                                          domain['minimum'])
-
-    def _get_tsigkey(self, tsigkey_id):
-        query = self.session.query(models.TsigKey)
-
-        try:
-            tsigkey = query.filter_by(designate_id=tsigkey_id).one()
-        except sqlalchemy_exceptions.NoResultFound:
-            raise exceptions.TsigKeyNotFound('No tsigkey found')
-        except sqlalchemy_exceptions.MultipleResultsFound:
-            raise exceptions.TsigKeyNotFound('Too many tsigkeys found')
-        else:
-            return tsigkey
-
-    def _get_domain(self, domain_id):
-        query = self.session.query(models.Domain)
-
-        try:
-            domain = query.filter_by(designate_id=domain_id).one()
-        except sqlalchemy_exceptions.NoResultFound:
-            raise exceptions.DomainNotFound('No domain found')
-        except sqlalchemy_exceptions.MultipleResultsFound:
-            raise exceptions.DomainNotFound('Too many domains found')
-        else:
-            return domain
-
-    def _get_record(self, record_id=None, domain=None, type=None):
-        query = self.session.query(models.Record)
+    def _get_record(self, record_id=None, domain=None, type_=None):
+        query = select([tables.records])
 
         if record_id:
-            query = query.filter_by(designate_id=record_id)
+            query = query.where(tables.records.c.designate_id == record_id)
 
-        if type:
-            query = query.filter_by(type=type)
+        if type_:
+            query = query.where(tables.records.c.type == type_)
 
         if domain:
-            query = query.filter_by(domain_id=domain.id)
+            query = query.where(tables.records.c.domain_id == domain['id'])
 
-        try:
-            record = query.one()
-        except sqlalchemy_exceptions.NoResultFound:
+        resultproxy = self.session.execute(query)
+        results = resultproxy.fetchall()
+
+        if len(results) < 1:
             raise exceptions.RecordNotFound('No record found')
-        except sqlalchemy_exceptions.MultipleResultsFound:
+        elif len(results) > 1:
             raise exceptions.RecordNotFound('Too many records found')
         else:
-            return record
-
-    def _update_domains_on_server_create(self, server):
-        """
-        For performance, manually prepare a bulk insert query to
-        build NS records for all existing domains for insertion
-        into Record table
-        """
-        ns_rec_content = self._sanitize_content("NS", server['name'])
-
-        LOG.debug("Content field of newly created NS records for "
-                  "existing domains upon server create is: %s"
-                  % ns_rec_content)
-
-        query_select = select([
-            models.Domain.__table__.c.id,
-            "'%s'" % self._sanitize_uuid_str(server['id']),
-            models.Domain.__table__.c.name,
-            "'NS'",
-            "'%s'" % ns_rec_content,
-            1,
-            1]
-        )
-
-        columns = [
-            models.Record.__table__.c.domain_id,
-            models.Record.__table__.c.designate_id,
-            models.Record.__table__.c.name,
-            models.Record.__table__.c.type,
-            models.Record.__table__.c.content,
-            models.Record.__table__.c.auth,
-            models.Record.__table__.c.inherit_ttl,
-        ]
-
-        query = InsertFromSelect(models.Record.__table__, query_select,
-                                 columns)
-
-        # Execute the manually prepared query
-        # A TX is required for, at the least, SQLite.
-        try:
-            self.session.begin()
-            self.session.execute(query)
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                self.session.rollback()
-        else:
-            self.session.commit()
-
-    def _update_domains_on_server_update(self, server):
-        """
-        For performance, manually prepare a bulk update query to
-        update all NS records for all existing domains that need
-        updating of their corresponding NS record in Record table
-        """
-        ns_rec_content = self._sanitize_content("NS", server['name'])
-
-        LOG.debug("Content field of existing NS records will be updated"
-                  " to the following upon server update: %s" % ns_rec_content)
-        try:
-
-            # Execute the manually prepared query
-            # A TX is required for, at the least, SQLite.
-            #
-            self.session.begin()
-
-            # first determine the old name of the server
-            # before making the updates. Since the value
-            # is coming from an NS record, the server name
-            # will not have a trailing period (.)
-            old_ns_rec = self.session.query(models.Record)\
-                .filter_by(type='NS', designate_id=server['id'])\
-                .first()
-            if old_ns_rec is not None:
-                old_server_name = old_ns_rec.content
-
-                LOG.debug("old server name read from a backend NS record:"
-                          " %s" % old_server_name)
-                LOG.debug("new server name: %s" % server['name'])
-
-                # Then update all NS records that need updating
-                # Only the name of a server has changed when we are here
-                self.session.query(models.Record)\
-                    .filter_by(type='NS', designate_id=server['id'])\
-                    .update({"content": ns_rec_content})
-
-                # Then update all SOA records as necessary
-                # Do the SOA last, ensuring we don't trigger a NOTIFY
-                # before the NS records are in place.
-                #
-                # Update the content field of every SOA record that has the
-                # old server name as part of its 'content' field to reflect
-                # the new server name.
-                # Need to strip the trailing period from the server['name']
-                # before using it to replace the old_server_name in the SOA
-                # record since the SOA record already has a trailing period
-                # and we want to keep it
-                self.session.execute(models.Record.__table__
-                    .update()
-                    .where(and_(models.Record.__table__.c.type == "SOA",
-                           models.Record.__table__.c.content.like
-                               ("%s%%" % old_server_name)))
-                    .values(content=func.replace(
-                                models.Record.__table__.c.content,
-                                old_server_name,
-                                server['name'].rstrip('.'))
-                            )
-                )
-
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                self.session.rollback()
-        # now commit
-        else:
-            self.session.commit()
-
-    def _update_domains_on_server_delete(self, server):
-        """
-        For performance, manually prepare a bulk update query to
-        update all NS records for all existing domains that need
-        updating of their corresponding NS record in Record table
-        """
-
-        # find a replacement server
-        replacement_server_name = None
-        servers = self.central_service.find_servers(self.admin_context)
-
-        for replacement in servers:
-            if replacement['id'] != server['id']:
-                replacement_server_name = replacement['name']
-                break
-
-        LOG.debug("This existing server name will be used to update existing"
-                  " SOA records upon server delete: %s "
-                  % replacement_server_name)
-
-        # NOTE: because replacement_server_name came from central storage
-        # it has the trailing period
-
-        # Execute the manually prepared query
-        # A TX is required for, at the least, SQLite.
-        try:
-            self.session.begin()
-            # first delete affected NS records
-            self.session.query(models.Record)\
-                .filter_by(type='NS', designate_id=server['id'])\
-                .delete()
-
-            # then update all SOA records as necessary
-            # Do the SOA last, ensuring we don't trigger a
-            # NOTIFY before the NS records are in place.
-            #
-            # Update the content field of every SOA record that
-            # has the deleted server name as part of its
-            # 'content' field to reflect the name of another
-            # server that exists
-            # both server['name'] and replacement_server_name
-            # have trailing period so we are fine just doing the
-            # substitution without striping trailing period
-            self.session.execute(models.Record.__table__
-                .update()
-                .where(and_(models.Record.__table__.c.type == "SOA",
-                       models.Record.__table__.c.content.like
-                           ("%s%%" % server['name'])))
-                .values(content=func.replace(
-                        models.Record.__table__.c.content,
-                        server['name'],
-                        replacement_server_name)))
-
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                self.session.rollback()
-        else:
-            self.session.commit()
+            return _map_col(query.columns.keys(), results[0])

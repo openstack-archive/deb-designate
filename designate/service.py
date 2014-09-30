@@ -22,6 +22,7 @@ from oslo.config import cfg
 
 from designate.openstack.common import service
 from designate.openstack.common import log as logging
+from designate.openstack.deprecated import wsgi
 from designate.i18n import _
 from designate import rpc
 from designate import policy
@@ -36,28 +37,38 @@ LOG = logging.getLogger(__name__)
 class Service(service.Service):
     """
     Service class to be shared among the diverse service inside of Designate.
-
-    Partially inspired by the code at cinder.service but for now without
-    support for loading so called "endpoints" or "managers".
     """
-    def __init__(self, host, binary, topic, service_name=None, endpoints=None):
-        super(Service, self).__init__()
+    def __init__(self, threads=1000):
+        super(Service, self).__init__(threads)
 
+        policy.init()
+
+        # NOTE(kiall): All services need RPC initialized, as this is used
+        #              for clients AND servers. Hence, this is common to
+        #              all Designate services.
         if not rpc.initialized():
             rpc.init(CONF)
+
+
+class RPCService(Service):
+    """
+    Service class to be shared by all Designate RPC Services
+    """
+    def __init__(self, host, binary, topic, service_name=None, endpoints=None):
+        super(RPCService, self).__init__()
 
         self.host = host
         self.binary = binary
         self.topic = topic
         self.service_name = service_name
 
-        policy.init()
-
         # TODO(ekarlso): change this to be loadable via mod import or
         # stevedore?
         self.endpoints = endpoints or [self]
 
     def start(self):
+        super(RPCService, self).start()
+
         version_string = version.version_info.version_string()
         LOG.info(_('Starting %(topic)s node (version %(version_string)s)') %
                  {'topic': self.topic, 'version_string': version_string})
@@ -99,19 +110,44 @@ class Service(service.Service):
         for e in self.endpoints:
             if e != self and hasattr(e, 'stop'):
                 e.stop()
+
         # Try to shut the connection down, but if we get any sort of
         # errors, go ahead and ignore them.. as we're shutting down anyway
         try:
             self.rpcserver.stop()
         except Exception:
             pass
-        super(Service, self).stop()
+
+        super(RPCService, self).stop()
 
     def wait(self):
         for e in self.endpoints:
             if e != self and hasattr(e, 'wait'):
                 e.wait()
-        super(Service, self).wait()
+
+        super(RPCService, self).wait()
+
+
+class WSGIService(wsgi.Service, Service):
+    """
+    Service class to be shared by all Designate WSGI Services
+    """
+    def __init__(self, application, port, host='0.0.0.0', backlog=4096,
+                 threads=1000):
+        # NOTE(kiall): We avoid calling super(cls, self) here, as our parent
+        #              classes have different argspecs. Additionally, if we
+        #              manually call both parent's __init__, the openstack
+        #              common Service class's __init__ method will be called
+        #              twice. As a result, we only call the designate base
+        #              Service's __init__ method, and duplicate the
+        #              wsgi.Service's constructor functionality here.
+        #
+        Service.__init__(self, threads)
+
+        self.application = application
+        self._port = port
+        self._host = host
+        self._backlog = backlog if backlog else CONF.backlog
 
 
 _launcher = None

@@ -907,8 +907,8 @@ class StorageTestCase(object):
         ns = self.storage.find_recordset(self.admin_context,
                                          criterion={'domain_id': domain['id'],
                                                     'type': "NS"})
-        created.insert(0, ns)
         created.insert(0, soa)
+        created.insert(0, ns)
 
         # Ensure we can page through the results.
         self._ensure_paging(created, self.storage.find_recordsets)
@@ -1498,3 +1498,300 @@ class StorageTestCase(object):
 
         self.assertEqual(pong['status'], True)
         self.assertIsNotNone(pong['rtt'])
+
+    # TLD Tests
+    def test_create_tld(self):
+        values = {
+            'name': 'com',
+            'description': 'This is a comment.'
+        }
+
+        result = self.storage.create_tld(self.admin_context,
+                                         objects.Tld(**values))
+        self.assertIsNotNone(result['id'])
+        self.assertIsNotNone(result['created_at'])
+        self.assertIsNone(result['updated_at'])
+        self.assertIsNotNone(result['version'])
+        self.assertEqual(result['name'], values['name'])
+        self.assertEqual(result['description'], values['description'])
+
+    def test_create_tld_with_duplicate(self):
+        # Create the First Tld
+        self.create_tld(fixture=0)
+
+        with testtools.ExpectedException(exceptions.DuplicateTld):
+            # Attempt to create the second/duplicate Tld
+            self.create_tld(fixture=0)
+
+    def test_find_tlds(self):
+
+        actual = self.storage.find_tlds(self.admin_context)
+        self.assertEqual(0, len(actual))
+
+        # Create a single Tld
+        tld = self.create_tld(fixture=0)
+
+        actual = self.storage.find_tlds(self.admin_context)
+        self.assertEqual(1, len(actual))
+
+        self.assertEqual(tld['name'], actual[0]['name'])
+        self.assertEqual(tld['description'], actual[0]['description'])
+
+    def test_find_tlds_paging(self):
+        # Create 10 Tlds
+        created = [self.create_tld(name='org%d' % i)
+                   for i in xrange(10)]
+
+        # Ensure we can page through the results.
+        self._ensure_paging(created, self.storage.find_tlds)
+
+    def test_find_tlds_with_criterion(self):
+        tld_one = self.create_tld(fixture=0)
+        tld_two = self.create_tld(fixture=1)
+
+        criterion_one = dict(name=tld_one['name'])
+
+        results = self.storage.find_tlds(self.admin_context,
+                                         criterion_one)
+        self.assertEqual(len(results), 1)
+
+        self.assertEqual(results[0]['name'], tld_one['name'])
+
+        criterion_two = dict(name=tld_two['name'])
+
+        results = self.storage.find_tlds(self.admin_context,
+                                         criterion_two)
+        self.assertEqual(len(results), 1)
+
+        self.assertEqual(results[0]['name'], tld_two['name'])
+
+    def test_get_tld(self):
+        # Create a tld
+        expected = self.create_tld()
+        actual = self.storage.get_tld(self.admin_context, expected['id'])
+
+        self.assertEqual(actual['name'], expected['name'])
+
+    def test_get_tld_missing(self):
+        with testtools.ExpectedException(exceptions.TldNotFound):
+            uuid = '4c8e7f82-3519-4bf7-8940-a66a4480f223'
+            self.storage.get_tld(self.admin_context, uuid)
+
+    def test_find_tld_criterion(self):
+        # Create two tlds
+        tld_one = self.create_tld(fixture=0)
+        tld_two = self.create_tld(fixture=1)
+
+        criterion = dict(name=tld_one['name'])
+
+        # Find tld_one using its name as criterion
+        result = self.storage.find_tld(self.admin_context, criterion)
+
+        # Assert names match
+        self.assertEqual(result['name'], tld_one['name'])
+
+        # Repeat with tld_two
+        criterion = dict(name=tld_two['name'])
+
+        result = self.storage.find_tld(self.admin_context, criterion)
+
+        self.assertEqual(result['name'], tld_two['name'])
+
+    def test_find_tld_criterion_missing(self):
+        expected = self.create_tld()
+
+        criterion = dict(name=expected['name'] + "NOT FOUND")
+
+        with testtools.ExpectedException(exceptions.TldNotFound):
+            self.storage.find_tld(self.admin_context, criterion)
+
+    def test_update_tld(self):
+        # Create a tld
+        tld = self.create_tld(name='net')
+
+        # Update the tld
+        tld.name = 'org'
+
+        # Update storage
+        tld = self.storage.update_tld(self.admin_context, tld)
+
+        # Verify the new value
+        self.assertEqual('org', tld.name)
+
+    def test_update_tld_duplicate(self):
+        # Create two tlds
+        tld_one = self.create_tld(fixture=0)
+        tld_two = self.create_tld(fixture=1)
+
+        # Update tld_two to be a duplicate of tld_ond
+        tld_two.name = tld_one.name
+
+        with testtools.ExpectedException(exceptions.DuplicateTld):
+            self.storage.update_tld(self.admin_context, tld_two)
+
+    def test_update_tld_missing(self):
+        tld = objects.Tld(id='486f9cbe-b8b6-4d8c-8275-1a6e47b13e00')
+        with testtools.ExpectedException(exceptions.TldNotFound):
+            self.storage.update_tld(self.admin_context, tld)
+
+    def test_delete_tld(self):
+        # Create a tld
+        tld = self.create_tld()
+
+        # Delete the tld
+        self.storage.delete_tld(self.admin_context, tld['id'])
+
+        # Verify that it's deleted
+        with testtools.ExpectedException(exceptions.TldNotFound):
+            self.storage.get_tld(self.admin_context, tld['id'])
+
+    def test_delete_tld_missing(self):
+        with testtools.ExpectedException(exceptions.TldNotFound):
+            uuid = 'cac1fc02-79b2-4e62-a1a4-427b6790bbe6'
+            self.storage.delete_tld(self.admin_context, uuid)
+
+    # Blacklist tests
+    def test_create_blacklist(self):
+        values = {
+            'pattern': "^([A-Za-z0-9_\\-]+\\.)*example\\.com\\.$",
+            'description': "This is a comment."
+        }
+
+        result = self.storage.create_blacklist(
+            self.admin_context, blacklist=objects.Blacklist(**values)
+        )
+
+        self.assertIsNotNone(result['id'])
+        self.assertIsNotNone(result['created_at'])
+        self.assertIsNotNone(result['version'])
+        self.assertIsNone(result['updated_at'])
+
+        self.assertEqual(result['pattern'], values['pattern'])
+        self.assertEqual(result['description'], values['description'])
+
+    def test_create_blacklist_duplicate(self):
+        # Create the initial Blacklist
+        self.create_blacklist(fixture=0)
+
+        with testtools.ExpectedException(exceptions.DuplicateBlacklist):
+            self.create_blacklist(fixture=0)
+
+    def test_find_blacklists(self):
+        # Verify that there are no blacklists created
+        actual = self.storage.find_blacklists(self.admin_context)
+        self.assertEqual(0, len(actual))
+
+        # Create a Blacklist
+        blacklist = self.create_blacklist(fixture=0)
+
+        actual = self.storage.find_blacklists(self.admin_context)
+        self.assertEqual(1, len(actual))
+
+        self.assertEqual(blacklist['pattern'], actual[0]['pattern'])
+
+    def test_find_blacklists_paging(self):
+        # Create 10 Blacklists
+        created = [self.create_blacklist(pattern='^example-%d.org.' % i)
+                   for i in xrange(10)]
+
+        # Ensure we can page through the results.
+        self._ensure_paging(created, self.storage.find_blacklists)
+
+    def test_find_blacklists_with_criterion(self):
+        # Create two blacklists
+        blacklist_one = self.create_blacklist(fixture=0)
+        blacklist_two = self.create_blacklist(fixture=1)
+
+        # Verify blacklist_one
+        criterion = dict(pattern=blacklist_one['pattern'])
+
+        results = self.storage.find_blacklists(self.admin_context,
+                                               criterion)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['pattern'], blacklist_one['pattern'])
+
+        # Verify blacklist_two
+        criterion = dict(pattern=blacklist_two['pattern'])
+
+        results = self.storage.find_blacklists(self.admin_context,
+                                               criterion)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['pattern'], blacklist_two['pattern'])
+
+    def test_get_blacklist(self):
+        expected = self.create_blacklist(fixture=0)
+        actual = self.storage.get_blacklist(self.admin_context, expected['id'])
+
+        self.assertEqual(actual['pattern'], expected['pattern'])
+
+    def test_get_blacklist_missing(self):
+        with testtools.ExpectedException(exceptions.BlacklistNotFound):
+            uuid = '2c102ffd-7146-4b4e-ad62-b530ee0873fb'
+            self.storage.get_blacklist(self.admin_context, uuid)
+
+    def test_find_blacklist_criterion(self):
+        blacklist_one = self.create_blacklist(fixture=0)
+        blacklist_two = self.create_blacklist(fixture=1)
+
+        criterion = dict(pattern=blacklist_one['pattern'])
+
+        result = self.storage.find_blacklist(self.admin_context, criterion)
+
+        self.assertEqual(result['pattern'], blacklist_one['pattern'])
+
+        criterion = dict(pattern=blacklist_two['pattern'])
+
+        result = self.storage.find_blacklist(self.admin_context, criterion)
+
+        self.assertEqual(result['pattern'], blacklist_two['pattern'])
+
+    def test_find_blacklist_criterion_missing(self):
+        expected = self.create_blacklist(fixture=0)
+
+        criterion = dict(pattern=expected['pattern'] + "NOT FOUND")
+
+        with testtools.ExpectedException(exceptions.BlacklistNotFound):
+            self.storage.find_blacklist(self.admin_context, criterion)
+
+    def test_update_blacklist(self):
+        blacklist = self.create_blacklist(pattern='^example.uk.')
+
+        # Update the blacklist
+        blacklist.pattern = '^example.uk.co.'
+
+        blacklist = self.storage.update_blacklist(self.admin_context,
+                                                  blacklist)
+        # Verify the new values
+        self.assertEqual('^example.uk.co.', blacklist.pattern)
+
+    def test_update_blacklist_duplicate(self):
+        # Create two blacklists
+        blacklist_one = self.create_blacklist(fixture=0)
+        blacklist_two = self.create_blacklist(fixture=1)
+
+        # Update the second one to be a duplicate of the first
+        blacklist_two.pattern = blacklist_one.pattern
+
+        with testtools.ExpectedException(exceptions.DuplicateBlacklist):
+            self.storage.update_blacklist(self.admin_context,
+                                          blacklist_two)
+
+    def test_update_blacklist_missing(self):
+        blacklist = objects.Blacklist(
+            id='e8cee063-3a26-42d6-b181-bdbdc2c99d08')
+
+        with testtools.ExpectedException(exceptions.BlacklistNotFound):
+            self.storage.update_blacklist(self.admin_context, blacklist)
+
+    def test_delete_blacklist(self):
+        blacklist = self.create_blacklist(fixture=0)
+
+        self.storage.delete_blacklist(self.admin_context, blacklist['id'])
+
+        with testtools.ExpectedException(exceptions.BlacklistNotFound):
+            self.storage.get_blacklist(self.admin_context, blacklist['id'])
+
+    def test_delete_blacklist_missing(self):
+        with testtools.ExpectedException(exceptions.BlacklistNotFound):
+            uuid = '97f57960-f41b-4e93-8e22-8fd6c7e2c183'
+            self.storage.delete_blacklist(self.admin_context, uuid)
