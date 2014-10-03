@@ -1,3 +1,9 @@
+designate (2014.2~rc1-2) UNRELEASED; urgency=medium
+
+  * Fixed version of rootwrap depends.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 13:35:35 +0800
+
 designate (2014.2~rc1-1) experimental; urgency=medium
 
   * New upstream release.
