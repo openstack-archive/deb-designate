@@ -117,6 +117,7 @@ Depends: adduser,
          dbconfig-common,
          python-designate (= ${binary:Version}),
          sqlite3,
+         ${python:Depends},
          ${misc:Depends}
 Description: OpenStack DNS as a Service - common files
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
