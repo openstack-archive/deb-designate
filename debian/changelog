@@ -5,6 +5,7 @@ designate (2014.2~rc1-1) experimental; urgency=medium
   * Fixed version of rootwrap depends.
   * Now using templated init script for sysv-rc, generated systemd unit and
     upstart jobs, using openstack-pkg-tools >= 13.
+  * Standards-Version is now 3.9.6 (no change).
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 13:35:35 +0800
 

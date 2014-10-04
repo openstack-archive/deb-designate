@@ -55,7 +55,7 @@ Build-Depends-Indep: python-anyjson (>= 0.3.3),
                      sqlite3,
                      subunit (>= 0.0.18),
                      testrepository (>= 0.0.18)
-Standards-Version: 3.9.5
+Standards-Version: 3.9.6
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/designate.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/designate.git
 Homepage: https://github.com/stackforge/designate
