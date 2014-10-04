@@ -1,9 +1,0 @@
-description "Designate Sink Service"
-author "Kiall Mac Innes <kiall@managedit.ie>"
-
-start on runlevel [2345]
-stop on runlevel [016]
-
-respawn
-
-exec su -s /bin/sh -c "exec designate-sink --config-file /etc/designate/designate.conf --config-dir /etc/designate/conf.d" designate
