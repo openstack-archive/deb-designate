@@ -149,7 +149,8 @@ Description: OpenStack DNS as a Service - metapackage
 Package: designate-api
 Architecture: all
 Pre-Depends: dpkg (>= 1.15.6~)
-Depends: designate-common (= ${binary:Version}),
+Depends: adduser,
+         designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
          ${python:Depends}

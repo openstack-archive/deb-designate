@@ -7,6 +7,7 @@ designate (2014.2~rc1-1) experimental; urgency=medium
     upstart jobs, using openstack-pkg-tools >= 13.
   * Standards-Version is now 3.9.6 (no change).
   * Failed unit test suite fails the build.
+  * designate-api now depends on adduser.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 13:35:35 +0800
 
