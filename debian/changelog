@@ -3,6 +3,7 @@ designate (2014.1-12) unstable; urgency=medium
   * Added de.po initial German debconf translation, thanks to Helge Kreutzmann
     <debian@helgefjell.de> (Closes: #763728).
   * Fixes short name for apache license in debian/copyright.
+  * Standards-Version is now 3.9.6 (no change).
 
  -- Thomas Goirand <zigo@debian.org>  Mon, 06 Oct 2014 03:33:37 +0000
 
