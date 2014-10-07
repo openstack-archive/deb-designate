@@ -1,3 +1,11 @@
+designate (2014.1-13) unstable; urgency=medium
+
+  * Using templated init, upstart and systemd scripts from
+    openstack-pkg-tools >= 13.
+  * Removed all debian/*.logrotate, using only one in the -common package.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 07 Oct 2014 18:38:05 +0800
+
 designate (2014.1-12) unstable; urgency=medium
 
   * Added de.po initial German debconf translation, thanks to Helge Kreutzmann

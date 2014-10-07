@@ -1,4 +1,4 @@
-/var/log/designate/designate.log {
+/var/log/designate/*.log {
     daily
     missingok
     compress

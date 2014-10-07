@@ -1,9 +1,0 @@
-description "Designate Agent Service"
-author "Thomas Goirand <zigo@debian.org>"
-
-start on runlevel [2345]
-stop on runlevel [016]
-
-respawn
-
-exec su -s /bin/sh -c "exec designate-agent --config-file /etc/designate/designate.conf --config-dir /etc/designate/conf.d" designate
