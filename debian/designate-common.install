@@ -3,4 +3,5 @@ etc/designate/api-paste.ini	/etc/designate
 etc/designate/designate.conf.sample /usr/share/designate-common/
 etc/designate/policy.json	/etc/designate
 etc/designate/rootwrap.conf.sample /usr/share/designate/
+etc/designate/rootwrap.d/* /etc/designate/rootwrap.d
 usr/bin/*
