@@ -19,7 +19,7 @@ if [ "${1}" = "configure" ] ; then
 
 	db_get designate/configure_db
 	if [ "$RET" = "true" ] && [ "$dbc_upgrade" = "true" ] ; then
-		echo "Now doing designate-manage database-sync: this may take a while..."
+		echo "Now doing 'designate-manage database sync': this may take a while..."
 		#su -s /bin/sh -c 'cd /tmp && designate-manage database-init' designate || true
 		su -s /bin/sh -c 'cd /tmp && designate-manage database sync' designate
 	fi
