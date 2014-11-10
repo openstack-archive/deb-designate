@@ -2,6 +2,7 @@ designate (2014.2-2) experimental; urgency=medium
 
   * Using connection = as directive for the db, and using "database sync"
     instead of "database-sync" (Closes: #767853).
+  * Added dh-python as build-depends.
 
  -- Thomas Goirand <zigo@debian.org>  Mon, 10 Nov 2014 14:49:22 +0000
 
