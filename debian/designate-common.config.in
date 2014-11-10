@@ -8,7 +8,7 @@ CONF=/etc/designate/designate.conf
 
 #PKGOS-INCLUDE#
 
-pkgos_dbc_read_conf -pkg designate-common ${CONF} storage:sqlalchemy database_connection designate $@
+pkgos_dbc_read_conf -pkg designate-common ${CONF} storage:sqlalchemy connection designate $@
 pkgos_rabbit_read_conf ${CONF} DEFAULT designate
 pkgos_read_admin_creds ${CONF} keystone_authtoken designate
 
