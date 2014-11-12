@@ -1,3 +1,9 @@
+designate (2014.1-14) unstable; urgency=medium
+
+  * Added nl.po debconf translation (Closes: #767428).
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 12 Nov 2014 17:08:26 +0800
+
 designate (2014.1-13) unstable; urgency=medium
 
   * Using templated init, upstart and systemd scripts from
