@@ -1,3 +1,10 @@
+designate (2014.1-15) unstable; urgency=medium
+
+  * Fix wrong ucfr call. Thanks to Andreas Beckmann <anbe@debian.org> for the
+    bug report (Closes: #771800).
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 10 Dec 2014 10:50:05 +0000
+
 designate (2014.1-14) unstable; urgency=medium
 
   * Added nl.po debconf translation (Closes: #767428).

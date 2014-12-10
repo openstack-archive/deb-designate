@@ -15,7 +15,7 @@ if [ "${1}" = "purge" ] ; then
 				rm -f /etc/dbconfig-common/designate-common.conf
 				if which ucf >/dev/null 2>&1; then
 					ucf --purge /etc/dbconfig-common/designate-common.conf
-					ucfr --purge cinder-common /etc/dbconfig-common/designate-common.conf
+					ucfr --purge designate-common /etc/dbconfig-common/designate-common.conf
 				fi
 			fi
 		fi
