@@ -1,8 +1,9 @@
-designate (2014.2-3) unstable; urgency=medium
+designate (2014.2-3) experimental; urgency=medium
 
   * Fix upgrade from Icehouse to Juno failing because of the directive
     database_connection has been renamed connection (Close: #769765).
     Thanks to Andreas Beckmann <anbe@debian.org> for the report.
+  * Adds remove-PROTOCOL_SSLv3-from-sslutils.py.patch.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 10 Dec 2014 11:09:35 +0000
 
