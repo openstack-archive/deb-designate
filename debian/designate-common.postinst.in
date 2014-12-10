@@ -13,6 +13,11 @@ if [ "${1}" = "configure" ] ; then
 	pkgos_var_user_group designate
 	pkgos_write_new_conf designate designate.conf
 
+	# Fix old directive from Icehouse to Juno (otherwise upgrade may fail: #769765)
+	if [ -r "${CONF}" ] ; then
+		sed -i -e 's/^[ \t]*database_connection[ \t]*=/connection =/' ${CONF}
+	fi
+
 	pkgos_dbc_postinst ${CONF} storage:sqlalchemy connection designate $@
 	pkgos_rabbit_write_conf ${CONF} DEFAULT designate
 	pkgos_write_admin_creds ${CONF} keystone_authtoken designate

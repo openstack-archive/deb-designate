@@ -1,3 +1,11 @@
+designate (2014.2-3) unstable; urgency=medium
+
+  * Fix upgrade from Icehouse to Juno failing because of the directive
+    database_connection has been renamed connection (Close: #769765).
+    Thanks to Andreas Beckmann <anbe@debian.org> for the report.
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 10 Dec 2014 11:09:35 +0000
+
 designate (2014.2-2) experimental; urgency=medium
 
   * Using connection = as directive for the db, and using "database sync"
