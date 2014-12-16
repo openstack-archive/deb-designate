@@ -1,3 +1,9 @@
+designate (2014.1-16) UNRELEASED; urgency=medium
+
+  * Fixed homepage: stackforge -> openstack.
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 17 Dec 2014 00:51:39 +0800
+
 designate (2014.1-15) unstable; urgency=medium
 
   * Fix wrong ucfr call. Thanks to Andreas Beckmann <anbe@debian.org> for the
