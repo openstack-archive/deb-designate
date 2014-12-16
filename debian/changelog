@@ -1,3 +1,9 @@
+designate (2014.2-4) UNRELEASED; urgency=medium
+
+  * Fixed homepage: stackforge -> openstack.
+
+ -- Thomas Goirand <zigo@debian.org>  Wed, 17 Dec 2014 00:49:43 +0800
+
 designate (2014.2-3) experimental; urgency=medium
 
   * Fix upgrade from Icehouse to Juno failing because of the directive
