@@ -17,8 +17,16 @@
 from designate.objects.base import DesignateObject  # noqa
 from designate.objects.base import DictObjectMixin  # noqa
 from designate.objects.base import ListObjectMixin  # noqa
+from designate.objects.base import PagedListObjectMixin  # noqa
+from designate.objects.backend_option import BackendOption, BackendOptionList  # noqa
 from designate.objects.blacklist import Blacklist, BlacklistList  # noqa
 from designate.objects.domain import Domain, DomainList  # noqa
+from designate.objects.pool_manager_status import PoolManagerStatus, PoolManagerStatusList  # noqa
+from designate.objects.pool_server import PoolServer, PoolServerList  # noqa
+from designate.objects.pool import Pool, PoolList  # noqa
+from designate.objects.poolattribute import PoolAttribute  # noqa
+from designate.objects.poolattribute import PoolAttributeList  # noqa
+from designate.objects.nameserver import NameServer, NameServerList  # noqa
 from designate.objects.quota import Quota, QuotaList  # noqa
 from designate.objects.rrdata_a import RRData_A  # noqa
 from designate.objects.rrdata_aaaa import RRData_AAAA  # noqa
@@ -37,3 +45,7 @@ from designate.objects.server import Server, ServerList  # noqa
 from designate.objects.tenant import Tenant, TenantList  # noqa
 from designate.objects.tld import Tld, TldList  # noqa
 from designate.objects.tsigkey import TsigKey, TsigKeyList  # noqa
+from designate.objects.validation_error import ValidationError  # noqa
+from designate.objects.validation_error import ValidationErrorList  # noqa
+from designate.objects.zone_transfer_request import ZoneTransferRequest, ZoneTransferRequestList  # noqa
+from designate.objects.zone_transfer_accept import ZoneTransferAccept, ZoneTransferAcceptList  # noqa

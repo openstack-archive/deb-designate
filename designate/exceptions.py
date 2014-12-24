@@ -34,6 +34,11 @@ class Backend(Exception):
     pass
 
 
+class RelationNotLoaded(Base):
+    error_code = 500
+    error_type = 'relation_not_loaded'
+
+
 class NSD4SlaveBackendError(Backend):
     pass
 
@@ -154,6 +159,11 @@ class InvalidRecordSetLocation(Base):
     error_type = 'invalid_recordset_location'
 
 
+class InvaildZoneTransfer(Base):
+    error_code = 400
+    error_type = 'invalid_zone_transfer_request'
+
+
 class InvalidTTL(Base):
     error_code = 400
     error_type = 'invalid_ttl'
@@ -168,6 +178,10 @@ class Forbidden(Base):
     error_code = 403
     error_type = 'forbidden'
     expected = True
+
+
+class IncorrectZoneTransferKey(Forbidden):
+    error_type = 'invalid_key'
 
 
 class Duplicate(Base):
@@ -208,10 +222,30 @@ class DuplicateBlacklist(Duplicate):
     error_type = 'duplicate_blacklist'
 
 
+class DuplicatePoolManagerStatus(Duplicate):
+    error_type = 'duplication_pool_manager_status'
+
+
+class DuplicatePool(Duplicate):
+    error_type = 'duplicate_pool'
+
+
+class DuplicatePoolAttribute(Duplicate):
+    error_type = 'duplicate_pool_attribute'
+
+
 class MethodNotAllowed(Base):
     expected = True
     error_code = 405
     error_type = 'method_not_allowed'
+
+
+class DuplicateZoneTransferRequest(Duplicate):
+    error_type = 'duplicate_zone_transfer_request'
+
+
+class DuplicateZoneTransferAccept(Duplicate):
+    error_type = 'duplicate_zone_transfer_accept'
 
 
 class NotFound(Base):
@@ -254,6 +288,26 @@ class RecordNotFound(NotFound):
 
 class ReportNotFound(NotFound):
     error_type = 'report_not_found'
+
+
+class PoolManagerStatusNotFound(NotFound):
+    error_type = 'pool_manager_status_not_found'
+
+
+class PoolNotFound(NotFound):
+    error_type = 'pool_not_found'
+
+
+class PoolAttributeNotFound(NotFound):
+    error_type = 'pool_attribute_not_found'
+
+
+class ZoneTransferRequestNotFound(NotFound):
+    error_type = 'zone_transfer_request_not_found'
+
+
+class ZoneTransferAcceptNotFound(NotFound):
+    error_type = 'zone_transfer_accept_not_found'
 
 
 class LastServerDeleteNotAllowed(BadRequest):

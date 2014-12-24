@@ -13,10 +13,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import copy
+import urlparse
 
 import six
+import jsonschema
 
-from designate.openstack.common import importutils
+from designate.openstack.common import log as logging
+from designate import exceptions
+from designate.schema import validators
+from designate.schema import format
+
+
+LOG = logging.getLogger(__name__)
 
 
 class NotSpecifiedSentinel:
@@ -25,22 +33,29 @@ class NotSpecifiedSentinel:
 
 def get_attrname(name):
     """Return the mangled name of the attribute's underlying storage."""
-    return '_%s' % name
+    return '_obj_field_%s' % name
 
 
 def make_class_properties(cls):
     """Build getter and setter methods for all the objects attributes"""
-    cls.FIELDS = list(cls.FIELDS)
+    # Prepare an empty dict to gather the merged/final set of fields
+    fields = {}
 
+    # Add each supercls's fields
     for supercls in cls.mro()[1:-1]:
         if not hasattr(supercls, 'FIELDS'):
             continue
-        for field in supercls.FIELDS:
-            if field not in cls.FIELDS:
-                cls.FIELDS.append(field)
+        fields.update(supercls.FIELDS)
 
-    for field in cls.FIELDS:
+    # Add our fields
+    fields.update(cls.FIELDS)
+
+    # Store the results
+    cls.FIELDS = fields
+
+    for field in cls.FIELDS.keys():
         def getter(self, name=field):
+            self._obj_check_relation(name)
             return getattr(self, get_attrname(name), None)
 
         def setter(self, value, name=field):
@@ -57,24 +72,87 @@ def make_class_properties(cls):
         setattr(cls, field, property(getter, setter))
 
 
+def _schema_ref_resolver(uri):
+    """
+    Fetches an DesignateObject's schema from a JSON Schema Reference URI
+
+    Sample URI: obj://ObjectName#/subpathA/subpathB
+    """
+    obj_name = urlparse.urlsplit(uri).netloc
+    obj = DesignateObject.obj_cls_from_name(obj_name)
+
+    return obj.obj_get_schema()
+
+
+def make_class_validator(cls):
+    schema = {
+        '$schema': 'http://json-schema.org/draft-04/hyper-schema',
+        'title': cls.obj_name(),
+        'description': 'Designate %s Object' % cls.obj_name(),
+        'type': 'object',
+        'additionalProperties': False,
+        'required': [],
+        'properties': {},
+    }
+
+    for name, properties in cls.FIELDS.items():
+        schema['properties'][name] = properties.get('schema', {})
+
+        if properties.get('required', False):
+            schema['required'].append(name)
+
+    resolver = jsonschema.RefResolver.from_schema(
+        schema, handlers={'obj': _schema_ref_resolver})
+
+    cls._obj_validator = validators.Draft4Validator(
+        schema, resolver=resolver, format_checker=format.draft4_format_checker)
+
+
 class DesignateObjectMetaclass(type):
     def __init__(cls, names, bases, dict_):
+        if not hasattr(cls, '_obj_classes'):
+            # This means we're working on the base DesignateObject class,
+            # and can skip the remaining Metaclass functionality
+            cls._obj_classes = {}
+            return
+
         make_class_properties(cls)
+        make_class_validator(cls)
+
+        # Add a reference to the finished class into the _obj_classes
+        # dictionary, allowing us to lookup classes by their name later - this
+        # is useful for e.g. referencing another DesignateObject in a
+        # validation schema.
+        if cls.obj_name() not in cls._obj_classes:
+            cls._obj_classes[cls.obj_name()] = cls
+        else:
+            raise Exception("Duplicate DesignateObject with name '%(name)s'" %
+                            {'name': cls.obj_name()})
 
 
 @six.add_metaclass(DesignateObjectMetaclass)
 class DesignateObject(object):
-    FIELDS = []
+    FIELDS = {}
 
-    @staticmethod
-    def from_primitive(primitive):
+    def _obj_check_relation(self, name):
+        if name in self.FIELDS and self.FIELDS[name].get('relation', False):
+            if not self.obj_attr_is_set(name):
+                raise exceptions.RelationNotLoaded
+
+    @classmethod
+    def obj_cls_from_name(cls, name):
+        """Retrieves a object cls from the registry by name and returns it."""
+        return cls._obj_classes[name]
+
+    @classmethod
+    def from_primitive(cls, primitive):
         """
         Construct an object from primitive types
 
         This is used while deserializing the object.
         """
-        cls = importutils.import_class(primitive['designate_object.name'])
-        return cls._obj_from_primitive(primitive)
+        objcls = cls.obj_cls_from_name(primitive['designate_object.name'])
+        return objcls._obj_from_primitive(primitive)
 
     @classmethod
     def _obj_from_primitive(cls, primitive):
@@ -92,15 +170,28 @@ class DesignateObject(object):
 
         return instance
 
+    @classmethod
+    def obj_name(cls):
+        """Return a canonical name for this object which will be used over
+        the wire and in validation schemas.
+        """
+        return cls.__name__
+
+    @classmethod
+    def obj_get_schema(cls):
+        """Returns the JSON Schema for this Object."""
+        return cls._obj_validator.schema
+
     def __init__(self, **kwargs):
         self._obj_changes = set()
         self._obj_original_values = dict()
 
         for name, value in kwargs.items():
-            if name in self.FIELDS:
+            if name in self.FIELDS.keys():
                 setattr(self, name, value)
             else:
-                raise TypeError("'%s' is an invalid keyword argument" % name)
+                raise TypeError("__init__() got an unexpected keyword "
+                                "argument '%(name)s'" % {'name': name})
 
     def to_primitive(self):
         """
@@ -110,13 +201,9 @@ class DesignateObject(object):
         do not need special handling.  If this changes we need to modify this
         function.
         """
-        class_name = self.__class__.__name__
-        if self.__module__:
-            class_name = self.__module__ + '.' + self.__class__.__name__
-
         data = {}
 
-        for field in self.FIELDS:
+        for field in self.FIELDS.keys():
             if self.obj_attr_is_set(field):
                 if isinstance(getattr(self, field), DesignateObject):
                     data[field] = getattr(self, field).to_primitive()
@@ -124,11 +211,55 @@ class DesignateObject(object):
                     data[field] = getattr(self, field)
 
         return {
-            'designate_object.name': class_name,
+            'designate_object.name': self.obj_name(),
             'designate_object.data': data,
             'designate_object.changes': sorted(self._obj_changes),
             'designate_object.original_values': dict(self._obj_original_values)
         }
+
+    def to_dict(self):
+        """Convert the object to a simple dictionary."""
+        data = {}
+
+        for field in self.FIELDS.keys():
+            if self.obj_attr_is_set(field):
+                if isinstance(getattr(self, field), DesignateObject):
+                    data[field] = getattr(self, field).to_dict()
+                else:
+                    data[field] = getattr(self, field)
+
+        return data
+
+    def update(self, values):
+        """Update a object's fields with the supplied key/value pairs"""
+        for k, v in values.iteritems():
+            setattr(self, k, v)
+
+    @property
+    def is_valid(self):
+        """Returns True if the Object is valid."""
+        return self._obj_validator.is_valid(self.to_dict())
+
+    def validate(self):
+        # NOTE(kiall): We make use of the Object registry here in order to
+        #              avoid an impossible circular import.
+        ValidationErrorList = self.obj_cls_from_name('ValidationErrorList')
+        ValidationError = self.obj_cls_from_name('ValidationError')
+
+        values = self.to_dict()
+        errors = ValidationErrorList()
+
+        LOG.debug("Validating '%(name)s' object with values: %(values)r", {
+            'name': self.obj_name(),
+            'values': values,
+        })
+
+        for error in self._obj_validator.iter_errors(values):
+            errors.append(ValidationError.from_js_error(error))
+
+        if len(errors) > 0:
+            raise exceptions.InvalidObject("Provided object does not match "
+                                           "schema", errors=errors)
 
     def obj_attr_is_set(self, name):
         """
@@ -170,6 +301,18 @@ class DesignateObject(object):
         else:
             raise KeyError(field)
 
+    def __setattr__(self, name, value):
+        """Enforces all object attributes are private or well defined"""
+        if name[0:5] == '_obj_' or name in self.FIELDS.keys():
+            super(DesignateObject, self).__setattr__(name, value)
+
+        else:
+            raise AttributeError(
+                "Designate object '%(type)s' has no attribute '%(name)s'" % {
+                    'type': self.obj_name(),
+                    'name': name,
+                })
+
     def __deepcopy__(self, memodict=None):
         """
         Efficiently make a deep copy of this object.
@@ -182,7 +325,7 @@ class DesignateObject(object):
 
         c_obj = self.__class__()
 
-        for field in self.FIELDS:
+        for field in self.FIELDS.keys():
             if self.obj_attr_is_set(field):
                 c_field = copy.deepcopy(getattr(self, field), memodict)
                 setattr(c_obj, field, c_field)
@@ -205,7 +348,8 @@ class DictObjectMixin(object):
     """
     Mixin to allow DesignateObjects to behave like dictionaries
 
-    Eventually, this should be removed.
+    Eventually, this should be removed as other code is updated to use object
+    rather than dictionary accessors.
     """
     def __getitem__(self, key):
         return getattr(self, key)
@@ -214,10 +358,10 @@ class DictObjectMixin(object):
         setattr(self, key, value)
 
     def __contains__(self, item):
-        return item in self.FIELDS
+        return item in self.FIELDS.keys()
 
     def get(self, key, default=NotSpecifiedSentinel):
-        if key not in self.FIELDS:
+        if key not in self.FIELDS.keys():
             raise AttributeError("'%s' object has no attribute '%s'" % (
                                  self.__class__, key))
 
@@ -226,17 +370,13 @@ class DictObjectMixin(object):
         else:
             return getattr(self, key)
 
-    def update(self, values):
-        for k, v in values.iteritems():
-            setattr(self, k, v)
-
     def iteritems(self):
-        for field in self.FIELDS:
+        for field in self.FIELDS.keys():
             if self.obj_attr_is_set(field):
                 yield field, getattr(self, field)
 
     def __iter__(self):
-        for field in self.FIELDS:
+        for field in self.FIELDS.keys():
             if self.obj_attr_is_set(field):
                 yield field, getattr(self, field)
 
@@ -244,8 +384,8 @@ class DictObjectMixin(object):
 
 
 class ListObjectMixin(object):
-    """Mixin class for lists of objects"""
-    FIELDS = ['objects']
+    """Mixin to allow DesignateObjects to behave like python lists."""
+    FIELDS = {'objects': {}}
     LIST_ITEM_TYPE = DesignateObject
 
     @classmethod
@@ -274,13 +414,9 @@ class ListObjectMixin(object):
             self.obj_reset_changes(['objects'])
 
     def to_primitive(self):
-        class_name = self.__class__.__name__
-        if self.__module__:
-            class_name = self.__module__ + '.' + self.__class__.__name__
-
         data = {}
 
-        for field in self.FIELDS:
+        for field in self.FIELDS.keys():
             if self.obj_attr_is_set(field):
                 if field == 'objects':
                     data[field] = [o.to_primitive() for o in self.objects]
@@ -290,7 +426,7 @@ class ListObjectMixin(object):
                     data[field] = getattr(self, field)
 
         return {
-            'designate_object.name': class_name,
+            'designate_object.name': self.obj_name(),
             'designate_object.data': data,
             'designate_object.changes': list(self._obj_changes),
             'designate_object.original_values': dict(self._obj_original_values)
@@ -366,7 +502,31 @@ class PersistentObjectMixin(object):
 
     This adds the fields that we use in common for all persistent objects.
     """
-    FIELDS = ['id', 'created_at', 'updated_at', 'version']
+    FIELDS = {
+        'id': {
+            'schema': {
+                'type': 'string',
+                'format': 'uuid',
+            }
+        },
+        'created_at': {
+            'schema': {
+                'type': 'string',
+                'format': 'date-time',
+            }
+        },
+        'updated_at': {
+            'schema': {
+                'type': ['string', 'null'],
+                'format': 'date-time',
+            }
+        },
+        'version': {
+            'schema': {
+                'type': 'integer',
+            }
+        }
+    }
 
 
 class SoftDeleteObjectMixin(object):
@@ -375,4 +535,31 @@ class SoftDeleteObjectMixin(object):
 
     This adds the fields that we use in common for all soft-deleted objects.
     """
-    FIELDS = ['deleted', 'deleted_at']
+    FIELDS = {
+        'deleted': {
+            'schema': {
+                'type': ['string', 'integer'],
+            }
+        },
+        'deleted_at': {
+            'schema': {
+                'type': ['string', 'null'],
+                'format': 'date-time',
+            }
+        }
+    }
+
+
+class PagedListObjectMixin(object):
+    """
+    Mixin class for List objects.
+
+    This adds fields that would populate API metadata for collections.
+    """
+    FIELDS = {
+        'total_count': {
+            'schema': {
+                'type': ['integer'],
+            }
+        }
+    }

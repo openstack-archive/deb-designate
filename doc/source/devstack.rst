@@ -15,9 +15,9 @@
 
 .. _devstack:
 
-========================
+========
 DevStack
-========================
+========
 
 The Designate team maintains a fork of devstack with Designate integration.
 
@@ -28,7 +28,7 @@ Instructions
 
 2. Clone Designate and DevStack inside the VM::
 
-   $ git clone https://github.com/openstack-dev/devstack.git
+   $ git clone https://git.openstack.org/cgit/openstack-dev/devstack.git
    $ git clone https://github.com/openstack/designate.git
 
 3. Install the Designate extension for DevStack::
@@ -52,7 +52,6 @@ Instructions
 
        # Optional Designate services
        #ENABLED_SERVICES+=,designate-sink
-       #ENABLED_SERVICES+=,designate-agent
 
        # ** Everything below is optional ***
 
@@ -135,3 +134,4 @@ Instructions
        | type       | A                                    |
        | domain_id  | 1fb5d17c-efaf-4e3c-aac0-482875d24b3e |
        +------------+--------------------------------------+
+

@@ -2,7 +2,7 @@
 # Install and start **Designate** service
 
 # To enable Designate services, add the following to localrc
-# enable_service designate,designate-api,designate-central,designate-mdns,designate-agent,designate-sink
+# enable_service designate,designate-api,designate-central,designate-mdns,designate-sink,designate-pool-manager
 
 # stack.sh
 # ---------
@@ -42,21 +42,20 @@ DESIGNATE_APIPASTE_CONF=$DESIGNATE_CONF_DIR/api-paste.ini
 
 # Set up default options
 DESIGNATE_BACKEND_DRIVER=${DESIGNATE_BACKEND_DRIVER:=powerdns}
+DESIGNATE_POOL_ID=${DESIGNATE_POOL_ID:-794ccc2c-d751-44fe-b57f-8894c9f5c842}
+DESIGNATE_SERVER_ID=${DESIGNATE_SERVER_ID:-f26e0b32-736f-4f0a-831b-039a415c481e}
 
 # Public IP/Port Settings
+DESIGNATE_SERVICE_PROTOCOL=${DESIGNATE_SERVICE_PROTOCOL:-$SERVICE_PROTOCOL}
 DESIGNATE_SERVICE_HOST=${DESIGNATE_SERVICE_HOST:-$SERVICE_HOST}
 DESIGNATE_SERVICE_PORT=${DESIGNATE_SERVICE_PORT:-9001}
-DESIGNATE_MDNS_PORT=${DESIGNATE_MDNS_PORT:-5354}
 DESIGNATE_SERVICE_PORT_INT=${DESIGNATE_SERVICE_PORT_INT:-19001}
 DESIGNATE_SERVICE_PORT_DNS=${DESIGNATE_SERVICE_PORT_DNS:-53}
-DESIGNATE_SERVICE_PROTOCOL=${DESIGNATE_SERVICE_PROTOCOL:-$SERVICE_PROTOCOL}
+DESIGNATE_SERVICE_PORT_MDNS=${DESIGNATE_SERVICE_PORT_MDNS:-5354}
 DESIGNATE_TEST_NSREC=${DESIGNATE_TEST_NSREC:-ns1.devstack.org.}
 
-# used with dig to look up in DNS
-DESIGNATE_DIG_FLAGS="-p $DESIGNATE_SERVICE_PORT_DNS @$DESIGNATE_SERVICE_HOST"
-
-# used with dig to do an AXFR against MDNS
-DESIGNATE_DIG_AXFR_FLAGS="-p $DESIGNATE_MDNS_PORT @$DESIGNATE_SERVICE_HOST AXFR +tcp +nocmd"
+DESIGNATE_ENABLED_EXTENSIONS_V1=${DESIGNATE_ENABLED_EXTENSIONS_V1:-"quotas"}
+DESIGNATE_ENABLED_EXTENSIONS_V2=${DESIGNATE_ENABLED_EXTENSIONS_V2:-"quotas"}
 
 # Get backend configuration
 # ----------------------------
@@ -64,99 +63,6 @@ if is_service_enabled designate && [[ -r $DESIGNATE_PLUGINS/backend-$DESIGNATE_B
     # Load plugin
     source $DESIGNATE_PLUGINS/backend-$DESIGNATE_BACKEND_DRIVER
 fi
-
-# Functions
-# ---------
-
-# lookup the given name and type in DNS
-# if it does not match the expected value, give an error
-# if $4 is given, reverse the test - assert the value is not present
-function verify_name_type_dns {
-    if [ "$DESIGNATE_BACKEND_DRIVER" = "fake" ] ; then
-        # if the backend is fake, there will be no actual DNS records
-        return 0
-    fi
-
-    # give DNS changes time to show up
-    sleep 1
-
-    # Display for debugging
-    dig $DESIGNATE_DIG_FLAGS "$1" "$2"
-    if [ -n "$4" ] ; then
-        if dig +short $DESIGNATE_DIG_FLAGS "$1" "$2" | grep "$3"; then
-            die $LINENO "Error: record $3 found in DNS, should have been removed"
-        fi
-        return 0
-    else
-        if dig +short $DESIGNATE_DIG_FLAGS "$1" "$2" | grep "$3"; then
-            return 0
-        fi
-        die $LINENO "Error: record $3 not found in DNS"
-    fi
-}
-
-# do an AXFR request to MDNS
-# if it does not match the expected value, give an error
-function verify_axfr_in_mdns {
-    # Display for debugging
-    dig $DESIGNATE_DIG_AXFR_FLAGS "$1"
-    if dig $DESIGNATE_DIG_AXFR_FLAGS "$1"; then
-        if [ -n "$2" ] ; then
-            local axfr_records=$(dig $DESIGNATE_DIG_AXFR_FLAGS "$1" | grep "$1" | wc -l)
-            if [ "$axfr_records" = "$2" ] ; then
-                return 0
-            else
-                die $LINENO "Error: AXFR to MDNS did not return the expected number of records"
-            fi
-        fi
-        return 0
-    else
-        die $LINENO "Error: AXFR to MDNS did not return a correct response"
-    fi
-}
-
-# get the domain id (uuid) given the domain name
-# if REQUIRED is set, die with an error if name not found
-function get_domain_id {
-    local domain_name=$1
-    local required=$2
-    local domain_id=$(designate domain-list | egrep " $domain_name " | get_field 1)
-    if [ "$required" = "1" ] ; then
-        die_if_not_set $LINENO domain_id "Failure retrieving DOMAIN_ID"
-    fi
-    echo "$domain_id"
-}
-
-
-# get the domain_name given the id
-function get_domain_name {
-    designate domain-list | grep "$1" | get_field 2
-}
-
-# if the given domain does not exist, it will be created
-# the domain_id of the domain will be returned
-function get_or_create_domain_id {
-    local domainid=$(get_domain_id "$1")
-    if [[ -z "$domainid" ]]; then
-        designate domain-create --name $1 --email admin@devstack.org --ttl 86400 --description "domain $1" 1>&2
-        domainid=$(designate domain-list | grep "$1" | get_field 1)
-    fi
-    echo $domainid
-}
-
-# get the record id (uuid) given the record name and domain id
-# if REQUIRED is set, die with an error if name not found
-function get_record_id {
-    local domain_id=$1
-    local record_name=$2
-    local record_type=$3
-    local required=$4
-    local record_id=$(designate record-list $domain_id | egrep " $record_name " | egrep " $record_type " | get_field 1)
-    if [ "$required" = "1" ] ; then
-        die_if_not_set $LINENO record_id "Failure retrieving RECORD_ID"
-    fi
-    echo "$record_id"
-}
 
 # cleanup_designate - Remove residual data files, anything left over from previous
 # runs that a clean run would need to clean up
@@ -182,11 +88,23 @@ function configure_designate {
     iniset $DESIGNATE_CONF DEFAULT state_path $DESIGNATE_STATE_PATH
     iniset $DESIGNATE_CONF DEFAULT root-helper sudo designate-rootwrap $DESIGNATE_ROOTWRAP_CONF
     iniset $DESIGNATE_CONF storage:sqlalchemy connection `database_connection_url designate`
+    iniset $DESIGNATE_CONF service:pool_manager pool_id $DESIGNATE_POOL_ID
+    iniset $DESIGNATE_CONF pool_manager_cache:sqlalchemy connection `database_connection_url designate_pool_manager`
+    iniset $DESIGNATE_CONF service:api enabled_extensions_v1 $DESIGNATE_ENABLED_EXTENSIONS_V1
+    iniset $DESIGNATE_CONF service:api enabled_extensions_v2 $DESIGNATE_ENABLED_EXTENSIONS_V2
 
     sudo cp $DESIGNATE_DIR/etc/designate/rootwrap.conf.sample $DESIGNATE_ROOTWRAP_CONF
     iniset $DESIGNATE_ROOTWRAP_CONF DEFAULT filters_path $DESIGNATE_DIR/etc/designate/rootwrap.d root-helper
 
     sudo cp $DESIGNATE_DIR/etc/designate/api-paste.ini $DESIGNATE_APIPASTE_CONF
+
+    # Set up the rootwrap sudoers for designate
+    local rootwrap_sudoer_cmd="$DESIGNATE_BIN_DIR/designate-rootwrap $DESIGNATE_ROOTWRAP_CONF *"
+    local tempfile=`mktemp`
+    echo "$STACK_USER ALL=(root) NOPASSWD: $rootwrap_sudoer_cmd" >$tempfile
+    chmod 0440 $tempfile
+    sudo chown root:root $tempfile
+    sudo mv $tempfile /etc/sudoers.d/designate-rootwrap
 
     if [ "$SYSLOG" != "False" ]; then
         iniset $DESIGNATE_CONF DEFAULT use_syslog True
@@ -200,20 +118,7 @@ function configure_designate {
     if is_service_enabled key; then
         # Setup the Keystone Integration
         iniset $DESIGNATE_CONF service:api auth_strategy keystone
-        iniset $DESIGNATE_CONF keystone_authtoken identity_uri $KEYSTONE_AUTH_URI
-        iniset $DESIGNATE_CONF keystone_authtoken admin_tenant_name $SERVICE_TENANT_NAME
-        iniset $DESIGNATE_CONF keystone_authtoken cafile $KEYSTONE_SSL_CA
-        configure_API_version $DESIGNATE_CONF $IDENTITY_API_VERSION
-        iniset $DESIGNATE_CONF keystone_authtoken admin_user designate
-        iniset $DESIGNATE_CONF keystone_authtoken admin_password $SERVICE_PASSWORD
-        iniset $DESIGNATE_CONF keystone_authtoken signing_dir $DESIGNATE_AUTH_CACHE_DIR
-    fi
-
-    if is_service_enabled designate-agent; then
-        iniset $DESIGNATE_CONF service:central backend_driver rpc
-        iniset $DESIGNATE_CONF service:agent backend_driver $DESIGNATE_BACKEND_DRIVER
-    else
-        iniset $DESIGNATE_CONF service:central backend_driver $DESIGNATE_BACKEND_DRIVER
+        configure_auth_token_middleware $DESIGNATE_CONF designate $DESIGNATE_AUTH_CACHE_DIR
     fi
 
     iniset $DESIGNATE_CONF service:api api_host $DESIGNATE_SERVICE_HOST
@@ -278,6 +183,12 @@ function init_designate {
     # Init and migrate designate database
     designate-manage database sync
 
+    # (Re)create designate_pool_manager cache
+    recreate_database designate_pool_manager utf8
+
+    # Init and migrate designate pool-manager-cache
+    designate-manage pool-manager-cache sync
+
     init_designate_backend
 }
 
@@ -292,6 +203,12 @@ function install_designate {
     setup_develop $DESIGNATE_DIR
 
     install_designate_backend
+
+    if is_service_enabled horizon; then
+        ln -fs $DESIGNATE_DIR/contrib/designate-dashboard/enabled/_70_dns_add_group.py $HORIZON_DIR/openstack_dashboard/local/enabled/70_dns_add_group.py
+        ln -fs $DESIGNATE_DIR/contrib/designate-dashboard/enabled/_71_dns_project.py $HORIZON_DIR/openstack_dashboard/local/enabled/71_dns_project.py
+        setup_develop $DESIGNATE_DIR/contrib/designate-dashboard
+    fi
 }
 
 # install_designateclient - Collect source and prepare
@@ -308,15 +225,17 @@ function start_designate {
     # The configure phase has already added the $STACK_USER to the bind
     # system daemon group - we need to start central using that group using sg.
     # nova does a similar "trick" with libvirtd and compute.
+    # sg will be used in run_process to execute designate-central as a member
+    # of the **$BIND_GROUP** group.
     if [[ "$DESIGNATE_BACKEND_DRIVER" = 'bind9' ]]; then
-        screen_it designate-central "sg $BIND_GROUP designate-central --config-file $DESIGNATE_CONF"
+        run_process designate-central "designate-central --config-file $DESIGNATE_CONF" $BIND_GROUP
     else
-        screen_it designate-central "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-central --config-file $DESIGNATE_CONF"
+        run_process designate-central "$DESIGNATE_BIN_DIR/designate-central --config-file $DESIGNATE_CONF"
     fi
-    screen_it designate-api "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-api --config-file $DESIGNATE_CONF"
-    screen_it designate-mdns "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-mdns --config-file $DESIGNATE_CONF"
-    screen_it designate-agent "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-agent --config-file $DESIGNATE_CONF"
-    screen_it designate-sink "cd $DESIGNATE_DIR && $DESIGNATE_BIN_DIR/designate-sink --config-file $DESIGNATE_CONF"
+    run_process designate-api "$DESIGNATE_BIN_DIR/designate-api --config-file $DESIGNATE_CONF"
+    run_process designate-mdns "$DESIGNATE_BIN_DIR/designate-mdns --config-file $DESIGNATE_CONF"
+    run_process designate-sink "$DESIGNATE_BIN_DIR/designate-sink --config-file $DESIGNATE_CONF"
+    run_process designate-pool-manager "$DESIGNATE_BIN_DIR/designate-pool-manager --config-file $DESIGNATE_CONF"
 
     # Start proxies if enabled
     if is_service_enabled designate-api && is_service_enabled tls-proxy; then
@@ -331,11 +250,11 @@ function start_designate {
 # stop_designate - Stop running processes
 function stop_designate {
     # Kill the designate screen windows
-    screen_stop designate-api
-    screen_stop designate-central
-    screen_stop designate-mdns
-    screen_stop designate-agent
-    screen_stop designate-sink
+    stop_process designate-api
+    stop_process designate-central
+    stop_process designate-mdns
+    stop_process designate-sink
+    stop_process designate-pool-manager
 
     stop_designate_backend
 }

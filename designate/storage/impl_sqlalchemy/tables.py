@@ -18,19 +18,22 @@ from sqlalchemy import (Table, MetaData, Column, String, Text, Integer, CHAR,
                         ForeignKeyConstraint)
 
 from oslo.config import cfg
+from oslo.utils import timeutils
 
 from designate import utils
-from designate.openstack.common import timeutils
 from designate.sqlalchemy.types import UUID
 
 
 CONF = cfg.CONF
 
-RESOURCE_STATUSES = ['ACTIVE', 'PENDING', 'DELETED']
+RESOURCE_STATUSES = ['ACTIVE', 'PENDING', 'DELETED', 'ERROR']
 RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'SRV', 'TXT', 'SPF', 'NS', 'PTR',
                 'SSHFP']
+TASK_STATUSES = ['ACTIVE', 'PENDING', 'DELETED', 'ERROR', 'COMPLETE']
 TSIG_ALGORITHMS = ['hmac-md5', 'hmac-sha1', 'hmac-sha224', 'hmac-sha256',
                    'hmac-sha384', 'hmac-sha512']
+POOL_PROVISIONERS = ['UNMANAGED']
+ACTIONS = ['CREATE', 'DELETE', 'UPDATE', 'NONE']
 
 metadata = MetaData()
 
@@ -96,8 +99,12 @@ domains = Table('domains', metadata,
     Column('minimum', Integer, default=CONF.default_soa_minimum,
            nullable=False),
     Column('status', Enum(name='resource_statuses', *RESOURCE_STATUSES),
-           nullable=False, server_default='ACTIVE', default='ACTIVE'),
+           nullable=False, server_default='PENDING', default='PENDING'),
     Column('parent_domain_id', UUID, default=None, nullable=True),
+    Column('action', Enum(name='actions', *ACTIONS),
+           default='CREATE', server_default='CREATE', nullable=False),
+    Column('pool_id', UUID, default=None, nullable=True),
+    Column('reverse_name', String(255), nullable=False),
 
     UniqueConstraint('name', 'deleted', name='unique_domain_name'),
     ForeignKeyConstraint(['parent_domain_id'],
@@ -120,6 +127,7 @@ recordsets = Table('recordsets', metadata,
     Column('type', Enum(name='record_types', *RECORD_TYPES), nullable=False),
     Column('ttl', Integer, default=None, nullable=True),
     Column('description', Unicode(160), nullable=True),
+    Column('reverse_name', String(255), nullable=False, default=''),
 
     UniqueConstraint('domain_id', 'name', 'type', name='unique_recordset'),
     ForeignKeyConstraint(['domain_id'], ['domains.id'], ondelete='CASCADE'),
@@ -138,7 +146,6 @@ records = Table('records', metadata,
     Column('domain_id', UUID, nullable=False),
     Column('recordset_id', UUID, nullable=False),
     Column('data', Text, nullable=False),
-    Column('priority', Integer, default=None, nullable=True),
     Column('description', Unicode(160), nullable=True),
     Column('hash', String(32), nullable=False, unique=True),
     Column('managed', Boolean, default=False),
@@ -151,8 +158,12 @@ records = Table('records', metadata,
     Column('managed_resource_id', UUID, default=None, nullable=True),
     Column('managed_tenant_id', Unicode(36), default=None, nullable=True),
     Column('status', Enum(name='resource_statuses', *RESOURCE_STATUSES),
-           nullable=False, server_default='ACTIVE', default='ACTIVE'),
+           server_default='PENDING', default='PENDING', nullable=False),
+    Column('action', Enum(name='actions', *ACTIONS),
+           default='CREATE', server_default='CREATE', nullable=False),
+    Column('serial', Integer(), server_default='1', nullable=False),
 
+    UniqueConstraint('hash', name='unique_record'),
     ForeignKeyConstraint(['domain_id'], ['domains.id'], ondelete='CASCADE'),
     ForeignKeyConstraint(['recordset_id'], ['recordsets.id'],
                          ondelete='CASCADE'),
@@ -184,6 +195,84 @@ blacklists = Table('blacklists', metadata,
 
     Column('pattern', String(255), nullable=False, unique=True),
     Column('description', Unicode(160), nullable=True),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8',
+)
+
+pools = Table('pools', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+    Column('version', Integer(), default=1, nullable=False),
+
+    Column('name', String(50), nullable=False, unique=True),
+    Column('description', Unicode(160), nullable=True),
+    Column('tenant_id', String(36), nullable=True),
+    Column('provisioner', Enum(name='pool_provisioner', *POOL_PROVISIONERS),
+           nullable=False, server_default='UNMANAGED'),
+
+    UniqueConstraint('name', name='unique_pool_name'),
+
+    mysql_engine='INNODB',
+    mysql_charset='utf8'
+)
+
+pool_attributes = Table('pool_attributes', metadata,
+    Column('id', UUID(), default=utils.generate_uuid, primary_key=True),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+    Column('version', Integer(), default=1, nullable=False),
+
+    Column('key', String(255), nullable=False),
+    Column('value', String(255), nullable=False),
+    Column('pool_id', UUID(), nullable=False),
+
+    ForeignKeyConstraint(['pool_id'], ['pools.id'], ondelete='CASCADE'),
+
+    mysql_engine='INNODB',
+    mysql_charset='utf8'
+)
+
+zone_transfer_requests = Table('zone_transfer_requests', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('domain_id', UUID, nullable=False),
+    Column("key", String(255), nullable=False),
+    Column("description", String(255), nullable=False),
+    Column("tenant_id", String(36), default=None, nullable=False),
+    Column("target_tenant_id", String(36), default=None, nullable=True),
+    Column("status", Enum(name='resource_statuses', *TASK_STATUSES),
+           nullable=False, server_default='ACTIVE',
+           default='ACTIVE'),
+
+    ForeignKeyConstraint(['domain_id'], ['domains.id'], ondelete='CASCADE'),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8',
+)
+
+zone_transfer_accepts = Table('zone_transfer_accepts', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('domain_id', UUID, nullable=False),
+    Column('zone_transfer_request_id', UUID, nullable=False),
+    Column("tenant_id", String(36), default=None, nullable=False),
+    Column("status", Enum(name='resource_statuses', *TASK_STATUSES),
+           nullable=False, server_default='ACTIVE',
+           default='ACTIVE'),
+
+    ForeignKeyConstraint(['domain_id'], ['domains.id'], ondelete='CASCADE'),
+    ForeignKeyConstraint(
+        ['zone_transfer_request_id'],
+        ['zone_transfer_requests.id'],
+        ondelete='CASCADE'),
 
     mysql_engine='InnoDB',
     mysql_charset='utf8',

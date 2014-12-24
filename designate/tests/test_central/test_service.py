@@ -473,13 +473,11 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(domain['email'], values['email'])
         self.assertIn('status', domain)
 
-        # Ensure we sent exactly 1 notification, plus 2 for SOA and NS
-        # recordsets
+        # Ensure we sent exactly 1 notification
         notifications = self.get_notifications()
-        self.assertEqual(len(notifications), 3)
+        self.assertEqual(len(notifications), 1)
 
         # Ensure the notification wrapper contains the correct info
-
         ctxt, message, priority, retry = notifications[0]
 
         self.assertEqual(message['event_type'], 'dns.domain.create')
@@ -850,15 +848,12 @@ class CentralServiceTest(CentralTestCase):
         self.assertTrue(domain.serial > original_serial)
         self.assertEqual('info@example.net', domain.email)
 
-        # Ensure we sent exactly 2 notifications
-        # One for the domain update and one to
-        # update the SOA recordset
+        # Ensure we sent exactly 1 notification
         notifications = self.get_notifications()
-        self.assertEqual(len(notifications), 2)
+        self.assertEqual(len(notifications), 1)
 
         # Ensure the notification wrapper contains the correct info
-        # The SOA is the first notification, so test the second one
-        ctxt, message, priority, retry = notifications[1]
+        ctxt, message, priority, retry = notifications[0]
 
         self.assertEqual(message['event_type'], 'dns.domain.update')
         self.assertEqual(message['priority'], 'INFO')
@@ -914,9 +909,21 @@ class CentralServiceTest(CentralTestCase):
         # Delete the domain
         self.central_service.delete_domain(self.admin_context, domain['id'])
 
-        # Fetch the domain again, ensuring an exception is raised
-        with testtools.ExpectedException(exceptions.DomainNotFound):
-            self.central_service.get_domain(self.admin_context, domain['id'])
+        # Fetch the domain
+        deleted_domain = self.central_service.get_domain(
+            self.admin_context, domain['id'])
+
+        # Ensure the domain is marked for deletion
+        self.assertEqual(deleted_domain.id, domain.id)
+        self.assertEqual(deleted_domain.name, domain.name)
+        self.assertEqual(deleted_domain.email, domain.email)
+        self.assertEqual(deleted_domain.status, 'PENDING')
+        self.assertEqual(deleted_domain.tenant_id, domain.tenant_id)
+        self.assertEqual(deleted_domain.parent_domain_id,
+                         domain.parent_domain_id)
+        self.assertEqual(deleted_domain.action, 'DELETE')
+        self.assertEqual(deleted_domain.serial, domain.serial)
+        self.assertEqual(deleted_domain.pool_id, domain.pool_id)
 
         # Ensure we sent exactly 1 notification
         notifications = self.get_notifications()
@@ -1733,15 +1740,33 @@ class CentralServiceTest(CentralTestCase):
         # Create a record
         record = self.create_record(domain, recordset)
 
+        # Fetch the domain serial number
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
+
         # Delete the record
         self.central_service.delete_record(
             self.admin_context, domain['id'], recordset['id'], record['id'])
 
-        # Fetch the record again, ensuring an exception is raised
-        with testtools.ExpectedException(exceptions.RecordNotFound):
-            self.central_service.get_record(
-                self.admin_context, domain['id'], recordset['id'],
-                record['id'])
+        # Ensure the domain serial number was updated
+        new_domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
+        self.assertNotEqual(new_domain_serial, domain_serial)
+
+        # Fetch the record
+        deleted_record = self.central_service.get_record(
+            self.admin_context, domain['id'], recordset['id'],
+            record['id'])
+
+        # Ensure the record is marked for deletion
+        self.assertEqual(deleted_record.id, record.id)
+        self.assertEqual(deleted_record.data, record.data)
+        self.assertEqual(deleted_record.domain_id, record.domain_id)
+        self.assertEqual(deleted_record.status, 'PENDING')
+        self.assertEqual(deleted_record.tenant_id, record.tenant_id)
+        self.assertEqual(deleted_record.recordset_id, record.recordset_id)
+        self.assertEqual(deleted_record.action, 'DELETE')
+        self.assertEqual(deleted_record.serial, new_domain_serial)
 
     def test_delete_record_without_incrementing_serial(self):
         domain = self.create_domain()
@@ -1750,26 +1775,34 @@ class CentralServiceTest(CentralTestCase):
         # Create a record
         record = self.create_record(domain, recordset)
 
-        # Fetch the domain so we have the latest serial number
-        domain_before = self.central_service.get_domain(
-            self.admin_context, domain['id'])
+        # Fetch the domain serial number
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
 
         # Delete the record
         self.central_service.delete_record(
             self.admin_context, domain['id'], recordset['id'], record['id'],
             increment_serial=False)
 
-        # Fetch the record again, ensuring an exception is raised
-        with testtools.ExpectedException(exceptions.RecordNotFound):
-            self.central_service.get_record(
-                self.admin_context, domain['id'], recordset['id'],
-                record['id'])
-
         # Ensure the domains serial number was not updated
-        domain_after = self.central_service.get_domain(
-            self.admin_context, domain['id'])
+        new_domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id'])['serial']
+        self.assertEqual(new_domain_serial, domain_serial)
 
-        self.assertEqual(domain_before['serial'], domain_after['serial'])
+        # Fetch the record
+        deleted_record = self.central_service.get_record(
+            self.admin_context, domain['id'], recordset['id'],
+            record['id'])
+
+        # Ensure the record is marked for deletion
+        self.assertEqual(deleted_record.id, record.id)
+        self.assertEqual(deleted_record.data, record.data)
+        self.assertEqual(deleted_record.domain_id, record.domain_id)
+        self.assertEqual(deleted_record.status, 'PENDING')
+        self.assertEqual(deleted_record.tenant_id, record.tenant_id)
+        self.assertEqual(deleted_record.recordset_id, record.recordset_id)
+        self.assertEqual(deleted_record.action, 'DELETE')
+        self.assertEqual(deleted_record.serial, new_domain_serial)
 
     def test_delete_record_incorrect_domain_id(self):
         domain = self.create_domain()
@@ -1882,6 +1915,18 @@ class CentralServiceTest(CentralTestCase):
         self.central_service.update_floatingip(
             context_a, fip['region'], fip['id'], fixture)
 
+        criterion = {
+            'managed_resource_id': fip['id'],
+            'managed_tenant_id': context_a.tenant}
+        domain_id = self.central_service.find_record(
+            elevated_a, criterion).domain_id
+
+        # Simulate the update on the backend
+        domain_serial = self.central_service.get_domain(
+            elevated_a, domain_id).serial
+        self.central_service.update_status(
+            elevated_a, domain_id, "SUCCESS", domain_serial)
+
         self.network_api.fake.deallocate_floatingip(fip['id'])
 
         with testtools.ExpectedException(exceptions.NotFound):
@@ -1889,9 +1934,6 @@ class CentralServiceTest(CentralTestCase):
                 context_a, fip['region'], fip['id'])
 
         # Ensure that the record is still in DB (No invalidation)
-        criterion = {
-            'managed_resource_id': fip['id'],
-            'managed_tenant_id': context_a.tenant}
         self.central_service.find_record(elevated_a, criterion)
 
         # Now give the fip id to tenant 'b' and see that it get's deleted
@@ -1902,6 +1944,12 @@ class CentralServiceTest(CentralTestCase):
         fip_ptr = self.central_service.get_floatingip(
             context_b, fip['region'], fip['id'])
         self.assertEqual(None, fip_ptr['ptrdname'])
+
+        # Simulate the invalidation on the backend
+        domain_serial = self.central_service.get_domain(
+            elevated_a, domain_id).serial
+        self.central_service.update_status(
+            elevated_a, domain_id, "SUCCESS", domain_serial)
 
         # Ensure that the old record for tenant a for the fip now owned by
         # tenant b is gone
@@ -1967,15 +2015,24 @@ class CentralServiceTest(CentralTestCase):
         self.central_service.update_floatingip(
             context_a, fip['region'], fip['id'], fixture)
 
+        criterion = {
+            'managed_resource_id': fip['id'],
+            'managed_tenant_id': context_a.tenant}
+        domain_id = self.central_service.find_record(
+            elevated_a, criterion).domain_id
+
+        # Simulate the update on the backend
+        domain_serial = self.central_service.get_domain(
+            elevated_a, domain_id).serial
+        self.central_service.update_status(
+            elevated_a, domain_id, "SUCCESS", domain_serial)
+
         self.network_api.fake.deallocate_floatingip(fip['id'])
 
         fips = self.central_service.list_floatingips(context_a)
         self.assertEqual([], fips)
 
         # Ensure that the record is still in DB (No invalidation)
-        criterion = {
-            'managed_resource_id': fip['id'],
-            'managed_tenant_id': context_a.tenant}
         self.central_service.find_record(elevated_a, criterion)
 
         # Now give the fip id to tenant 'b' and see that it get's deleted
@@ -1986,6 +2043,12 @@ class CentralServiceTest(CentralTestCase):
         fips = self.central_service.list_floatingips(context_b)
         self.assertEqual(1, len(fips))
         self.assertEqual(None, fips[0]['ptrdname'])
+
+        # Simulate the invalidation on the backend
+        domain_serial = self.central_service.get_domain(
+            elevated_a, domain_id).serial
+        self.central_service.update_status(
+            elevated_a, domain_id, "SUCCESS", domain_serial)
 
         # Ensure that the old record for tenant a for the fip now owned by
         # tenant b is gone
@@ -2009,7 +2072,7 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(None, fip_ptr['description'])
         self.assertIsNotNone(fip_ptr['ttl'])
 
-    def test_set_floatingip_removes_old_rrset_and_record(self):
+    def test_set_floatingip_removes_old_record(self):
         self.create_server()
 
         context_a = self.get_context(tenant='a')
@@ -2027,9 +2090,21 @@ class CentralServiceTest(CentralTestCase):
         self.central_service.update_floatingip(
             context_a, fip['region'], fip['id'], fixture)
 
+        criterion = {
+            'managed_resource_id': fip['id'],
+            'managed_tenant_id': context_a.tenant}
+        domain_id = self.central_service.find_record(
+            elevated_a, criterion).domain_id
+
         fixture2 = self.get_ptr_fixture(fixture=1)
         self.central_service.update_floatingip(
             context_a, fip['region'], fip['id'], fixture2)
+
+        # Simulate the update on the backend
+        domain_serial = self.central_service.get_domain(
+            elevated_a, domain_id).serial
+        self.central_service.update_status(
+            elevated_a, domain_id, "SUCCESS", domain_serial)
 
         count = self.central_service.count_records(
             elevated_a, {'managed_resource_id': fip['id']})
@@ -2045,6 +2120,12 @@ class CentralServiceTest(CentralTestCase):
 
         self.central_service.update_floatingip(
             context_b, fip['region'], fip['id'], fixture)
+
+        # Simulate the update on the backend
+        domain_serial = self.central_service.get_domain(
+            elevated_a, domain_id).serial
+        self.central_service.update_status(
+            elevated_a, domain_id, "SUCCESS", domain_serial)
 
         count = self.central_service.count_records(
             elevated_a, {'managed_resource_id': fip['id']})
@@ -2310,3 +2391,489 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(ns_rs.records[0].data, server1.name)
         self.assertEqual(ns_rs.records[2].data, server2.name)
         self.assertThat(new_serial, GreaterThan(original_serial))
+
+    # Pool Tests
+    def test_create_pool(self):
+        # Get the values
+        values = self.get_pool_fixture(fixture=0)
+        # Create the pool using the values
+        pool = self.central_service.create_pool(
+            context=self.admin_context,
+            pool=objects.Pool(**values))
+
+        # Verify that all the values were set correctly
+        self.assertIsNotNone(pool['id'])
+        self.assertIsNotNone(pool['created_at'])
+        self.assertIsNotNone(pool['version'])
+        self.assertIsNotNone(pool['tenant_id'])
+        self.assertIsNone(pool['updated_at'])
+        self.assertIsNotNone(pool['attributes'])
+        self.assertIsNotNone(pool['nameservers'])
+
+        self.assertEqual(pool['name'], values['name'])
+
+        # Compare the actual values of attributes and nameservers
+        for k in range(0, len(values['attributes'])):
+            self.assertEqual(
+                pool['attributes'][k].to_primitive()['designate_object.data'],
+                values['attributes'][k].to_primitive()['designate_object.data']
+            )
+
+        for k in range(0, len(values['nameservers'])):
+            self.assertEqual(
+                pool['nameservers'][k].to_primitive()['designate_object.data'],
+                values['nameservers'][k].to_primitive()
+                ['designate_object.data'])
+
+    def test_get_pool(self):
+        # Create a server pool
+        expected = self.create_pool(fixture=0)
+
+        # GET the pool and verify it is the same
+        pool = self.central_service.get_pool(self.admin_context,
+                                             expected['id'])
+
+        self.assertEqual(pool['id'], expected['id'])
+        self.assertEqual(pool['created_at'], expected['created_at'])
+        self.assertEqual(pool['version'], expected['version'])
+        self.assertEqual(pool['tenant_id'], expected['tenant_id'])
+        self.assertEqual(pool['name'], expected['name'])
+
+        # Compare the actual values of attributes and nameservers
+        for k in range(0, len(expected['attributes'])):
+            self.assertEqual(
+                pool['attributes'][k].to_primitive()['designate_object.data'],
+                expected['attributes'][k].to_primitive()
+                ['designate_object.data'])
+
+        for k in range(0, len(expected['nameservers'])):
+            self.assertEqual(
+                pool['nameservers'][k].to_primitive()['designate_object.data'],
+                expected['nameservers'][k].to_primitive()
+                ['designate_object.data'])
+
+    def test_find_pools(self):
+        # Verify no pools exist, except for default pool
+        pools = self.central_service.find_pools(self.admin_context)
+
+        self.assertEqual(len(pools), 1)
+
+        # Create a pool
+        self.create_pool(fixture=0)
+
+        # Verify we can find the newly created pool
+        pools = self.central_service.find_pools(self.admin_context)
+        values = self.get_pool_fixture(fixture=0)
+
+        self.assertEqual(len(pools), 2)
+        self.assertEqual(pools[1]['name'], values['name'])
+
+        # Compare the actual values of attributes and nameservers
+        expected_attributes = \
+            values['attributes'][0].to_primitive()['designate_object.data']
+        actual_attributes = \
+            pools[1]['attributes'][0].to_primitive()['designate_object.data']
+        for k in expected_attributes:
+            self.assertEqual(actual_attributes[k], expected_attributes[k])
+
+        expected_nameservers = \
+            values['nameservers'][0].to_primitive()['designate_object.data']
+        actual_nameservers = \
+            pools[1]['nameservers'][0].to_primitive()['designate_object.data']
+        for k in expected_nameservers:
+            self.assertEqual(actual_nameservers[k], expected_nameservers[k])
+
+    def test_find_pool(self):
+        # Create a server pool
+        expected = self.create_pool(fixture=0)
+
+        # Find the created pool
+        pool = self.central_service.find_pool(self.admin_context,
+                                              {'id': expected['id']})
+
+        self.assertEqual(pool['name'], expected['name'])
+
+        # Compare the actual values of attributes and nameservers
+        for k in range(0, len(expected['attributes'])):
+            self.assertEqual(
+                pool['attributes'][k].to_primitive()['designate_object.data'],
+                expected['attributes'][k].to_primitive()
+                ['designate_object.data'])
+
+        for k in range(0, len(expected['nameservers'])):
+            self.assertEqual(
+                pool['nameservers'][k].to_primitive()['designate_object.data'],
+                expected['nameservers'][k].to_primitive()
+                ['designate_object.data'])
+
+    def test_update_pool(self):
+        # Create a server pool
+        pool = self.create_pool(fixture=0)
+
+        # Update the pool
+        pool.description = 'New Comment'
+        attribute_values = self.get_pool_attribute_fixture(fixture=1)
+        pool_attributes = pool.attributes = objects.PoolAttributeList(
+            objects=[objects.PoolAttribute(key=r, value=attribute_values[r])
+                     for r in attribute_values])
+
+        nameserver_values = self.get_nameserver_fixture(fixture=1)
+        pool_nameservers = pool.nameservers = objects.NameServerList(
+            objects=[objects.NameServer(key='nameserver', value=r)
+                     for r in nameserver_values])
+
+        # Update pool
+        self.central_service.update_pool(self.admin_context, pool)
+
+        # GET the pool
+        pool = self.central_service.get_pool(self.admin_context, pool.id)
+
+        # Verify that the pool was updated correctly
+        self.assertEqual("New Comment", pool.description)
+
+        # Compare the actual values of attributes and nameservers
+        for k in range(0, len(pool_attributes)):
+            actual_attributes = \
+                pool['attributes'][0].to_primitive()['designate_object.data']
+            expected_attributes = \
+                pool_attributes[0].to_primitive()['designate_object.data']
+            self.assertEqual(actual_attributes, expected_attributes)
+
+        for k in range(0, len(pool_nameservers)):
+            actual_nameservers = \
+                pool['nameservers'][k].to_primitive()['designate_object.data']
+            expected_nameservers = \
+                pool_nameservers[k].to_primitive()['designate_object.data']
+            self.assertEqual(actual_nameservers, expected_nameservers)
+
+    def test_delete_pool(self):
+        # Create a server pool
+        pool = self.create_pool()
+
+        # Delete the pool
+        self.central_service.delete_pool(self.admin_context, pool['id'])
+
+        # Verify that the pool has been deleted
+        with testtools.ExpectedException(exceptions.PoolNotFound):
+            self.central_service.get_pool(self.admin_context, pool['id'])
+
+    def test_update_status_delete_domain(self):
+        # Create a domain
+        domain = self.create_domain()
+
+        # Reset the list of notifications
+        self.reset_notifications()
+
+        # Delete the domain
+        self.central_service.delete_domain(self.admin_context, domain['id'])
+
+        # Simulate the domain having been deleted on the backend
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
+        self.central_service.update_status(
+            self.admin_context, domain['id'], "SUCCESS", domain_serial)
+
+        # Fetch the domain again, ensuring an exception is raised
+        with testtools.ExpectedException(exceptions.DomainNotFound):
+            self.central_service.get_domain(self.admin_context, domain['id'])
+
+    def test_update_status_delete_last_record(self):
+        domain = self.create_domain()
+        recordset = self.create_recordset(domain)
+
+        # Create a record
+        record = self.create_record(domain, recordset)
+
+        # Delete the record
+        self.central_service.delete_record(
+            self.admin_context, domain['id'], recordset['id'], record['id'])
+
+        # Simulate the record having been deleted on the backend
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
+        self.central_service.update_status(
+            self.admin_context, domain['id'], "SUCCESS", domain_serial)
+
+        # Fetch the record again, ensuring an exception is raised
+        with testtools.ExpectedException(exceptions.RecordSetNotFound):
+            self.central_service.get_record(
+                self.admin_context, domain['id'], recordset['id'],
+                record['id'])
+
+    def test_update_status_delete_last_record_without_incrementing_serial(
+            self):
+        domain = self.create_domain()
+        recordset = self.create_recordset(domain)
+
+        # Create a record
+        record = self.create_record(domain, recordset)
+
+        # Fetch the domain serial number
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
+
+        # Delete the record
+        self.central_service.delete_record(
+            self.admin_context, domain['id'], recordset['id'], record['id'],
+            increment_serial=False)
+
+        # Simulate the record having been deleted on the backend
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
+        self.central_service.update_status(
+            self.admin_context, domain['id'], "SUCCESS", domain_serial)
+
+        # Fetch the record again, ensuring an exception is raised
+        with testtools.ExpectedException(exceptions.RecordSetNotFound):
+            self.central_service.get_record(
+                self.admin_context, domain['id'], recordset['id'],
+                record['id'])
+
+        # Ensure the domains serial number was not updated
+        new_domain_serial = self.central_service.get_domain(
+            self.admin_context, domain['id']).serial
+
+        self.assertEqual(new_domain_serial, domain_serial)
+
+    def test_create_zone_transfer_request(self):
+        domain = self.create_domain()
+        zone_transfer_request = self.create_zone_transfer_request(domain)
+
+        # Verify all values have been set correctly
+        self.assertIsNotNone(zone_transfer_request.id)
+        self.assertIsNotNone(zone_transfer_request.tenant_id)
+        self.assertIsNotNone(zone_transfer_request.key)
+        self.assertEqual(zone_transfer_request.domain_id, domain.id)
+
+    def test_create_zone_transfer_request_duplicate(self):
+        domain = self.create_domain()
+        self.create_zone_transfer_request(domain)
+        with testtools.ExpectedException(
+                exceptions.DuplicateZoneTransferRequest):
+            self.create_zone_transfer_request(domain)
+
+    def test_create_scoped_zone_transfer_request(self):
+        domain = self.create_domain()
+        values = self.get_zone_transfer_request_fixture(fixture=1)
+        zone_transfer_request = self.create_zone_transfer_request(domain,
+                                                                  fixture=1)
+
+        # Verify all values have been set correctly
+        self.assertIsNotNone(zone_transfer_request.id)
+        self.assertIsNotNone(zone_transfer_request.tenant_id)
+        self.assertEqual(zone_transfer_request.domain_id, domain.id)
+        self.assertIsNotNone(zone_transfer_request.key)
+        self.assertEqual(
+            zone_transfer_request.target_tenant_id,
+            values['target_tenant_id'])
+
+    def test_get_zone_transfer_request(self):
+        domain = self.create_domain()
+        zt_request = self.create_zone_transfer_request(domain,
+                                                       fixture=1)
+        retrived_zt = self.central_service.get_zone_transfer_request(
+            self.admin_context,
+            zt_request.id)
+        self.assertEqual(zt_request.domain_id, retrived_zt.domain_id)
+        self.assertEqual(zt_request.key, retrived_zt.key)
+
+    def test_get_zone_transfer_request_scoped(self):
+        tenant_1_context = self.get_context(tenant=1)
+        tenant_2_context = self.get_context(tenant=2)
+        tenant_3_context = self.get_context(tenant=3)
+        domain = self.create_domain(context=tenant_1_context)
+        zt_request = self.create_zone_transfer_request(
+            domain,
+            context=tenant_1_context,
+            target_tenant_id=2)
+
+        self.central_service.get_zone_transfer_request(
+            tenant_2_context, zt_request.id)
+
+        self.central_service.get_zone_transfer_request(
+            tenant_1_context, zt_request.id)
+
+        with testtools.ExpectedException(exceptions.Forbidden):
+            self.central_service.get_zone_transfer_request(
+                tenant_3_context, zt_request.id)
+
+    def test_update_zone_transfer_request(self):
+        domain = self.create_domain()
+        zone_transfer_request = self.create_zone_transfer_request(domain)
+
+        zone_transfer_request.description = 'TEST'
+        self.central_service.update_zone_transfer_request(
+            self.admin_context, zone_transfer_request)
+
+        # Verify all values have been set correctly
+        self.assertIsNotNone(zone_transfer_request.id)
+        self.assertIsNotNone(zone_transfer_request.tenant_id)
+        self.assertIsNotNone(zone_transfer_request.key)
+        self.assertEqual(zone_transfer_request.description, 'TEST')
+
+    def test_delete_zone_transfer_request(self):
+        domain = self.create_domain()
+        zone_transfer_request = self.create_zone_transfer_request(domain)
+
+        self.central_service.delete_zone_transfer_request(
+            self.admin_context, zone_transfer_request.id)
+
+        with testtools.ExpectedException(
+                exceptions.ZoneTransferRequestNotFound):
+                self.central_service.get_zone_transfer_request(
+                    self.admin_context,
+                    zone_transfer_request.id)
+
+    def test_create_zone_transfer_accept(self):
+        tenant_1_context = self.get_context(tenant=1)
+        tenant_2_context = self.get_context(tenant=2)
+        admin_context = self.get_admin_context()
+        admin_context.all_tenants = True
+
+        domain = self.create_domain(context=tenant_1_context)
+        recordset = self.create_recordset(domain, context=tenant_1_context)
+        record = self.create_record(
+            domain, recordset, context=tenant_1_context)
+
+        zone_transfer_request = self.create_zone_transfer_request(
+            domain, context=tenant_1_context)
+
+        zone_transfer_accept = objects.ZoneTransferAccept()
+        zone_transfer_accept.zone_transfer_request_id =\
+            zone_transfer_request.id
+
+        zone_transfer_accept.key = zone_transfer_request.key
+        zone_transfer_accept.domain_id = domain.id
+
+        zone_transfer_accept = \
+            self.central_service.create_zone_transfer_accept(
+                tenant_2_context, zone_transfer_accept)
+
+        result = {}
+        result['domain'] = self.central_service.get_domain(
+            admin_context, domain.id)
+
+        result['recordset'] = self.central_service.get_recordset(
+            admin_context, domain.id, recordset.id)
+
+        result['record'] = self.central_service.get_record(
+            admin_context, domain.id, recordset.id, record.id)
+
+        result['zt_accept'] = self.central_service.get_zone_transfer_accept(
+            admin_context, zone_transfer_accept.id)
+        result['zt_request'] = self.central_service.get_zone_transfer_request(
+            admin_context, zone_transfer_request.id)
+
+        self.assertEqual(
+            result['domain'].tenant_id, str(tenant_2_context.tenant))
+        self.assertEqual(
+            result['recordset'].tenant_id, str(tenant_2_context.tenant))
+        self.assertEqual(
+            result['record'].tenant_id, str(tenant_2_context.tenant))
+        self.assertEqual(
+            result['zt_accept'].status, 'COMPLETE')
+        self.assertEqual(
+            result['zt_request'].status, 'COMPLETE')
+
+    def test_create_zone_transfer_accept_scoped(self):
+        tenant_1_context = self.get_context(tenant=1)
+        tenant_2_context = self.get_context(tenant=2)
+        admin_context = self.get_admin_context()
+        admin_context.all_tenants = True
+
+        domain = self.create_domain(context=tenant_1_context)
+        recordset = self.create_recordset(domain, context=tenant_1_context)
+        record = self.create_record(
+            domain, recordset, context=tenant_1_context)
+
+        zone_transfer_request = self.create_zone_transfer_request(
+            domain,
+            context=tenant_1_context,
+            target_tenant_id='2')
+
+        zone_transfer_accept = objects.ZoneTransferAccept()
+        zone_transfer_accept.zone_transfer_request_id =\
+            zone_transfer_request.id
+
+        zone_transfer_accept.key = zone_transfer_request.key
+        zone_transfer_accept.domain_id = domain.id
+
+        zone_transfer_accept = \
+            self.central_service.create_zone_transfer_accept(
+                tenant_2_context, zone_transfer_accept)
+
+        result = {}
+        result['domain'] = self.central_service.get_domain(
+            admin_context, domain.id)
+
+        result['recordset'] = self.central_service.get_recordset(
+            admin_context, domain.id, recordset.id)
+
+        result['record'] = self.central_service.get_record(
+            admin_context, domain.id, recordset.id, record.id)
+
+        result['zt_accept'] = self.central_service.get_zone_transfer_accept(
+            admin_context, zone_transfer_accept.id)
+        result['zt_request'] = self.central_service.get_zone_transfer_request(
+            admin_context, zone_transfer_request.id)
+
+        self.assertEqual(
+            result['domain'].tenant_id, str(tenant_2_context.tenant))
+        self.assertEqual(
+            result['recordset'].tenant_id, str(tenant_2_context.tenant))
+        self.assertEqual(
+            result['record'].tenant_id, str(tenant_2_context.tenant))
+        self.assertEqual(
+            result['zt_accept'].status, 'COMPLETE')
+        self.assertEqual(
+            result['zt_request'].status, 'COMPLETE')
+
+    def test_create_zone_transfer_accept_failed_key(self):
+        tenant_1_context = self.get_context(tenant=1)
+        tenant_2_context = self.get_context(tenant=2)
+        admin_context = self.get_admin_context()
+        admin_context.all_tenants = True
+
+        domain = self.create_domain(context=tenant_1_context)
+
+        zone_transfer_request = self.create_zone_transfer_request(
+            domain,
+            context=tenant_1_context,
+            target_tenant_id=2)
+
+        zone_transfer_accept = objects.ZoneTransferAccept()
+        zone_transfer_accept.zone_transfer_request_id =\
+            zone_transfer_request.id
+
+        zone_transfer_accept.key = 'WRONG KEY'
+        zone_transfer_accept.domain_id = domain.id
+
+        with testtools.ExpectedException(exceptions.IncorrectZoneTransferKey):
+            zone_transfer_accept = \
+                self.central_service.create_zone_transfer_accept(
+                    tenant_2_context, zone_transfer_accept)
+
+    def test_create_zone_tarnsfer_accept_out_of_tenant_scope(self):
+        tenant_1_context = self.get_context(tenant=1)
+        tenant_3_context = self.get_context(tenant=3)
+        admin_context = self.get_admin_context()
+        admin_context.all_tenants = True
+
+        domain = self.create_domain(context=tenant_1_context)
+
+        zone_transfer_request = self.create_zone_transfer_request(
+            domain,
+            context=tenant_1_context,
+            target_tenant_id=2)
+
+        zone_transfer_accept = objects.ZoneTransferAccept()
+        zone_transfer_accept.zone_transfer_request_id =\
+            zone_transfer_request.id
+
+        zone_transfer_accept.key = zone_transfer_request.key
+        zone_transfer_accept.domain_id = domain.id
+
+        with testtools.ExpectedException(exceptions.Forbidden):
+            zone_transfer_accept = \
+                self.central_service.create_zone_transfer_accept(
+                    tenant_3_context, zone_transfer_accept)

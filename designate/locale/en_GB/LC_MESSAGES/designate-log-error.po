@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Designate\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2014-09-23 06:04+0000\n"
-"PO-Revision-Date: 2014-09-22 15:06+0000\n"
+"POT-Creation-Date: 2014-11-12 06:10+0000\n"
+"PO-Revision-Date: 2014-11-11 17:54+0000\n"
 "Last-Translator: openstackjenkins <jenkins@openstack.org>\n"
 "Language-Team: English (United Kingdom) (http://www.transifex.com/projects/p/"
 "designate/language/en_GB/)\n"
@@ -49,7 +49,7 @@ msgstr ""
 "Error Lines:\n"
 "%s"
 
-#: designate/mdns/handler.py:118
+#: designate/mdns/handler.py:111
 #, python-format
 msgid "got exception while handling axfr request. Question is %(qr)s"
 msgstr ""
@@ -69,21 +69,6 @@ msgstr "Unhandled exception while processing request from %(host)s:%(port)d"
 msgid "Failed calling Neutron %(region)s - %(endpoint)s"
 msgstr "Failed calling Neutron %(region)s - %(endpoint)s"
 
-#: designate/openstack/common/excutils.py:76
-#, python-format
-msgid "Original exception being dropped: %s"
-msgstr "Original exception being dropped: %s"
-
-#: designate/openstack/common/excutils.py:105
-#, python-format
-msgid "Unexpected exception occurred %d time(s)... retrying."
-msgstr "Unexpected exception occurred %d time(s)... retrying."
-
-#: designate/openstack/common/lockutils.py:117
-#, python-format
-msgid "Could not release the acquired lock `%s`"
-msgstr ""
-
 #: designate/openstack/common/loopingcall.py:95
 msgid "in fixed duration looping call"
 msgstr "in fixed duration looping call"
@@ -92,25 +77,17 @@ msgstr "in fixed duration looping call"
 msgid "in dynamic looping call"
 msgstr "in dynamic looping call"
 
-#: designate/openstack/common/policy.py:508
+#: designate/openstack/common/policy.py:535
+#: designate/openstack/common/policy.py:815
 #, python-format
 msgid "Failed to understand rule %s"
 msgstr "Failed to understand rule %s"
 
-#: designate/openstack/common/policy.py:518
+#: designate/openstack/common/policy.py:545
 #, python-format
 msgid "No handler for matches of kind %s"
 msgstr "No handler for matches of kind %s"
 
-#: designate/openstack/common/policy.py:788
-#, python-format
-msgid "Failed to understand rule %r"
-msgstr "Failed to understand rule %r"
-
-#: designate/openstack/common/service.py:188
-msgid "Exception during rpc cleanup."
-msgstr "Exception during rpc cleanup."
-
-#: designate/openstack/common/service.py:277
+#: designate/openstack/common/service.py:269
 msgid "Unhandled exception"
 msgstr "Unhandled exception"

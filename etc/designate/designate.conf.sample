@@ -45,9 +45,6 @@ debug = False
 # Central Service
 #-----------------------
 [service:central]
-# Driver used for backend communication (e.g. fake, rpc, bind9, powerdns)
-#backend_driver = fake
-
 # Maximum domain name length
 #max_domain_name_len = 255
 
@@ -105,13 +102,6 @@ debug = False
 #admin_password = designate
 
 #-----------------------
-# Agent Service
-#-----------------------
-[service:agent]
-# Driver used for backend communication (e.g. bind9, powerdns)
-#backend_driver = bind9
-
-#-----------------------
 # Sink Service
 #-----------------------
 [service:sink]
@@ -127,6 +117,21 @@ debug = False
 #host = 0.0.0.0
 #port = 5354
 #tcp_backlog =1 00
+
+#-----------------------
+# Pool Manager Service
+#-----------------------
+[service:pool_manager]
+#backends = bind9
+#workers = None
+#pool_id = 794ccc2c-d751-44fe-b57f-8894c9f5c842
+#threshold_percentage = 100
+#poll_timeout = 30
+#poll_retry_interval = 2
+#poll_max_retries = 3
+#poll_delay = 1
+#periodic_sync_interval = 120
+#cache_driver = sqlalchemy
 
 ##############
 ## Network API
@@ -181,31 +186,24 @@ debug = False
 #control_exchange = 'neutron'
 #format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
 
+###################################
+## Pool Manager Cache Configuration
+###################################
+#-----------------------
+# SQLAlchemy Pool Manager Cache
+#-----------------------
+[pool_manager_cache:sqlalchemy]
+#connection = sqlite:///$state_path/designate_pool_manager.sqlite
+#connection_debug = 100
+#connection_trace = False
+#sqlite_synchronous = True
+#idle_timeout = 3600
+#max_retries = 10
+#retry_interval = 10
 
 ########################
 ## Backend Configuration
 ########################
-#-----------------------
-# Bind9 Backend
-#-----------------------
-[backend:bind9]
-#rndc_host = 127.0.0.1
-#rndc_port = 953
-#rndc_config_file = /etc/rndc.conf
-#rndc_key_file = /etc/rndc.key
-
-#-----------------------
-# Bind9+MySQL Backend
-#-----------------------
-[backend:mysqlbind9]
-#connection = mysql://user:password@host/schema
-#rndc_host = 127.0.0.1
-#rndc_port = 953
-#rndc_config_file = /etc/rndc.conf
-#rndc_key_file = /etc/rndc.key
-#write_database = True
-#dns_server_type = master
-
 #-----------------------
 # PowerDNS Backend
 #-----------------------
@@ -233,3 +231,24 @@ debug = False
 [backend:multi]
 #master = fake
 #slave = fake
+
+#############################
+## Pool Backend Configuration
+#############################
+#-----------------------
+# Global Bind9 Pool Backend
+#-----------------------
+[backend:bind9]
+#server_ids = 6a5032b6-2d96-43ee-b25b-7d784e2bf3b2
+#masters = 127.0.0.1:5354
+#rndc_host = 127.0.0.1
+#rndc_port = 953
+#rndc_config_file = /etc/rndc.conf
+#rndc_key_file = /etc/rndc.key
+
+#-----------------------
+# Server Specific Bind9 Pool Backend
+#-----------------------
+[backend:bind9:6a5032b6-2d96-43ee-b25b-7d784e2bf3b2]
+# host = 127.0.0.1
+# port = 53

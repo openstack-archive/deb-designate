@@ -88,6 +88,12 @@ class ApiV1RecordsTest(ApiV1Test):
         self.delete('domains/%s/records/%s' % (self.domain['id'],
                                                record_1.json['id']))
 
+        # Simulate the record 1 having been deleted on the backend
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, self.domain['id']).serial
+        self.central_service.update_status(
+            self.admin_context, self.domain['id'], "SUCCESS", domain_serial)
+
         # Get the record 2 to ensure recordset did not get deleted
         rec_2_get_response = self.get('domains/%s/records/%s' %
                                      (self.domain['id'], record_2.json['id']))
@@ -99,6 +105,12 @@ class ApiV1RecordsTest(ApiV1Test):
         # Delete record 2, this should delete the null recordset too
         self.delete('domains/%s/records/%s' % (self.domain['id'],
                                                record_2.json['id']))
+
+        # Simulate the record 2 having been deleted on the backend
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, self.domain['id']).serial
+        self.central_service.update_status(
+            self.admin_context, self.domain['id'], "SUCCESS", domain_serial)
 
         # Re-create as a different type, but use the same name
         fixture = self.get_record_fixture('CNAME')
@@ -204,7 +216,11 @@ class ApiV1RecordsTest(ApiV1Test):
             self.domain['name'], 'SRV')
 
         fixture = self.get_record_fixture(recordset_fixture['type'])
+        priority, _, data = fixture['data'].partition(" ")
+
         fixture.update({
+            'data': data,
+            'priority': int(priority),
             'name': recordset_fixture['name'],
             'type': recordset_fixture['type'],
         })
@@ -216,6 +232,7 @@ class ApiV1RecordsTest(ApiV1Test):
         self.assertIn('id', response.json)
         self.assertEqual(response.json['type'], fixture['type'])
         self.assertEqual(response.json['name'], fixture['name'])
+
         self.assertEqual(response.json['priority'], fixture['priority'])
         self.assertEqual(response.json['data'], fixture['data'])
 
@@ -333,6 +350,16 @@ class ApiV1RecordsTest(ApiV1Test):
         self.get('domains/2fdadfb1cf964259ac6bbb7b6d2ff980/records',
                  status_code=404)
 
+    def test_get_record_missing(self):
+        self.get('domains/%s/records/2fdadfb1-cf96-4259-ac6b-'
+                 'bb7b6d2ff980' % self.domain['id'],
+                 status_code=404)
+
+    def test_get_record_with_invalid_id(self):
+        self.get('domains/%s/records/2fdadfb1-cf96-4259-ac6b-'
+                 'bb7b6d2ff980GH' % self.domain['id'],
+                 status_code=404)
+
     def test_get_record(self):
         # Create a record
         record = self.create_record(self.domain, self.recordset)
@@ -447,6 +474,12 @@ class ApiV1RecordsTest(ApiV1Test):
         self.delete('domains/%s/records/%s' % (self.domain['id'],
                                                record['id']))
 
+        # Simulate the record having been deleted on the backend
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, self.domain['id']).serial
+        self.central_service.update_status(
+            self.admin_context, self.domain['id'], "SUCCESS", domain_serial)
+
         # Ensure we can no longer fetch the record
         self.get('domains/%s/records/%s' % (self.domain['id'],
                                             record['id']),
@@ -475,4 +508,9 @@ class ApiV1RecordsTest(ApiV1Test):
     def test_delete_record_invalid_domain_id(self):
         self.delete('domains/2fdadfb1cf964259ac6bbb7b6d2ff980/records/'
                     '2fdadfb1-cf96-4259-ac6b-bb7b6d2ff980',
+                    status_code=404)
+
+    def test_delete_record_invalid_id(self):
+        self.delete('domains/%s/records/2fdadfb1-cf96-4259-ac6b-'
+                    'bb7b6d2ff980GH' % self.domain['id'],
                     status_code=404)

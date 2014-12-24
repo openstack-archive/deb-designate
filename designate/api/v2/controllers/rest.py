@@ -32,7 +32,7 @@ import pecan.rest
 import pecan.routing
 
 from designate import exceptions
-from designate import api
+from designate.central import rpcapi as central_rpcapi
 from designate.openstack.common import log as logging
 from designate.i18n import _
 
@@ -53,7 +53,7 @@ class RestController(pecan.rest.RestController):
 
     @property
     def central_api(self):
-        return api.get_central_api()
+        return central_rpcapi.CentralAPI.get_instance()
 
     def _get_paging_params(self, params):
         """
@@ -92,6 +92,14 @@ class RestController(pecan.rest.RestController):
                 'sort key must be one of {0}', str(self.SORT_KEYS))))
 
         return marker, limit, sort_key, sort_dir
+
+    def _apply_filter_params(self, params, accepted_filters, criterion):
+
+        for k in accepted_filters:
+            if k in params:
+                criterion[k] = params[k]
+
+        return criterion
 
     def _handle_post(self, method, remainder):
         '''

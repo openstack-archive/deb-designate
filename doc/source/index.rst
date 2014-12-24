@@ -30,6 +30,20 @@ also be found on the `OpenStack wiki`_.
    integrations
    install
 
+Source Documentation
+====================
+
+.. toctree::
+    :maxdepth: 3
+
+    api
+    backend
+    central
+    mdns
+    objects
+    quota
+    sink
+    storage
 
 Indices and tables
 ==================

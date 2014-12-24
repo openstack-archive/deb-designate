@@ -23,11 +23,11 @@ import uuid
 import pkg_resources
 from jinja2 import Template
 from oslo.config import cfg
+from oslo_concurrency import processutils
+from oslo.utils import timeutils
 
 from designate import exceptions
 from designate.openstack.common import log as logging
-from designate.openstack.common import processutils
-from designate.openstack.common import timeutils
 
 
 LOG = logging.getLogger(__name__)
@@ -90,6 +90,17 @@ def read_config(prog, argv):
 
     cfg.CONF(argv[1:], project='designate', prog=prog,
              default_config_files=config_files)
+
+    register_plugin_opts()
+
+
+def register_plugin_opts():
+    # Avoid circular dependency imports
+    from designate import plugin
+
+    # Register Backend Plugin Config Options
+    plugin.Plugin.register_cfg_opts('designate.backend')
+    plugin.Plugin.register_extra_cfg_opts('designate.backend')
 
 
 def resource_string(*args):
@@ -330,3 +341,11 @@ def get_proxies():
         proxies['https'] = proxies['http']
 
     return proxies
+
+
+def extract_priority_from_data(recordset_type, record):
+    priority, data = None, record['data']
+    if recordset_type in ('MX', 'SRV'):
+        priority, _, data = record['data'].partition(" ")
+        priority = int(priority)
+    return priority, data

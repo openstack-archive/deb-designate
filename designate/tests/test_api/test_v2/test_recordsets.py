@@ -173,8 +173,8 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         data = [self.create_recordset(self.domain,
                 name='x-%s.%s' % (i, self.domain['name']))
                 for i in xrange(0, 10)]
-        data.insert(0, soa)
         data.insert(0, ns)
+        data.insert(0, soa)
 
         self._assert_paging(data, url, key='recordsets')
 
@@ -244,6 +244,12 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
 
         # now delete the domain and get the recordsets
         self.client.delete('/zones/%s' % zone['id'], status=204)
+
+        # Simulate the domain having been deleted on the backend
+        domain_serial = self.central_service.get_domain(
+            self.admin_context, zone['id']).serial
+        self.central_service.update_status(
+            self.admin_context, zone['id'], "SUCCESS", domain_serial)
 
         # Check that we get a domain_not_found error
         self._assert_exception('domain_not_found', 404, self.client.get, url)
@@ -479,3 +485,51 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
     def test_delete_recordset_invalid_id(self):
         self._assert_invalid_uuid(
             self.client.delete, '/zones/%s/recordsets/%s')
+
+    def test_metadata_exists(self):
+        url = '/zones/%s/recordsets' % self.domain['id']
+
+        response = self.client.get(url)
+
+        # Make sure the fields exist
+        self.assertIn('metadata', response.json)
+        self.assertIn('total_count', response.json['metadata'])
+
+    def test_total_count(self):
+        url = '/zones/%s/recordsets' % self.domain['id']
+
+        response = self.client.get(url)
+
+        # The NS and SOA records are there by default
+        self.assertEqual(2, response.json['metadata']['total_count'])
+
+        # Create a recordset
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        response = self.client.post_json(
+            '/zones/%s/recordsets' % self.domain['id'], {'recordset': fixture})
+
+        response = self.client.get(url)
+
+        # Make sure total_count picked up the change
+        self.assertEqual(3, response.json['metadata']['total_count'])
+
+    def test_total_count_pagination(self):
+        # Create two recordsets
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        response = self.client.post_json(
+            '/zones/%s/recordsets' % self.domain['id'], {'recordset': fixture})
+
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=1)
+        response = self.client.post_json(
+            '/zones/%s/recordsets' % self.domain['id'], {'recordset': fixture})
+
+        # Paginate the recordsets to two, there should be four now
+        url = '/zones/%s/recordsets?limit=2' % self.domain['id']
+
+        response = self.client.get(url)
+
+        # There are two recordsets returned
+        self.assertEqual(2, len(response.json['recordsets']))
+
+        # But there should be four in total (NS/SOA + the created)
+        self.assertEqual(4, response.json['metadata']['total_count'])

@@ -20,28 +20,59 @@ import testtools
 from designate.openstack.common import log as logging
 from designate import tests
 from designate import objects
+from designate import exceptions
 
 
 LOG = logging.getLogger(__name__)
 
 
 class TestObject(objects.DesignateObject):
-    PATH = 'designate.tests.test_objects.test_base.TestObject'
-    FIELDS = ['id', 'name', 'nested']
+    FIELDS = {
+        'id': {},
+        'name': {},
+        'nested': {},
+    }
 
 
 class TestObjectDict(objects.DictObjectMixin, TestObject):
-    PATH = 'designate.tests.test_objects.test_base.TestObjectDict'
+    pass
 
 
 class TestObjectList(objects.ListObjectMixin, objects.DesignateObject):
-    PATH = 'designate.tests.test_objects.test_base.TestObjectList'
+    pass
+
+
+class TestValidatableObject(objects.DesignateObject):
+    FIELDS = {
+        'id': {
+            'schema': {
+                'type': 'string',
+                'format': 'uuid',
+            },
+            'required': True,
+        },
+        'nested': {
+            'schema': {
+                '$ref': 'obj://TestValidatableObject#/'
+            }
+        }
+    }
 
 
 class DesignateObjectTest(tests.TestCase):
+    def test_obj_cls_from_name(self):
+        cls = objects.DesignateObject.obj_cls_from_name('TestObject')
+        self.assertEqual(TestObject, cls)
+
+        cls = objects.DesignateObject.obj_cls_from_name('TestObjectDict')
+        self.assertEqual(TestObjectDict, cls)
+
+        cls = objects.DesignateObject.obj_cls_from_name('TestObjectList')
+        self.assertEqual(TestObjectList, cls)
+
     def test_from_primitive(self):
         primitive = {
-            'designate_object.name': TestObject.PATH,
+            'designate_object.name': 'TestObject',
             'designate_object.data': {
                 'id': 'MyID',
             },
@@ -65,11 +96,11 @@ class DesignateObjectTest(tests.TestCase):
 
     def test_from_primitive_recursive(self):
         primitive = {
-            'designate_object.name': TestObject.PATH,
+            'designate_object.name': 'TestObject',
             'designate_object.data': {
                 'id': 'MyID',
                 'nested': {
-                    'designate_object.name': TestObject.PATH,
+                    'designate_object.name': 'TestObject',
                     'designate_object.data': {
                         'id': 'MyID-Nested',
                     },
@@ -110,11 +141,11 @@ class DesignateObjectTest(tests.TestCase):
         obj = TestObject()
 
         obj.id = 'MyID'
-        self.assertEqual('MyID', obj._id)
+        self.assertEqual('MyID', obj.id)
         self.assertEqual(1, len(obj.obj_what_changed()))
 
         obj.name = 'MyName'
-        self.assertEqual('MyName', obj._name)
+        self.assertEqual('MyName', obj.name)
         self.assertEqual(2, len(obj.obj_what_changed()))
 
     def test_to_primitive(self):
@@ -123,7 +154,7 @@ class DesignateObjectTest(tests.TestCase):
         # Ensure only the id attribute is returned
         primitive = obj.to_primitive()
         expected = {
-            'designate_object.name': TestObject.PATH,
+            'designate_object.name': 'TestObject',
             'designate_object.data': {
                 'id': 'MyID',
             },
@@ -138,7 +169,7 @@ class DesignateObjectTest(tests.TestCase):
         # Ensure both the id and name attributes are returned
         primitive = obj.to_primitive()
         expected = {
-            'designate_object.name': TestObject.PATH,
+            'designate_object.name': 'TestObject',
             'designate_object.data': {
                 'id': 'MyID',
                 'name': None,
@@ -154,11 +185,11 @@ class DesignateObjectTest(tests.TestCase):
         # Ensure only the id attribute is returned
         primitive = obj.to_primitive()
         expected = {
-            'designate_object.name': TestObject.PATH,
+            'designate_object.name': 'TestObject',
             'designate_object.data': {
                 'id': 'MyID',
                 'nested': {
-                    'designate_object.name': TestObject.PATH,
+                    'designate_object.name': 'TestObject',
                     'designate_object.data': {
                         'id': 'MyID-Nested',
                     },
@@ -170,6 +201,121 @@ class DesignateObjectTest(tests.TestCase):
             'designate_object.original_values': {},
         }
         self.assertEqual(expected, primitive)
+
+    def test_to_dict(self):
+        obj = TestObject(id='MyID')
+
+        # Ensure only the id attribute is returned
+        dict_ = obj.to_dict()
+        expected = {
+            'id': 'MyID',
+        }
+        self.assertEqual(expected, dict_)
+
+        # Set the name attribute to a None value
+        obj.name = None
+
+        # Ensure both the id and name attributes are returned
+        dict_ = obj.to_dict()
+        expected = {
+            'id': 'MyID',
+            'name': None,
+        }
+        self.assertEqual(expected, dict_)
+
+    def test_to_dict_recursive(self):
+        obj = TestObject(id='MyID', nested=TestObject(id='MyID-Nested'))
+
+        # Ensure only the id attribute is returned
+        dict_ = obj.to_dict()
+        expected = {
+            'id': 'MyID',
+            'nested': {
+                'id': 'MyID-Nested',
+            },
+        }
+
+        self.assertEqual(expected, dict_)
+
+    def test_is_valid(self):
+        obj = TestValidatableObject(id='MyID')
+
+        # ID should be a UUID, So - Not Valid.
+        self.assertFalse(obj.is_valid)
+
+        # Correct the ID field
+        obj.id = 'ffded5c4-e4f6-4e02-a175-48e13c5c12a0'
+
+        # ID is now a UUID, So - Valid.
+        self.assertTrue(obj.is_valid)
+
+    def test_is_valid_recursive(self):
+        obj = TestValidatableObject(
+            id='MyID',
+            nested=TestValidatableObject(id='MyID'))
+
+        # ID should be a UUID, So - Not Valid.
+        self.assertFalse(obj.is_valid)
+
+        # Correct the outer objects ID field
+        obj.id = 'ffded5c4-e4f6-4e02-a175-48e13c5c12a0'
+
+        # Outer ID is now a UUID, Nested ID is Not. So - Invalid.
+        self.assertFalse(obj.is_valid)
+
+        # Correct the nested objects ID field
+        obj.nested.id = 'ffded5c4-e4f6-4e02-a175-48e13c5c12a0'
+
+        # Outer and Nested IDs are now UUIDs. So - Valid.
+        self.assertTrue(obj.is_valid)
+
+    def test_validate(self):
+        obj = TestValidatableObject()
+
+        # ID is required, so the object is not valid
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            obj.validate()
+
+        # Set the ID field to an invalid value
+        obj.id = 'MyID'
+
+        # ID is now set, but to an invalid value, still invalid
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            obj.validate()
+
+        # Set the ID field to a valid value
+        obj.id = 'ffded5c4-e4f6-4e02-a175-48e13c5c12a0'
+        obj.validate()
+
+    def test_validate_recursive(self):
+        obj = TestValidatableObject(
+            id='MyID',
+            nested=TestValidatableObject(id='MyID'))
+
+        # ID should be a UUID, So - Invalid.
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            obj.validate()
+
+        # Correct the outer objects ID field
+        obj.id = 'ffded5c4-e4f6-4e02-a175-48e13c5c12a0'
+
+        # Outer ID is now set, Inner ID is not, still invalid.
+        e = self.assertRaises(exceptions.InvalidObject, obj.validate)
+
+        # Ensure we have exactly one error and fetch it
+        self.assertEqual(1, len(e.errors))
+        error = e.errors.pop(0)
+
+        # Ensure the format validator has triggered the failure.
+        self.assertEqual('format', error.validator)
+
+        # Ensure the nested ID field has triggered the failure.
+        self.assertEqual('nested.id', error.absolute_path)
+        self.assertEqual('nested.id', error.relative_path)
+
+        # Set the Nested ID field to a valid value
+        obj.nested.id = 'ffded5c4-e4f6-4e02-a175-48e13c5c12a0'
+        obj.validate()
 
     def test_obj_attr_is_set(self):
         obj = TestObject()
@@ -320,16 +466,16 @@ class DictObjectMixinTest(tests.TestCase):
 class ListObjectMixinTest(tests.TestCase):
     def test_from_primitive(self):
         primitive = {
-            'designate_object.name': TestObjectList.PATH,
+            'designate_object.name': 'TestObjectList',
             'designate_object.data': {
                 'objects': [
                     {'designate_object.changes': ['id'],
                      'designate_object.data': {'id': 'One'},
-                     'designate_object.name': TestObject.PATH,
+                     'designate_object.name': 'TestObject',
                      'designate_object.original_values': {}},
                     {'designate_object.changes': ['id'],
                      'designate_object.data': {'id': 'Two'},
-                     'designate_object.name': TestObject.PATH,
+                     'designate_object.name': 'TestObject',
                      'designate_object.original_values': {}},
                 ],
             },
@@ -373,16 +519,16 @@ class ListObjectMixinTest(tests.TestCase):
 
         primitive = obj.to_primitive()
         expected = {
-            'designate_object.name': TestObjectList.PATH,
+            'designate_object.name': 'TestObjectList',
             'designate_object.data': {
                 'objects': [
                     {'designate_object.changes': ['id'],
                      'designate_object.data': {'id': 'One'},
-                     'designate_object.name': TestObject.PATH,
+                     'designate_object.name': 'TestObject',
                      'designate_object.original_values': {}},
                     {'designate_object.changes': ['id'],
                      'designate_object.data': {'id': 'Two'},
-                     'designate_object.name': TestObject.PATH,
+                     'designate_object.name': 'TestObject',
                      'designate_object.original_values': {}},
                 ],
             },

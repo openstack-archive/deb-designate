@@ -13,8 +13,6 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-from designate.mdns import rpcapi as mdns_rpcapi
-
 from oslo.config import cfg
 
 cfg.CONF.register_group(cfg.OptGroup(
@@ -24,8 +22,6 @@ cfg.CONF.register_group(cfg.OptGroup(
 cfg.CONF.register_opts([
     cfg.IntOpt('workers', default=None,
                help='Number of worker processes to spawn'),
-    cfg.StrOpt('backend-driver', default='fake',
-               help='The backend driver to use'),
     cfg.StrOpt('storage-driver', default='sqlalchemy',
                help='The storage driver to use'),
     cfg.ListOpt('enabled-notification-handlers', default=[],
@@ -39,21 +35,9 @@ cfg.CONF.register_opts([
                help='E-Mail for Managed resources'),
     cfg.StrOpt('managed_resource_tenant_id',
                help="The Tenant ID that will own any managed resources."),
-    cfg.StrOpt('min_ttl', default="None", help="Minimum TTL allowed")
+    cfg.StrOpt('min_ttl', default="None", help="Minimum TTL allowed"),
+    # TODO(betsy): Move to Pool Service once that is written
+    cfg.StrOpt('default_pool_id',
+               default='794ccc2c-d751-44fe-b57f-8894c9f5c842',
+               help="The name of the default pool"),
 ], group='service:central')
-
-MDNS_API = None
-
-
-def get_mdns_api():
-    """
-    The rpc.get_client() which is called upon the API object initialization
-    will cause a assertion error if the designate.rpc.TRANSPORT isn't setup by
-    rpc.init() before.
-
-    This fixes that by creating the rpcapi when demanded.
-    """
-    global MDNS_API
-    if not MDNS_API:
-        MDNS_API = mdns_rpcapi.MdnsAPI()
-    return MDNS_API

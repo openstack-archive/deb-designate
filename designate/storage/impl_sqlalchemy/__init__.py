@@ -14,23 +14,18 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import time
-import threading
 import hashlib
 
 from oslo.config import cfg
-from oslo.db.sqlalchemy import utils as oslo_utils
 from oslo.db import options
-from oslo.db import exception as oslo_db_exception
-from sqlalchemy import exc as sqlalchemy_exc
 from sqlalchemy import select, distinct, func
+from sqlalchemy.sql.expression import or_
 
 from designate.openstack.common import log as logging
-from designate.openstack.common import timeutils
 from designate import exceptions
 from designate import objects
-from designate.sqlalchemy import session
-from designate.sqlalchemy import utils
-from designate.storage import base
+from designate.sqlalchemy import base as sqlalchemy_base
+from designate.storage import base as storage_base
 from designate.storage.impl_sqlalchemy import tables
 
 
@@ -43,247 +38,15 @@ cfg.CONF.register_group(cfg.OptGroup(
 cfg.CONF.register_opts(options.database_opts, group='storage:sqlalchemy')
 
 
-def _set_object_from_model(obj, model, **extra):
-    """Update a DesignateObject with the values from a SQLA Model"""
-
-    for fieldname in obj.FIELDS:
-        if hasattr(model, fieldname):
-            if fieldname in extra.keys():
-                obj[fieldname] = extra[fieldname]
-            else:
-                obj[fieldname] = getattr(model, fieldname)
-
-    obj.obj_reset_changes()
-
-    return obj
-
-
-def _set_listobject_from_models(obj, models, map_=None):
-        for model in models:
-            extra = {}
-
-            if map_ is not None:
-                extra = map_(model)
-
-            obj.objects.append(
-                _set_object_from_model(obj.LIST_ITEM_TYPE(), model, **extra))
-
-        obj.obj_reset_changes()
-
-        return obj
-
-
-class SQLAlchemyStorage(base.Storage):
+class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
     """SQLAlchemy connection"""
     __plugin_name__ = 'sqlalchemy'
 
     def __init__(self):
         super(SQLAlchemyStorage, self).__init__()
 
-        self.engine = session.get_engine(self.name)
-
-        self.local_store = threading.local()
-
-    @property
-    def session(self):
-        # NOTE: This uses a thread local store, allowing each greenthread to
-        #       have it's own session stored correctly. Without this, each
-        #       greenthread may end up using a single global session, which
-        #       leads to bad things happening.
-
-        if not hasattr(self.local_store, 'session'):
-            self.local_store.session = session.get_session(self.name)
-
-        return self.local_store.session
-
-    def begin(self):
-        self.session.begin(subtransactions=True)
-
-    def commit(self):
-        self.session.commit()
-
-    def rollback(self):
-        self.session.rollback()
-
-    def _apply_criterion(self, table, query, criterion):
-        if criterion is not None:
-            for name, value in criterion.items():
-                column = getattr(table.c, name)
-
-                # Wildcard value: '*'
-                if isinstance(value, basestring) and '*' in value:
-                    queryval = value.replace('*', '%')
-                    query = query.where(column.like(queryval))
-                elif isinstance(value, basestring) and value.startswith('!'):
-                    queryval = value[1:]
-                    query = query.where(column != queryval)
-                else:
-                    query = query.where(column == value)
-
-        return query
-
-    def _apply_tenant_criteria(self, context, table, query):
-        if hasattr(table.c, 'tenant_id'):
-            if context.all_tenants:
-                LOG.debug('Including all tenants items in query results')
-            else:
-                query = query.where(table.c.tenant_id == context.tenant)
-
-        return query
-
-    def _apply_deleted_criteria(self, context, table, query):
-        if hasattr(table.c, 'deleted'):
-            if context.show_deleted:
-                LOG.debug('Including deleted items in query results')
-            else:
-                query = query.where(table.c.deleted == "0")
-
-        return query
-
-    def _create(self, table, obj, exc_dup, skip_values=None):
-        values = obj.obj_get_changes()
-
-        if skip_values is not None:
-            for skip_value in skip_values:
-                values.pop(skip_value, None)
-
-        query = table.insert()
-
-        try:
-            resultproxy = self.session.execute(query, [dict(values)])
-        except oslo_db_exception.DBDuplicateEntry:
-            raise exc_dup()
-
-        # Refetch the row, for generated columns etc
-        query = select([table]).where(
-            table.c.id == resultproxy.inserted_primary_key[0])
-        resultproxy = self.session.execute(query)
-
-        return _set_object_from_model(obj, resultproxy.fetchone())
-
-    def _find(self, context, table, cls, list_cls, exc_notfound, criterion,
-              one=False, marker=None, limit=None, sort_key=None,
-              sort_dir=None, query=None):
-        sort_key = sort_key or 'created_at'
-        sort_dir = sort_dir or 'asc'
-
-        # Build the query
-        if query is None:
-            query = select([table])
-        query = self._apply_criterion(table, query, criterion)
-        query = self._apply_tenant_criteria(context, table, query)
-        query = self._apply_deleted_criteria(context, table, query)
-
-        # Execute the Query
-        if one:
-            # NOTE(kiall): If we expect one value, and two rows match, we raise
-            #              a NotFound. Limiting to 2 allows us to determine
-            #              when we need to raise, while selecting the minimal
-            #              number of rows.
-            resultproxy = self.session.execute(query.limit(2))
-            results = resultproxy.fetchall()
-
-            if len(results) != 1:
-                raise exc_notfound()
-            else:
-                return _set_object_from_model(cls(), results[0])
-        else:
-            if marker is not None:
-                # If marker is not none and basestring we query it.
-                # Otherwise, return all matching records
-                marker_query = select([table]).where(table.c.id == marker)
-
-                try:
-                    marker_resultproxy = self.session.execute(marker_query)
-                    marker = marker_resultproxy.fetchone()
-                    if marker is None:
-                        raise exceptions.MarkerNotFound(
-                            'Marker %s could not be found' % marker)
-                except oslo_db_exception.DBError as e:
-                    # Malformed UUIDs return StatementError wrapped in a
-                    # DBError
-                    if isinstance(e.inner_exception,
-                                  sqlalchemy_exc.StatementError):
-                        raise exceptions.InvalidMarker()
-                    else:
-                        raise
-
-            try:
-                query = utils.paginate_query(
-                    query, table, limit,
-                    [sort_key, 'id', 'created_at'], marker=marker,
-                    sort_dir=sort_dir)
-
-                resultproxy = self.session.execute(query)
-                results = resultproxy.fetchall()
-
-                return _set_listobject_from_models(list_cls(), results)
-            except oslo_utils.InvalidSortKey as sort_key_error:
-                raise exceptions.InvalidSortKey(sort_key_error.message)
-            # Any ValueErrors are propagated back to the user as is.
-            # Limits, sort_dir and sort_key are checked at the API layer.
-            # If however central or storage is called directly, invalid values
-            # show up as ValueError
-            except ValueError as value_error:
-                raise exceptions.ValueError(value_error.message)
-
-    def _update(self, context, table, obj, exc_dup, exc_notfound,
-                skip_values=None):
-        values = obj.obj_get_changes()
-
-        if skip_values is not None:
-            for skip_value in skip_values:
-                values.pop(skip_value, None)
-
-        query = table.update()\
-                     .where(table.c.id == obj.id)\
-                     .values(**values)
-
-        query = self._apply_tenant_criteria(context, table, query)
-        query = self._apply_deleted_criteria(context, table, query)
-
-        try:
-            resultproxy = self.session.execute(query)
-        except oslo_db_exception.DBDuplicateEntry:
-            raise exc_dup()
-
-        if resultproxy.rowcount != 1:
-            raise exc_notfound()
-
-        # Refetch the row, for generated columns etc
-        query = select([table]).where(table.c.id == obj.id)
-        resultproxy = self.session.execute(query)
-
-        return _set_object_from_model(obj, resultproxy.fetchone())
-
-    def _delete(self, context, table, obj, exc_notfound):
-        if hasattr(table.c, 'deleted'):
-            # Perform a Soft Delete
-            # TODO(kiall): If the object has any changed fields, they will be
-            #              persisted here when we don't want that.
-            obj.deleted = obj.id.replace('-', '')
-            obj.deleted_at = timeutils.utcnow()
-
-            # NOTE(kiall): It should be impossible for a duplicate exception to
-            #              be raised in this call, therefore, it is OK to pass
-            #              in "None" as the exc_dup param.
-            return self._update(context, table, obj, None, exc_notfound)
-
-        # Delete the quota.
-        query = table.delete().where(table.c.id == obj.id)
-        query = self._apply_tenant_criteria(context, table, query)
-        query = self._apply_deleted_criteria(context, table, query)
-
-        resultproxy = self.session.execute(query)
-
-        if resultproxy.rowcount != 1:
-            raise exc_notfound()
-
-        # Refetch the row, for generated columns etc
-        query = select([table]).where(table.c.id == obj.id)
-        resultproxy = self.session.execute(query)
-
-        return _set_object_from_model(obj, resultproxy.fetchone())
+    def get_name(self):
+        return self.name
 
     # CRUD for our resources (quota, server, tsigkey, tenant, domain & record)
     # R - get_*, find_*s
@@ -494,14 +257,27 @@ class SQLAlchemyStorage(base.Storage):
     ##
     def _find_domains(self, context, criterion, one=False, marker=None,
                       limit=None, sort_key=None, sort_dir=None):
-        return self._find(
+        # Check to see if the criterion can use the reverse_name column
+        criterion = self._rname_check(criterion)
+
+        domains = self._find(
             context, tables.domains, objects.Domain, objects.DomainList,
             exceptions.DomainNotFound, criterion, one, marker, limit,
             sort_key, sort_dir)
 
+        if not one:
+            domains.total_count = self.count_domains(context, criterion)
+
+        return domains
+
     def create_domain(self, context, domain):
+        # Patch in the reverse_name column
+        extra_values = {"reverse_name": domain.name[::-1]}
+
+        # Don't handle recordsets for now
         return self._create(
-            tables.domains, domain, exceptions.DuplicateDomain)
+            tables.domains, domain, exceptions.DuplicateDomain, ['recordsets'],
+            extra_values=extra_values)
 
     def get_domain(self, context, domain_id):
         return self._find_domains(context, {'id': domain_id}, one=True)
@@ -516,9 +292,29 @@ class SQLAlchemyStorage(base.Storage):
         return self._find_domains(context, criterion, one=True)
 
     def update_domain(self, context, domain):
-        return self._update(
+        # Don't handle recordsets for now
+
+        tenant_id_changed = False
+        if 'tenant_id' in domain.obj_what_changed():
+            tenant_id_changed = True
+
+        updated_domain = self._update(
             context, tables.domains, domain, exceptions.DuplicateDomain,
-            exceptions.DomainNotFound)
+            exceptions.DomainNotFound, ['recordsets'])
+
+        if tenant_id_changed:
+            recordsets_query = tables.recordsets.update().\
+                where(tables.recordsets.c.domain_id == domain.id)\
+                .values({'tenant_id': domain.tenant_id})
+
+            records_query = tables.records.update().\
+                where(tables.records.c.domain_id == domain.id).\
+                values({'tenant_id': domain.tenant_id})
+
+            self.session.execute(records_query)
+            self.session.execute(recordsets_query)
+
+        return updated_domain
 
     def delete_domain(self, context, domain_id):
         # Fetch the existing domain, we'll need to return it.
@@ -544,6 +340,10 @@ class SQLAlchemyStorage(base.Storage):
     def _find_recordsets(self, context, criterion, one=False, marker=None,
                          limit=None, sort_key=None, sort_dir=None):
         query = None
+
+        # Check to see if the criterion can use the reverse_name column
+        criterion = self._rname_check(criterion)
+
         if criterion is not None \
                 and not criterion.get('domains_deleted', True):
             # Ensure that we return only active recordsets
@@ -556,10 +356,15 @@ class SQLAlchemyStorage(base.Storage):
             # remove 'domains_deleted' from the criterion, as _apply_criterion
             # assumes each key in criterion to be a column name.
             del criterion['domains_deleted']
-        return self._find(
+        recordsets = self._find(
             context, tables.recordsets, objects.RecordSet,
             objects.RecordSetList, exceptions.RecordSetNotFound, criterion,
             one, marker, limit, sort_key, sort_dir, query)
+
+        if not one:
+            recordsets.total_count = self.count_recordsets(context, criterion)
+
+        return recordsets
 
     def create_recordset(self, context, domain_id, recordset):
         # Fetch the domain as we need the tenant_id
@@ -568,9 +373,12 @@ class SQLAlchemyStorage(base.Storage):
         recordset.tenant_id = domain.tenant_id
         recordset.domain_id = domain_id
 
+        # Patch in the reverse_name column
+        extra_values = {"reverse_name": recordset.name[::-1]}
+
         recordset = self._create(
             tables.recordsets, recordset, exceptions.DuplicateRecordSet,
-            ['records'])
+            ['records'], extra_values=extra_values)
 
         if recordset.obj_attr_is_set('records'):
             for record in recordset.records:
@@ -581,7 +389,7 @@ class SQLAlchemyStorage(base.Storage):
         else:
             recordset.records = objects.RecordList()
 
-        recordset.obj_reset_changes('records')
+        recordset.obj_reset_changes(['records'])
 
         return recordset
 
@@ -592,7 +400,7 @@ class SQLAlchemyStorage(base.Storage):
         recordset.records = self._find_records(
             context, {'recordset_id': recordset.id})
 
-        recordset.obj_reset_changes('records')
+        recordset.obj_reset_changes(['records'])
 
         return recordset
 
@@ -606,7 +414,7 @@ class SQLAlchemyStorage(base.Storage):
             recordset.records = self._find_records(
                 context, {'recordset_id': recordset.id})
 
-            recordset.obj_reset_changes('records')
+            recordset.obj_reset_changes(['records'])
 
         return recordsets
 
@@ -616,7 +424,7 @@ class SQLAlchemyStorage(base.Storage):
         recordset.records = self._find_records(
             context, {'recordset_id': recordset.id})
 
-        recordset.obj_reset_changes('records')
+        recordset.obj_reset_changes(['records'])
 
         return recordset
 
@@ -701,8 +509,7 @@ class SQLAlchemyStorage(base.Storage):
         Calculates the hash of the record, used to ensure record uniqueness.
         """
         md5 = hashlib.md5()
-        md5.update("%s:%s:%s" % (record.recordset_id, record.data,
-                                 record.priority))
+        md5.update("%s:%s" % (record.recordset_id, record.data))
 
         return md5.hexdigest()
 
@@ -795,6 +602,329 @@ class SQLAlchemyStorage(base.Storage):
         return self._delete(context, tables.blacklists, blacklist,
                             exceptions.BlacklistNotFound)
 
+    # Pool methods
+    def _find_pools(self, context, criterion, one=False, marker=None,
+                    limit=None, sort_key=None, sort_dir=None):
+        return self._find(context, tables.pools, objects.Pool,
+                          objects.PoolList, exceptions.PoolNotFound,
+                          criterion, one, marker, limit, sort_key,
+                          sort_dir)
+
+    def create_pool(self, context, pool):
+        pool = self._create(
+            tables.pools, pool, exceptions.DuplicatePool,
+            ['attributes', 'nameservers'])
+
+        if pool.obj_attr_is_set('attributes'):
+            for pool_attribute in pool.attributes:
+                self.create_pool_attribute(context, pool.id, pool_attribute)
+        else:
+            pool.attributes = objects.PoolAttributeList()
+        pool.obj_reset_changes(['attributes'])
+
+        if pool.obj_attr_is_set('nameservers'):
+            for nameserver in pool.nameservers:
+                self.create_pool_attribute(context, pool.id, nameserver)
+        else:
+            pool.nameservers = objects.NameServerList()
+        pool.obj_reset_changes(['nameservers'])
+
+        return pool
+
+    def get_pool(self, context, pool_id):
+        pool = self._find_pools(context, {'id': pool_id}, one=True)
+        pool.attributes = self._find_pool_attributes(
+            context, {'pool_id': pool_id, 'key': '!nameserver'})
+        pool.nameservers = self._find_pool_attributes(
+            context, {'pool_id': pool_id, 'key': 'nameserver'})
+        pool.obj_reset_changes(['attributes', 'nameservers'])
+        return pool
+
+    def find_pools(self, context, criterion=None, marker=None,
+                   limit=None, sort_key=None, sort_dir=None):
+        pools = self._find_pools(context, criterion, marker=marker,
+                                limit=limit, sort_key=sort_key,
+                                sort_dir=sort_dir)
+        for pool in pools:
+            pool.attributes = self._find_pool_attributes(
+                context, {'pool_id': pool.id, 'key': '!nameserver'})
+            pool.nameservers = self._find_pool_attributes(
+                context, {'pool_id': pool.id, 'key': 'nameserver'})
+            pool.obj_reset_changes(['attributes', 'nameservers'])
+
+        return pools
+
+    def find_pool(self, context, criterion):
+        pool = self._find_pools(context, criterion, one=True)
+        pool.attributes = self._find_pool_attributes(
+            context, {'pool_id': pool.id, 'key': '!nameserver'})
+        pool.nameservers = self._find_pool_attributes(
+            context, {'pool_id': pool.id, 'key': 'nameserver'})
+        pool.obj_reset_changes(['attributes', 'nameservers'])
+        return pool
+
+    def update_pool(self, context, pool):
+        pool = self._update(context, tables.pools, pool,
+                            exceptions.DuplicatePool, exceptions.PoolNotFound,
+                            ['attributes', 'nameservers'])
+        if pool.obj_attr_is_set('attributes') or \
+                pool.obj_attr_is_set('nameservers'):
+            # Gather the pool ID's we have
+            have_attributes = set([r.id for r in self._find_pool_attributes(
+                context, {'pool_id': pool.id})])
+
+            # Prep some lists of changes
+            keep_attributes = set([])
+            create_attributes = []
+            update_attributes = []
+
+            attributes = []
+            if pool.obj_attr_is_set('attributes'):
+                for r in pool.attributes.objects:
+                    attributes.append(r)
+            if pool.obj_attr_is_set('nameservers'):
+                for r in pool.nameservers.objects:
+                    attributes.append(r)
+
+            # Determine what to change
+            for attribute in attributes:
+                keep_attributes.add(attribute.id)
+                try:
+                    attribute.obj_get_original_value('id')
+                except KeyError:
+                    create_attributes.append(attribute)
+                else:
+                    update_attributes.append(attribute)
+
+            # NOTE: Since we're dealing with mutable objects, the return value
+            #       of create/update/delete attribute is not needed. The
+            #       original item will be mutated in place on the input
+            #       "pool.attributes" or "pool.nameservers" list.
+
+            # Delete attributes
+            for attribute_id in have_attributes - keep_attributes:
+                self.delete_pool_attribute(context, attribute_id)
+
+            # Update attributes
+            for attribute in update_attributes:
+                self.update_pool_attribute(context, attribute)
+
+            # Create attributes
+            for attribute in create_attributes:
+                self.create_pool_attribute(
+                    context, pool.id, attribute)
+
+        return pool
+
+    def delete_pool(self, context, pool_id):
+        pool = self._find_pools(context, {'id': pool_id}, one=True)
+
+        return self._delete(context, tables.pools, pool,
+                            exceptions.PoolNotFound)
+
+    # Pool attribute methods
+    def _find_pool_attributes(self, context, criterion, one=False, marker=None,
+                    limit=None, sort_key=None, sort_dir=None):
+        return self._find(context, tables.pool_attributes,
+                          objects.PoolAttribute, objects.PoolAttributeList,
+                          exceptions.PoolAttributeNotFound, criterion, one,
+                          marker, limit, sort_key, sort_dir)
+
+    def create_pool_attribute(self, context, pool_id, pool_attribute):
+        pool_attribute.pool_id = pool_id
+        return self._create(tables.pool_attributes, pool_attribute,
+                            exceptions.DuplicatePoolAttribute)
+
+    def get_pool_attributes(self, context, pool_attribute_id):
+        return self._find_pool_attributes(
+            context, {'id': pool_attribute_id}, one=True)
+
+    def find_pool_attributes(self, context, criterion=None, marker=None,
+                   limit=None, sort_key=None, sort_dir=None):
+        return self._find_pool_attributes(context, criterion, marker=marker,
+                                          limit=limit, sort_key=sort_key,
+                                          sort_dir=sort_dir)
+
+    def find_pool_attribute(self, context, criterion):
+        return self._find_pool_attributes(context, criterion, one=True)
+
+    def update_pool_attribute(self, context, pool_attribute):
+        return self._update(context, tables.pool_attributes, pool_attribute,
+                            exceptions.DuplicatePoolAttribute,
+                            exceptions.PoolAttributeNotFound)
+
+    def delete_pool_attribute(self, context, pool_attribute_id):
+        pool_attribute = self._find_pool_attributes(
+            context, {'id': pool_attribute_id}, one=True)
+        deleted_pool_attribute = self._delete(
+            context, tables.pool_attributes, pool_attribute,
+            exceptions.PoolAttributeNotFound)
+
+        return deleted_pool_attribute
+
+    # Zone Transfer Methods
+    def _find_zone_transfer_requests(self, context, criterion, one=False,
+                                    marker=None, limit=None, sort_key=None,
+                                    sort_dir=None):
+
+        table = tables.zone_transfer_requests
+
+        ljoin = tables.zone_transfer_requests.join(
+            tables.domains,
+            tables.zone_transfer_requests.c.domain_id == tables.domains.c.id)
+
+        query = select(
+            [table, tables.domains.c.name.label("domain_name")]
+        ).select_from(ljoin)
+
+        if context.all_tenants:
+            LOG.debug('Including all tenants items in query results')
+        else:
+            query = query.where(or_(
+                table.c.tenant_id == context.tenant,
+                table.c.target_tenant_id == context.tenant))
+
+        return self._find(
+            context, table, objects.ZoneTransferRequest,
+            objects.ZoneTransferRequestList,
+            exceptions.ZoneTransferRequestNotFound,
+            criterion,
+            one=one, marker=marker, limit=limit, sort_dir=sort_dir,
+            sort_key=sort_key, query=query, apply_tenant_criteria=False
+        )
+
+    def create_zone_transfer_request(self, context, zone_transfer_request):
+
+        try:
+            criterion = {"domain_id": zone_transfer_request.domain_id,
+                         "status": "ACTIVE"}
+            self.find_zone_transfer_request(
+                context, criterion)
+        except exceptions.ZoneTransferRequestNotFound:
+            return self._create(
+                tables.zone_transfer_requests,
+                zone_transfer_request,
+                exceptions.DuplicateZoneTransferRequest)
+        else:
+            raise exceptions.DuplicateZoneTransferRequest()
+
+    def find_zone_transfer_requests(self, context, criterion=None,
+                                    marker=None, limit=None, sort_key=None,
+                                    sort_dir=None):
+
+        return self._find_zone_transfer_requests(
+            context, criterion, marker=marker,
+            limit=limit, sort_key=sort_key,
+            sort_dir=sort_dir)
+
+    def get_zone_transfer_request(self, context, zone_transfer_request_id):
+        request = self._find_zone_transfer_requests(
+            context,
+            {'id': zone_transfer_request_id},
+            one=True)
+
+        return request
+
+    def find_zone_transfer_request(self, context, criterion):
+
+        return self._find_zone_transfer_requests(context, criterion, one=True)
+
+    def update_zone_transfer_request(self, context, zone_transfer_request):
+
+        zone_transfer_request.obj_reset_changes(('domain_name'))
+
+        updated_zt_request = self._update(
+            context,
+            tables.zone_transfer_requests,
+            zone_transfer_request,
+            exceptions.DuplicateZoneTransferRequest,
+            exceptions.ZoneTransferRequestNotFound,
+            skip_values=['domain_name'])
+
+        return updated_zt_request
+
+    def delete_zone_transfer_request(self, context, zone_transfer_request_id):
+
+        zone_transfer_request = self._find_zone_transfer_requests(
+            context,
+            {'id': zone_transfer_request_id},
+            one=True)
+
+        return self._delete(
+            context,
+            tables.zone_transfer_requests,
+            zone_transfer_request,
+            exceptions.ZoneTransferRequestNotFound)
+
+    def _find_zone_transfer_accept(self, context, criterion, one=False,
+                                   marker=None, limit=None, sort_key=None,
+                                   sort_dir=None):
+
+            return self._find(
+                context, tables.zone_transfer_accepts,
+                objects.ZoneTransferAccept,
+                objects.ZoneTransferAcceptList,
+                exceptions.ZoneTransferAcceptNotFound, criterion,
+                one, marker, limit, sort_key, sort_dir)
+
+    def _get_domain_name(self, context, domain_id, all_tenants=False):
+
+        if all_tenants:
+            ctxt = context.elevated()
+            ctxt.all_tenants = True
+        else:
+            ctxt = context
+
+        return self.get_domain(ctxt, domain_id).name
+
+    def create_zone_transfer_accept(self, context, zone_transfer_accept):
+
+        return self._create(
+            tables.zone_transfer_accepts,
+            zone_transfer_accept,
+            exceptions.DuplicateZoneTransferAccept)
+
+    def find_zone_transfer_accepts(self, context, criterion=None,
+                                   marker=None, limit=None, sort_key=None,
+                                   sort_dir=None):
+        return self._find_zone_transfer_accept(
+            context, criterion, marker=marker, limit=limit, sort_key=sort_key,
+            sort_dir=sort_dir)
+
+    def get_zone_transfer_accept(self, context, zone_transfer_accept_id):
+        return self._find_zone_transfer_accept(
+            context,
+            {'id': zone_transfer_accept_id},
+            one=True)
+
+    def find_zone_transfer_accept(self, context, criterion):
+        return self._find_zone_transfer_accept(
+            context,
+            criterion,
+            one=True)
+
+    def update_zone_transfer_accept(self, context, zone_transfer_accept):
+
+        return self._update(
+            context,
+            tables.zone_transfer_accepts,
+            zone_transfer_accept,
+            exceptions.DuplicateZoneTransferAccept,
+            exceptions.ZoneTransferAcceptNotFound)
+
+    def delete_zone_transfer_accept(self, context, zone_transfer_accept_id):
+
+        zone_transfer_accept = self._find_zone_transfer_accept(
+            context,
+            {'id': zone_transfer_accept_id},
+            one=True)
+
+        return self._delete(
+            context,
+            tables.zone_transfer_accepts,
+            zone_transfer_accept,
+            exceptions.ZoneTransferAcceptNotFound)
+
     # diagnostics
     def ping(self, context):
         start_time = time.time()
@@ -810,3 +940,10 @@ class SQLAlchemyStorage(base.Storage):
             'status': status,
             'rtt': "%f" % (time.time() - start_time)
         }
+
+    # Reverse Name utils
+    def _rname_check(self, criterion):
+        # If the criterion has 'name' in it, switch it out for reverse_name
+        if criterion is not None and criterion.get('name', "").startswith('*'):
+                criterion['reverse_name'] = criterion.pop('name')[::-1]
+        return criterion

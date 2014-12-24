@@ -23,13 +23,13 @@ import tempfile
 import fixtures
 from oslotest import base
 from oslo.config import cfg
+from oslo.config import fixture as cfg_fixture
 from oslo.messaging import conffixture as messaging_fixture
 from oslo.messaging.notify import _impl_test as test_notifier
+from oslo.utils import importutils
 from testtools import testcase
 
 from designate.openstack.common import log as logging
-from designate.openstack.common.fixture import config as cfg_fixture
-from designate.openstack.common import importutils
 from designate import policy
 from designate import utils
 from designate.context import DesignateContext
@@ -45,12 +45,15 @@ LOG = logging.getLogger(__name__)
 
 cfg.CONF.import_opt('storage_driver', 'designate.central',
                     group='service:central')
-cfg.CONF.import_opt('backend_driver', 'designate.agent',
-                    group='service:agent')
 cfg.CONF.import_opt('auth_strategy', 'designate.api',
                     group='service:api')
 cfg.CONF.import_opt('connection', 'designate.storage.impl_sqlalchemy',
                     group='storage:sqlalchemy')
+cfg.CONF.import_opt('cache_driver', 'designate.pool_manager',
+                    group='service:pool_manager')
+cfg.CONF.import_opt('connection',
+                    'designate.pool_manager.cache.impl_sqlalchemy',
+                    group='pool_manager_cache:sqlalchemy')
 
 
 class NotifierFixture(fixtures.Fixture):
@@ -217,12 +220,12 @@ class TestCase(base.BaseTestCase):
             {'data': '192.0.2.2'}
         ],
         'MX': [
-            {'data': 'mail.example.org.', 'priority': 5},
-            {'data': 'mail.example.com.', 'priority': 10},
+            {'data': '5 mail.example.org.'},
+            {'data': '10 mail.example.com.'},
         ],
         'SRV': [
-            {'data': '0 5060 server1.example.org.', 'priority': 5},
-            {'data': '1 5060 server2.example.org.', 'priority': 10},
+            {'data': '5 0 5060 server1.example.org.'},
+            {'data': '10 1 5060 server2.example.org.'},
         ],
         'CNAME': [
             {'data': 'www.somedomain.org.'},
@@ -244,6 +247,43 @@ class TestCase(base.BaseTestCase):
         'pattern': 'blacklisted.org.'
     }]
 
+    pool_manager_status_fixtures = [{
+        'server_id': '1d7a26e6-e604-4aa0-bbc5-d01081bf1f45',
+        'status': 'SUCCESS',
+        'serial_number': 1,
+        'action': 'CREATE',
+    }, {
+        'server_id': '1d7a26e6-e604-4aa0-bbc5-d01081bf1f45',
+        'status': 'ERROR',
+        'serial_number': 2,
+        'action': 'DELETE'
+    }]
+
+    pool_fixtures = [
+        {'name': 'test1',
+         'description': 'default description1'},
+        {'name': 'test2',
+         'description': 'default description2'}
+    ]
+
+    pool_attribute_fixtures = [
+        {'scope': 'public'},
+        {'scope': 'private'},
+        {'scope': 'unknown'}
+    ]
+
+    name_server_fixtures = [
+        ['examplens1.com', 'examplens2.com'],
+        ['examplens1.org', 'examplens2.org']
+    ]
+
+    zone_transfers_request_fixtures = [{
+        "description": "Test Transfer",
+    }, {
+        "description": "Test Transfer 2 - with target",
+        "target_tenant_id": "target_tenant_id"
+    }]
+
     def setUp(self):
         super(TestCase, self).setUp()
 
@@ -259,13 +299,7 @@ class TestCase(base.BaseTestCase):
 
         self.config(
             storage_driver='sqlalchemy',
-            backend_driver='fake',
             group='service:central'
-        )
-
-        self.config(
-            backend_driver='fake',
-            group='service:agent'
         )
 
         self.config(
@@ -284,9 +318,11 @@ class TestCase(base.BaseTestCase):
                 REPOSITORY, manage_database.INIT_VERSION))
         self.config(
             connection=self.db_fixture.url,
-            connection_debug=100,
+            connection_debug=50,
             group='storage:sqlalchemy'
         )
+
+        self._setup_pool_manager_cache()
 
         self.config(network_api='fake')
         self.config(
@@ -295,6 +331,7 @@ class TestCase(base.BaseTestCase):
 
         # "Read" Configuration
         self.CONF([], project='designate')
+        utils.register_plugin_opts()
 
         self.useFixture(PolicyFixture())
         self.network_api = NetworkAPIFixture()
@@ -302,6 +339,25 @@ class TestCase(base.BaseTestCase):
         self.central_service = self.start_service('central')
 
         self.admin_context = self.get_admin_context()
+
+    def _setup_pool_manager_cache(self):
+
+        self.config(
+            cache_driver='sqlalchemy',
+            group='service:pool_manager')
+
+        repository = os.path.abspath(os.path.join(os.path.dirname(__file__),
+                                                  '..',
+                                                  'pool_manager',
+                                                  'cache',
+                                                  'impl_sqlalchemy',
+                                                  'migrate_repo'))
+        db_fixture = self.useFixture(
+            DatabaseFixture.get_fixture(repository))
+        self.config(
+            connection=db_fixture.url,
+            connection_debug=50,
+            group='pool_manager_cache:sqlalchemy')
 
     # Config Methods
     def config(self, **kwargs):
@@ -429,6 +485,60 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
+    def get_pool_manager_status_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.pool_manager_status_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def get_pool_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.pool_fixtures[fixture])
+        _values.update(values)
+        _attribute_values = self.get_pool_attribute_fixture(
+            fixture=fixture, values=None)
+        _values['attributes'] = objects.PoolAttributeList(
+            objects=[objects.PoolAttribute(key=r, value=_attribute_values[r])
+                     for r in _attribute_values])
+
+        _nameserver_values = self.get_nameserver_fixture(
+            fixture=fixture, values=None)
+        _values['nameservers'] = objects.NameServerList(
+            objects=[objects.NameServer(key='nameserver', value=r)
+                     for r in _nameserver_values])
+
+        return _values
+
+    def get_pool_attribute_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.pool_attribute_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def get_nameserver_fixture(self, fixture=0, values=None):
+        if values:
+            _values = copy.copy(values)
+        else:
+            _values = copy.copy(self.name_server_fixtures[fixture])
+        return _values
+
+    def get_zone_transfer_request_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.zone_transfers_request_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def get_zone_transfer_accept_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.zone_transfers_accept_fixtures[fixture])
+        _values.update(values)
+        return _values
+
     def create_server(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
@@ -516,6 +626,55 @@ class TestCase(base.BaseTestCase):
         blacklist = objects.Blacklist(**values)
         return self.central_service.create_blacklist(
             context, blacklist=blacklist)
+
+    def create_pool(self, **kwargs):
+        context = kwargs.pop('context', self.admin_context)
+        fixture = kwargs.pop('fixture', 0)
+
+        values = self.get_pool_fixture(fixture=fixture, values=kwargs)
+
+        if 'tenant_id' not in values:
+            values['tenant_id'] = context.tenant
+
+        return self.central_service.create_pool(
+            context, objects.Pool(**values))
+
+    def create_zone_transfer_request(self, domain, **kwargs):
+        context = kwargs.pop('context', self.admin_context)
+        fixture = kwargs.pop('fixture', 0)
+
+        values = self.get_zone_transfer_request_fixture(
+            fixture=fixture, values=kwargs)
+
+        if 'domain_id' not in values:
+            values['domain_id'] = domain.id
+
+        zone_transfer_request = objects.ZoneTransferRequest(**values)
+
+        return self.central_service.create_zone_transfer_request(
+            context, zone_transfer_request=zone_transfer_request)
+
+    def create_zone_transfer_accept(self, zone_transfer_request, **kwargs):
+        context = kwargs.pop('context', self.admin_context)
+
+        values = {}
+
+        if 'tenant_id' not in values:
+            values['tenant_id'] = context.tenant
+
+        if 'zone_transfer_request_id' not in values:
+            values['zone_transfer_request_id'] = zone_transfer_request.id
+
+        if 'domain_id' not in values:
+            values['domain_id'] = zone_transfer_request.domain_id
+
+        if 'key' not in values:
+            values['key'] = zone_transfer_request.key
+
+        zone_transfer_accept = objects.ZoneTransferAccept(**values)
+
+        return self.central_service.create_zone_transfer_accept(
+            context, zone_transfer_accept)
 
     def _ensure_interface(self, interface, implementation):
         for name in interface.__abstractmethods__:

@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: designate 2014.2.dev64.g22436ff\n"
+"Project-Id-Version: designate 2015.1.dev70.gb1823b9\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2014-09-23 06:04+0000\n"
+"POT-Creation-Date: 2014-11-12 06:10+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -44,7 +44,7 @@ msgid ""
 "%s"
 msgstr ""
 
-#: designate/mdns/handler.py:118
+#: designate/mdns/handler.py:111
 #, python-format
 msgid "got exception while handling axfr request. Question is %(qr)s"
 msgstr ""
@@ -64,21 +64,6 @@ msgstr ""
 msgid "Failed calling Neutron %(region)s - %(endpoint)s"
 msgstr ""
 
-#: designate/openstack/common/excutils.py:76
-#, python-format
-msgid "Original exception being dropped: %s"
-msgstr ""
-
-#: designate/openstack/common/excutils.py:105
-#, python-format
-msgid "Unexpected exception occurred %d time(s)... retrying."
-msgstr ""
-
-#: designate/openstack/common/lockutils.py:117
-#, python-format
-msgid "Could not release the acquired lock `%s`"
-msgstr ""
-
 #: designate/openstack/common/loopingcall.py:95
 msgid "in fixed duration looping call"
 msgstr ""
@@ -87,26 +72,18 @@ msgstr ""
 msgid "in dynamic looping call"
 msgstr ""
 
-#: designate/openstack/common/policy.py:508
+#: designate/openstack/common/policy.py:535
+#: designate/openstack/common/policy.py:815
 #, python-format
 msgid "Failed to understand rule %s"
 msgstr ""
 
-#: designate/openstack/common/policy.py:518
+#: designate/openstack/common/policy.py:545
 #, python-format
 msgid "No handler for matches of kind %s"
 msgstr ""
 
-#: designate/openstack/common/policy.py:788
-#, python-format
-msgid "Failed to understand rule %r"
-msgstr ""
-
-#: designate/openstack/common/service.py:188
-msgid "Exception during rpc cleanup."
-msgstr ""
-
-#: designate/openstack/common/service.py:277
+#: designate/openstack/common/service.py:269
 msgid "Unhandled exception"
 msgstr ""
 

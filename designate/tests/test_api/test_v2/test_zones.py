@@ -38,7 +38,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
         response = self.client.post_json('/zones/', {'zone': fixture})
 
         # Check the headers are what we expect
-        self.assertEqual(201, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
@@ -49,7 +49,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
         # Check the values returned are what we expect
         self.assertIn('id', response.json['zone'])
         self.assertIn('created_at', response.json['zone'])
-        self.assertEqual('ACTIVE', response.json['zone']['status'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
         self.assertIsNone(response.json['zone']['updated_at'])
 
         for k in fixture:
@@ -190,7 +190,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
         # Check the values returned are what we expect
         self.assertIn('id', response.json['zone'])
         self.assertIn('created_at', response.json['zone'])
-        self.assertEqual('ACTIVE', response.json['zone']['status'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
         self.assertIsNone(response.json['zone']['updated_at'])
         self.assertEqual(zone['name'], response.json['zone']['name'])
         self.assertEqual(zone['email'], response.json['zone']['email'])
@@ -230,10 +230,10 @@ class ApiV2ZonesTest(ApiV2TestCase):
         body = {'zone': {'email': 'prefix-%s' % zone['email']}}
 
         response = self.client.patch_json('/zones/%s' % zone['id'], body,
-                                          status=200)
+                                          status=202)
 
         # Check the headers are what we expect
-        self.assertEqual(200, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
@@ -396,3 +396,41 @@ class ApiV2ZonesTest(ApiV2TestCase):
         exported.delete_rdataset(exported.origin, 'NS')
         imported.delete_rdataset('delegation', 'NS')
         self.assertEqual(imported, exported)
+
+    def test_metadata_exists(self):
+        response = self.client.get('/zones/')
+
+        # Make sure the fields exist
+        self.assertIn('metadata', response.json)
+        self.assertIn('total_count', response.json['metadata'])
+
+    def test_total_count(self):
+        response = self.client.get('/zones/')
+
+        # There are no zones by default
+        self.assertEqual(0, response.json['metadata']['total_count'])
+
+        # Create a zone
+        fixture = self.get_domain_fixture(0)
+        response = self.client.post_json('/zones/', {'zone': fixture})
+
+        response = self.client.get('/zones/')
+
+        # Make sure total_count picked it up
+        self.assertEqual(1, response.json['metadata']['total_count'])
+
+    def test_total_count_pagination(self):
+        # Create two zones
+        fixture = self.get_domain_fixture(0)
+        response = self.client.post_json('/zones/', {'zone': fixture})
+
+        fixture = self.get_domain_fixture(1)
+        response = self.client.post_json('/zones/', {'zone': fixture})
+
+        # Paginate so that there is only one zone returned
+        response = self.client.get('/zones?limit=1')
+
+        self.assertEqual(1, len(response.json['zones']))
+
+        # The total_count should know there are two
+        self.assertEqual(2, response.json['metadata']['total_count'])

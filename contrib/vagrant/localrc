@@ -18,14 +18,22 @@ LOG_COLOR=True
 ENABLED_SERVICES=rabbit,mysql,key
 
 # Enable core Designate services
-ENABLED_SERVICES+=,designate,designate-api,designate-central,designate-mdns
+ENABLED_SERVICES+=,designate,designate-api,designate-central,designate-mdns,designate-pool-manager
 
 # Optional Designate services
 #ENABLED_SERVICES+=,designate-sink
-#ENABLED_SERVICES+=,designate-agent
 
 # Optional TLS Proxy
 #ENABLED_SERVICES+=,tls-proxy
+
+# Optional Rally
+#ENABLED_SERVICES+=,rally
+
+# Optional Horizon Panels
+#ENABLED_SERVICES+=,horizon
+
+# Optional core OpenStack services (needed by horizon)
+#ENABLED_SERVICES+=,g-api,g-reg,n-api,n-crt,n-obj,n-cpu,n-net,n-cond,n-sch,n-novnc,n-xvnc,n-cauth
 
 # Designate Options
 #DESIGNATE_BACKEND_DRIVER=powerdns
