@@ -1,8 +1,8 @@
-designate (2014.2-4) UNRELEASED; urgency=medium
+designate (2015.1~b1-1) UNRELEASED; urgency=medium
 
-  * Fixed homepage: stackforge -> openstack.
+  * New upstream release.
 
- -- Thomas Goirand <zigo@debian.org>  Wed, 17 Dec 2014 00:49:43 +0800
+ -- Thomas Goirand <zigo@debian.org>  Wed, 24 Dec 2014 14:43:36 +0800
 
 designate (2014.2-3) experimental; urgency=medium
 
