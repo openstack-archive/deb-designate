@@ -2,6 +2,8 @@ designate (2014.1-16) unstable; urgency=medium
 
   * Fixed homepage: stackforge -> openstack.
   * Rebuilt against openstack-pkg-tools >= 21~.
+  * Added a no-SSLv3.patch to remove the use of ssl.PROTOCOL_SSLv3 which is not
+    available in Debian anymore.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 17 Dec 2014 00:51:39 +0800
 

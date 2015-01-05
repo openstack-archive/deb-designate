@@ -1,0 +1,20 @@
+Description: Removes the use of ssl.PROTOCOL_SSLv3
+ The ssl.PROTOCOL_SSLv3 object is removed from Debian, therefore, Designate
+ has to be patched to remove its use too, otherwise, there's unit test
+ failures.
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: not-needed
+Last-Update: 2015-01-05
+
+--- designate-2014.1.orig/designate/openstack/common/sslutils.py
++++ designate-2014.1/designate/openstack/common/sslutils.py
+@@ -80,8 +80,7 @@ def wrap(sock):
+ 
+ _SSL_PROTOCOLS = {
+     "tlsv1": ssl.PROTOCOL_TLSv1,
+-    "sslv23": ssl.PROTOCOL_SSLv23,
+-    "sslv3": ssl.PROTOCOL_SSLv3
++    "sslv23": ssl.PROTOCOL_SSLv23
+ }
+ 
+ try:

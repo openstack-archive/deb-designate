@@ -1,2 +1,3 @@
 fixes-keystone-authtoken.patch
 allow-sqla-9.patch
+no-SSLv3.patch
