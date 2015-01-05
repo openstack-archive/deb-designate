@@ -1,4 +1,4 @@
-designate (2014.1-16) UNRELEASED; urgency=medium
+designate (2014.1-16) unstable; urgency=medium
 
   * Fixed homepage: stackforge -> openstack.
 
