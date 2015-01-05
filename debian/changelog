@@ -4,6 +4,8 @@ designate (2014.1-16) unstable; urgency=medium
   * Rebuilt against openstack-pkg-tools >= 21~.
   * Added a no-SSLv3.patch to remove the use of ssl.PROTOCOL_SSLv3 which is not
     available in Debian anymore.
+  * Fixed PROJECT_NAME instead of SERVICE_NAME for the init script of
+    designate-api. Thanks to Gaudenz Steinlin. (Closes: #774383).
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 17 Dec 2014 00:51:39 +0800
 

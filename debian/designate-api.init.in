@@ -17,4 +17,4 @@
 PATH=/sbin:/usr/sbin:/bin:/usr/bin
 DESC="Designate DNSaaS API"
 PROJECT_NAME=designate
-NAME=${SERVICE_NAME}-api
+NAME=${PROJECT_NAME}-api
