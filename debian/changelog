@@ -1,6 +1,7 @@
 designate (2014.1-16) unstable; urgency=medium
 
   * Fixed homepage: stackforge -> openstack.
+  * Rebuilt against openstack-pkg-tools >= 21~.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 17 Dec 2014 00:51:39 +0800
 
