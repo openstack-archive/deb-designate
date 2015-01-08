@@ -1,6 +1,7 @@
 designate (2014.1-17) unstable; urgency=medium
 
   * Rebuilt with openstack-pkg-tools (>= 22~): starts daemons on first install.
+  * designate/configure_db default value is now false.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 08 Jan 2015 15:49:46 +0000
 
