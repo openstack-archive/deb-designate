@@ -13,7 +13,10 @@ if [ "${1}" = "configure" ] ; then
 	pkgos_var_user_group designate
 	pkgos_write_new_conf designate designate.conf
 
-	pkgos_dbc_postinst ${CONF} storage:sqlalchemy database_connection designate $@
+	db_get designate/configure_db
+	if [ "$RET" = "true" ] ; then
+		pkgos_dbc_postinst ${CONF} storage:sqlalchemy database_connection designate $@
+	fi
 	pkgos_rabbit_write_conf ${CONF} DEFAULT designate
 	pkgos_write_admin_creds ${CONF} keystone_authtoken designate
 
