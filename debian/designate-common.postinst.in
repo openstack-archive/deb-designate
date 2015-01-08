@@ -18,7 +18,10 @@ if [ "${1}" = "configure" ] ; then
 		sed -i -e 's/^[ \t]*database_connection[ \t]*=/connection =/' ${CONF}
 	fi
 
-	pkgos_dbc_postinst ${CONF} storage:sqlalchemy connection designate $@
+	db_get designate/configure_db
+	if [ "$RET" = "true" ] ; then
+		 pkgos_dbc_postinst ${CONF} storage:sqlalchemy connection designate $@
+	fi
 	pkgos_rabbit_write_conf ${CONF} DEFAULT designate
 	pkgos_write_admin_creds ${CONF} keystone_authtoken designate
 
