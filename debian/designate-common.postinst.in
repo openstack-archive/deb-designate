@@ -26,7 +26,7 @@ if [ "${1}" = "configure" ] ; then
 	pkgos_write_admin_creds ${CONF} keystone_authtoken designate
 
 	db_get designate/configure_db
-	if [ "$RET" = "true" ] && [ "$dbc_upgrade" = "true" ] ; then
+	if [ "$RET" = "true" ] ; then
 		echo "Now doing 'designate-manage database sync': this may take a while..."
 		#su -s /bin/sh -c 'cd /tmp && designate-manage database-init' designate || true
 		su -s /bin/sh -c 'cd /tmp && designate-manage database sync' designate
