@@ -1,3 +1,9 @@
+designate (2014.1-18) unstable; urgency=medium
+
+  * Removed dbc_upgrade = true check before db sync.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 09 Jan 2015 00:16:40 +0000
+
 designate (2014.1-17) unstable; urgency=medium
 
   * Rebuilt with openstack-pkg-tools (>= 22~): starts daemons on first install.
