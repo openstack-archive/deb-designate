@@ -17,9 +17,8 @@
 """Session Handling for SQLAlchemy backend."""
 
 from oslo.config import cfg
-from oslo.db.sqlalchemy import session
-
-from designate.openstack.common import log as logging
+from oslo_db.sqlalchemy import session
+from oslo_log import log as logging
 
 
 LOG = logging.getLogger(__name__)

@@ -18,8 +18,8 @@ import datetime
 
 from mock import patch
 from oslo import messaging
+from oslo_log import log as logging
 
-from designate.openstack.common import log as logging
 from designate import exceptions
 from designate.central import service as central_service
 from designate.tests.test_api.test_v1 import ApiV1Test
@@ -31,7 +31,7 @@ LOG = logging.getLogger(__name__)
 class ApiV1DomainsTest(ApiV1Test):
     def test_create_domain(self):
         # Create a server
-        self.create_server()
+        self.create_nameserver()
 
         # Create a domain
         fixture = self.get_domain_fixture(0)
@@ -44,7 +44,7 @@ class ApiV1DomainsTest(ApiV1Test):
 
     def test_create_domain_junk(self):
         # Create a server
-        self.create_server()
+        self.create_nameserver()
 
         # Create a domain
         fixture = self.get_domain_fixture(0)
@@ -88,9 +88,15 @@ class ApiV1DomainsTest(ApiV1Test):
         fixture['ttl'] = -1
         self.post('domains', data=fixture, status_code=400)
 
+    def test_create_domain_invalid_ttl(self):
+        # Create a domain
+        fixture = self.get_domain_fixture(0)
+        fixture['ttl'] = "$?>&"
+        self.post('domains', data=fixture, status_code=400)
+
     def test_create_domain_utf_description(self):
-        # Create a server
-        self.create_server()
+        # Create a nameserver
+        self.create_nameserver()
 
         # Create a domain
         fixture = self.get_domain_fixture(0)
@@ -103,7 +109,7 @@ class ApiV1DomainsTest(ApiV1Test):
 
     def test_create_domain_description_too_long(self):
         # Create a server
-        self.create_server()
+        self.create_nameserver()
 
         # Create a domain
         fixture = self.get_domain_fixture(0)
@@ -118,7 +124,7 @@ class ApiV1DomainsTest(ApiV1Test):
         created_at = datetime.datetime(2014, 6, 22, 21, 50, 0)
         updated_at = datetime.datetime(2014, 6, 22, 21, 50, 0)
         serial = 1234567
-        self.create_server()
+        self.create_nameserver()
 
         # Create a domain
         fixture = self.get_domain_fixture(0)
@@ -266,6 +272,14 @@ class ApiV1DomainsTest(ApiV1Test):
         domain = self.create_domain()
 
         data = {'ttl': None}
+
+        self.put('domains/%s' % domain['id'], data=data, status_code=400)
+
+    def test_update_domain_negative_ttl(self):
+        # Create a domain
+        domain = self.create_domain()
+
+        data = {'ttl': -1}
 
         self.put('domains/%s' % domain['id'], data=data, status_code=400)
 

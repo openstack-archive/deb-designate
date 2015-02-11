@@ -14,9 +14,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+from oslo_log import log as logging
 from oslo import messaging
 
-from designate.openstack.common import log as logging
 from designate.i18n import _LI
 from designate import rpc
 
@@ -46,7 +46,6 @@ class CentralAPI(object):
         4.1 - Add methods for server pools
         4.2 - Add methods for pool manager integration
         4.3 - Added Zone Transfer Methods
-
     """
     RPC_API_VERSION = '4.3'
 

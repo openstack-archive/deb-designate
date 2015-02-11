@@ -17,8 +17,8 @@ import urlparse
 
 import six
 import jsonschema
+from oslo_log import log as logging
 
-from designate.openstack.common import log as logging
 from designate import exceptions
 from designate.schema import validators
 from designate.schema import format
@@ -471,7 +471,7 @@ class ListObjectMixin(object):
 
     def insert(self, index, value):
         """Insert a value into the list at the given index"""
-        return self.objects.insert(index)
+        return self.objects.insert(index, value)
 
     def remove(self, value):
         """Remove a value from the list"""

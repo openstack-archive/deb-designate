@@ -18,7 +18,7 @@ from sqlalchemy import (Table, MetaData, Column, String, Text, Integer, CHAR,
                         ForeignKeyConstraint)
 
 from oslo.config import cfg
-from oslo.utils import timeutils
+from oslo_utils import timeutils
 
 from designate import utils
 from designate.sqlalchemy.types import UUID
@@ -46,18 +46,6 @@ quotas = Table('quotas', metadata,
     Column('tenant_id', String(36), default=None, nullable=True),
     Column('resource', String(32), nullable=False),
     Column('hard_limit', Integer(), nullable=False),
-
-    mysql_engine='InnoDB',
-    mysql_charset='utf8',
-)
-
-servers = Table('servers', metadata,
-    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
-    Column('version', Integer(), default=1, nullable=False),
-    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
-    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
-
-    Column('name', String(255), nullable=False, unique=True),
 
     mysql_engine='InnoDB',
     mysql_charset='utf8',

@@ -17,11 +17,11 @@ import time
 import hashlib
 
 from oslo.config import cfg
-from oslo.db import options
+from oslo_log import log as logging
+from oslo_db import options
 from sqlalchemy import select, distinct, func
 from sqlalchemy.sql.expression import or_
 
-from designate.openstack.common import log as logging
 from designate import exceptions
 from designate import objects
 from designate.sqlalchemy import base as sqlalchemy_base
@@ -96,41 +96,6 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         quota = self._find_quotas(context, {'id': quota_id}, one=True)
         return self._delete(context, tables.quotas, quota,
                             exceptions.QuotaNotFound)
-
-    # Server Methods
-    def _find_servers(self, context, criterion, one=False, marker=None,
-                     limit=None, sort_key=None, sort_dir=None):
-        return self._find(
-            context, tables.servers, objects.Server, objects.ServerList,
-            exceptions.ServerNotFound, criterion, one, marker, limit,
-            sort_key, sort_dir)
-
-    def create_server(self, context, server):
-        return self._create(
-            tables.servers, server, exceptions.DuplicateServer)
-
-    def get_server(self, context, server_id):
-        return self._find_servers(context, {'id': server_id}, one=True)
-
-    def find_servers(self, context, criterion=None, marker=None, limit=None,
-                     sort_key=None, sort_dir=None):
-        return self._find_servers(context, criterion, marker=marker,
-                                  limit=limit, sort_key=sort_key,
-                                  sort_dir=sort_dir)
-
-    def find_server(self, context, criterion):
-        return self._find_servers(context, criterion, one=True)
-
-    def update_server(self, context, server):
-        return self._update(
-            context, tables.servers, server, exceptions.DuplicateServer,
-            exceptions.ServerNotFound)
-
-    def delete_server(self, context, server_id):
-        # Fetch the existing server, we'll need to return it.
-        server = self._find_servers(context, {'id': server_id}, one=True)
-        return self._delete(context, tables.servers, server,
-                            exceptions.ServerNotFound)
 
     # TLD Methods
     def _find_tlds(self, context, criterion, one=False, marker=None,
@@ -364,6 +329,19 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         if not one:
             recordsets.total_count = self.count_recordsets(context, criterion)
 
+        # Load Relations
+        def _load_relations(recordset):
+            recordset.records = self._find_records(
+                context, {'recordset_id': recordset.id})
+
+            recordset.obj_reset_changes(['recordset'])
+
+        if one:
+            _load_relations(recordsets)
+        else:
+            for recordset in recordsets:
+                _load_relations(recordset)
+
         return recordsets
 
     def create_recordset(self, context, domain_id, recordset):
@@ -394,39 +372,16 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         return recordset
 
     def get_recordset(self, context, recordset_id):
-        recordset = self._find_recordsets(
-            context, {'id': recordset_id}, one=True)
-
-        recordset.records = self._find_records(
-            context, {'recordset_id': recordset.id})
-
-        recordset.obj_reset_changes(['records'])
-
-        return recordset
+        return self._find_recordsets(context, {'id': recordset_id}, one=True)
 
     def find_recordsets(self, context, criterion=None, marker=None, limit=None,
                         sort_key=None, sort_dir=None):
-        recordsets = self._find_recordsets(context, criterion, marker=marker,
-                                           limit=limit, sort_key=sort_key,
-                                           sort_dir=sort_dir)
-
-        for recordset in recordsets:
-            recordset.records = self._find_records(
-                context, {'recordset_id': recordset.id})
-
-            recordset.obj_reset_changes(['records'])
-
-        return recordsets
+        return self._find_recordsets(context, criterion, marker=marker,
+                                     limit=limit, sort_key=sort_key,
+                                     sort_dir=sort_dir)
 
     def find_recordset(self, context, criterion):
-        recordset = self._find_recordsets(context, criterion, one=True)
-
-        recordset.records = self._find_records(
-            context, {'recordset_id': recordset.id})
-
-        recordset.obj_reset_changes(['records'])
-
-        return recordset
+        return self._find_recordsets(context, criterion, one=True)
 
     def update_recordset(self, context, recordset):
         recordset = self._update(
@@ -634,10 +589,11 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
     def get_pool(self, context, pool_id):
         pool = self._find_pools(context, {'id': pool_id}, one=True)
         pool.attributes = self._find_pool_attributes(
-            context, {'pool_id': pool_id, 'key': '!nameserver'})
+            context, {'pool_id': pool_id, 'key': '!name_server'})
         pool.nameservers = self._find_pool_attributes(
-            context, {'pool_id': pool_id, 'key': 'nameserver'})
+            context, {'pool_id': pool_id, 'key': 'name_server'})
         pool.obj_reset_changes(['attributes', 'nameservers'])
+
         return pool
 
     def find_pools(self, context, criterion=None, marker=None,
@@ -647,9 +603,9 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
                                 sort_dir=sort_dir)
         for pool in pools:
             pool.attributes = self._find_pool_attributes(
-                context, {'pool_id': pool.id, 'key': '!nameserver'})
+                context, {'pool_id': pool.id, 'key': '!name_server'})
             pool.nameservers = self._find_pool_attributes(
-                context, {'pool_id': pool.id, 'key': 'nameserver'})
+                context, {'pool_id': pool.id, 'key': 'name_server'})
             pool.obj_reset_changes(['attributes', 'nameservers'])
 
         return pools
@@ -657,9 +613,9 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
     def find_pool(self, context, criterion):
         pool = self._find_pools(context, criterion, one=True)
         pool.attributes = self._find_pool_attributes(
-            context, {'pool_id': pool.id, 'key': '!nameserver'})
+            context, {'pool_id': pool.id, 'key': '!name_server'})
         pool.nameservers = self._find_pool_attributes(
-            context, {'pool_id': pool.id, 'key': 'nameserver'})
+            context, {'pool_id': pool.id, 'key': 'name_server'})
         pool.obj_reset_changes(['attributes', 'nameservers'])
         return pool
 
@@ -714,7 +670,11 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
                 self.create_pool_attribute(
                     context, pool.id, attribute)
 
-        return pool
+        # Call get_pool to get the ids of all the attributes/nameservers
+        # refreshed in the pool object
+        updated_pool = self.get_pool(context, pool.id)
+
+        return updated_pool
 
     def delete_pool(self, context, pool_id):
         pool = self._find_pools(context, {'id': pool_id}, one=True)
@@ -732,10 +692,11 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
 
     def create_pool_attribute(self, context, pool_id, pool_attribute):
         pool_attribute.pool_id = pool_id
+
         return self._create(tables.pool_attributes, pool_attribute,
                             exceptions.DuplicatePoolAttribute)
 
-    def get_pool_attributes(self, context, pool_attribute_id):
+    def get_pool_attribute(self, context, pool_attribute_id):
         return self._find_pool_attributes(
             context, {'id': pool_attribute_id}, one=True)
 

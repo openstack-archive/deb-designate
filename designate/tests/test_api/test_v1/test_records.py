@@ -16,8 +16,8 @@
 # under the License.
 from mock import patch
 from oslo import messaging
+from oslo_log import log as logging
 
-from designate.openstack.common import log as logging
 from designate.central import service as central_service
 from designate.tests.test_api.test_v1 import ApiV1Test
 
@@ -177,6 +177,20 @@ class ApiV1RecordsTest(ApiV1Test):
 
         # Set the TTL to a negative value
         fixture['ttl'] = -1
+
+        # Create a record, Ensuring it Fails with a 400
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_invalid_ttl(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({
+            'name': self.recordset['name'],
+            'type': self.recordset['type'],
+        })
+
+        # Set the TTL to a invalid value
+        fixture['ttl'] = "$?!."
 
         # Create a record, Ensuring it Fails with a 400
         self.post('domains/%s/records' % self.domain['id'], data=fixture,
@@ -411,6 +425,24 @@ class ApiV1RecordsTest(ApiV1Test):
         record = self.create_record(self.domain, self.recordset)
 
         data = {'ttl': 100, 'junk': 'Junk Field'}
+
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_negative_ttl(self):
+        # Create a record
+        record = self.create_record(self.domain, self.recordset)
+
+        data = {'ttl': -1}
+
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_invalid_ttl(self):
+        # Create a record
+        record = self.create_record(self.domain, self.recordset)
+
+        data = {'ttl': "$?>%"}
 
         self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
                  data=data, status_code=400)

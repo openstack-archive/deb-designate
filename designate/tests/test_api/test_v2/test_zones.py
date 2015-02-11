@@ -16,10 +16,14 @@
 from dns import zone as dnszone
 from mock import patch
 from oslo import messaging
+from oslo_log import log as logging
 
 from designate import exceptions
 from designate.central import service as central_service
 from designate.tests.test_api.test_v2 import ApiV2TestCase
+
+
+LOG = logging.getLogger(__name__)
 
 
 class ApiV2ZonesTest(ApiV2TestCase):
@@ -27,7 +31,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
         super(ApiV2ZonesTest, self).setUp()
 
         # Create a server
-        self.create_server()
+        self.create_nameserver()
 
         # Create the default TLDs
         self.create_default_tlds()

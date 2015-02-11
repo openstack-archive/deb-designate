@@ -15,9 +15,13 @@
 # under the License.
 from mock import patch
 from oslo import messaging
+from oslo_log import log as logging
 
 from designate.central import service as central_service
 from designate.tests.test_api.test_v2 import ApiV2TestCase
+
+
+LOG = logging.getLogger(__name__)
 
 
 class ApiV2NameServersTest(ApiV2TestCase):
@@ -49,10 +53,10 @@ class ApiV2NameServersTest(ApiV2TestCase):
 
         self.assertEqual(servers[0]['id'],
                          response.json['nameservers'][0]['id'])
-        self.assertEqual(servers[0]['name'],
+        self.assertEqual(servers[0]['value'],
                          response.json['nameservers'][0]['name'])
 
-        self.create_server(name='nsx.mydomain.com.')
+        self.create_nameserver(value='nsx.mydomain.com.')
 
         response = self.client.get(url)
 

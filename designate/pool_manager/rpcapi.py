@@ -14,9 +14,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+from oslo_log import log as logging
 from oslo import messaging
 
-from designate.openstack.common import log as logging
 from designate.i18n import _LI
 from designate import rpc
 
@@ -39,9 +39,10 @@ class PoolManagerAPI(object):
     RPC_API_VERSION = '1.0'
 
     def __init__(self, topic=None):
-        topic = topic if topic else cfg.CONF.pool_manager_topic
+        self.topic = topic if topic else cfg.CONF.pool_manager_topic
 
-        target = messaging.Target(topic=topic, version=self.RPC_API_VERSION)
+        target = messaging.Target(topic=self.topic,
+                                  version=self.RPC_API_VERSION)
         self.client = rpc.get_client(target, version_cap='1.0')
 
     @classmethod
@@ -59,23 +60,42 @@ class PoolManagerAPI(object):
         return MNGR_API
 
     def create_domain(self, context, domain):
-        LOG.info(_LI("create_domain: Calling pool manager's create_domain."))
-        return self.client.cast(
+        LOG.info(_LI("create_domain: Calling pool manager's create_domain "
+                     "for %(domain)s") % {'domain': domain.name})
+
+        # Modifying the topic so it is pool manager instance specific.
+        topic = '%s.%s' % (self.topic, domain.pool_id)
+        cctxt = self.client.prepare(topic=topic)
+        return cctxt.cast(
             context, 'create_domain', domain=domain)
 
     def delete_domain(self, context, domain):
-        LOG.info(_LI("delete_domain: Calling pool manager's delete_domain."))
-        return self.client.cast(
+        LOG.info(_LI("delete_domain: Calling pool manager's delete_domain "
+                     "for %(domain)s") % {'domain': domain.name})
+
+        # Modifying the topic so it is pool manager instance specific.
+        topic = '%s.%s' % (self.topic, domain.pool_id)
+        cctxt = self.client.prepare(topic=topic)
+        return cctxt.cast(
             context, 'delete_domain', domain=domain)
 
     def update_domain(self, context, domain):
-        LOG.info(_LI("update_domain: Calling pool manager's update_domain."))
-        return self.client.cast(
+        LOG.info(_LI("update_domain: Calling pool manager's update_domain "
+                     "for %(domain)s") % {'domain': domain.name})
+
+        # Modifying the topic so it is pool manager instance specific.
+        topic = '%s.%s' % (self.topic, domain.pool_id)
+        cctxt = self.client.prepare(topic=topic)
+        return cctxt.cast(
             context, 'update_domain', domain=domain)
 
-    def update_status(self, context, domain, destination,
-                      status, actual_serial):
-        LOG.info(_LI("update_status: Calling pool manager's update_status."))
-        return self.client.cast(
-            context, 'update_status', domain=domain, destination=destination,
+    def update_status(self, context, domain, server, status, actual_serial):
+        LOG.info(_LI("update_status: Calling pool manager's update_status "
+                     "for %(domain)s") % {'domain': domain.name})
+
+        # Modifying the topic so it is pool manager instance specific.
+        topic = '%s.%s' % (self.topic, domain.pool_id)
+        cctxt = self.client.prepare(topic=topic)
+        return cctxt.cast(
+            context, 'update_status', domain=domain, server=server,
             status=status, actual_serial=actual_serial)

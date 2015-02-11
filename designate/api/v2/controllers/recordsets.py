@@ -14,8 +14,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import pecan
+from oslo_log import log as logging
 
-from designate.openstack.common import log as logging
 from designate import exceptions
 from designate import schema
 from designate import utils
@@ -175,9 +175,8 @@ class RecordSetsController(rest.RestController):
 
         # Remove deleted records if we haver provided a records array
         if record_update:
-            for record in recordset.records:
-                if record.data in records_to_rm:
-                    recordset.records.remove(record)
+            recordset.records[:] = [record for record in recordset.records
+                                    if record.data not in records_to_rm]
 
         # Add new records
         for record in records_to_add:

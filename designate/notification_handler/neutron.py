@@ -14,8 +14,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
+from oslo_log import log as logging
 
-from designate.openstack.common import log as logging
 from designate.notification_handler.base import BaseAddressHandler
 
 
@@ -63,7 +63,7 @@ class NeutronFloatingHandler(BaseAddressHandler):
                 address = {
                     'version': 4,
                     'address': payload['floatingip']['floating_ip_address']}
-                self._create([address], payload,
+                self._create([address], payload['floatingip'],
                              resource_id=payload['floatingip']['id'],
                              resource_type='floatingip')
             elif not payload['floatingip']['fixed_ip_address']:

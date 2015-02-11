@@ -14,8 +14,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from oslo_log import log as logging
+
 from designate.api.v2.views import base as base_view
-from designate.openstack.common import log as logging
 
 
 LOG = logging.getLogger(__name__)
@@ -38,5 +39,5 @@ class NameServerView(base_view.BaseView):
         """Basic view of a nameserver"""
         return {
             "id": nameserver["id"],
-            "name": nameserver["name"]
+            "name": nameserver["value"]
         }

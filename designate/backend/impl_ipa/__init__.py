@@ -18,11 +18,11 @@ import time
 
 import requests
 from oslo.config import cfg
+from oslo_log import log as logging
 from oslo.serialization import jsonutils as json
-from oslo.utils import importutils
+from oslo_utils import importutils
 
 from designate import exceptions
-from designate.openstack.common import log as logging
 from designate.backend import base
 from designate.i18n import _LE
 
@@ -217,7 +217,7 @@ class IPABackend(base.Backend):
         LOG.debug('Create Domain %r' % domain)
         ipareq = {'method': 'dnszone_add', 'id': 0}
         params = [domain['name']]
-        servers = self.central_service.find_servers(self.admin_context)
+        servers = self.central_service.get_domain_servers(self.admin_context)
         # just use the first one for zone creation - add the others
         # later, below - use force because designate assumes the NS
         # already exists somewhere, is resolvable, and already has

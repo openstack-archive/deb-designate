@@ -17,29 +17,24 @@ import copy
 import functools
 import os
 import inspect
-import shutil
-import tempfile
 
-import fixtures
+from testtools import testcase
 from oslotest import base
+from oslo_log import log as logging
 from oslo.config import cfg
 from oslo.config import fixture as cfg_fixture
 from oslo.messaging import conffixture as messaging_fixture
-from oslo.messaging.notify import _impl_test as test_notifier
-from oslo.utils import importutils
-from testtools import testcase
 
-from designate.openstack.common import log as logging
 from designate import policy
 from designate import utils
-from designate.context import DesignateContext
-from designate.tests import resources
 from designate import exceptions
-from designate.network_api import fake as fake_network_api
-from designate import network_api
 from designate import objects
+from designate import storage
+from designate.context import DesignateContext
+from designate.tests import fixtures
+from designate.tests import resources
 from designate.manage import database as manage_database
-from designate.sqlalchemy import utils as sqlalchemy_utils
+
 
 LOG = logging.getLogger(__name__)
 
@@ -54,87 +49,7 @@ cfg.CONF.import_opt('cache_driver', 'designate.pool_manager',
 cfg.CONF.import_opt('connection',
                     'designate.pool_manager.cache.impl_sqlalchemy',
                     group='pool_manager_cache:sqlalchemy')
-
-
-class NotifierFixture(fixtures.Fixture):
-    def setUp(self):
-        super(NotifierFixture, self).setUp()
-        self.addCleanup(test_notifier.reset)
-
-    def get(self):
-        return test_notifier.NOTIFICATIONS
-
-    def clear(self):
-        return test_notifier.reset()
-
-
-class ServiceFixture(fixtures.Fixture):
-    def __init__(self, svc_name, *args, **kw):
-        cls = importutils.import_class(
-            'designate.%s.service.Service' % svc_name)
-        self.svc = cls.create(binary='designate-' + svc_name, *args, **kw)
-
-    def setUp(self):
-        super(ServiceFixture, self).setUp()
-        self.svc.start()
-        self.addCleanup(self.kill)
-
-    def kill(self):
-        try:
-            self.svc.kill()
-        except Exception:
-            pass
-
-
-class PolicyFixture(fixtures.Fixture):
-    def setUp(self):
-        super(PolicyFixture, self).setUp()
-        self.addCleanup(policy.reset)
-
-
-class DatabaseFixture(fixtures.Fixture):
-
-    fixtures = {}
-
-    @staticmethod
-    def get_fixture(repo_path, init_version=None):
-        if repo_path not in DatabaseFixture.fixtures:
-            DatabaseFixture.fixtures[repo_path] = DatabaseFixture(
-                repo_path, init_version)
-        return DatabaseFixture.fixtures[repo_path]
-
-    def _mktemp(self):
-        _, path = tempfile.mkstemp(prefix='designate-', suffix='.sqlite',
-                                   dir='/tmp')
-        return path
-
-    def __init__(self, repo_path, init_version=None):
-        super(DatabaseFixture, self).__init__()
-
-        # Create the Golden DB
-        self.golden_db = self._mktemp()
-        self.golden_url = 'sqlite:///%s' % self.golden_db
-
-        # Migrate the Golden DB
-        manager = sqlalchemy_utils.get_migration_manager(
-            repo_path, self.golden_url, init_version)
-        manager.upgrade(None)
-
-        # Prepare the Working Copy DB
-        self.working_copy = self._mktemp()
-        self.url = 'sqlite:///%s' % self.working_copy
-
-    def setUp(self):
-        super(DatabaseFixture, self).setUp()
-        shutil.copyfile(self.golden_db, self.working_copy)
-
-
-class NetworkAPIFixture(fixtures.Fixture):
-    def setUp(self):
-        super(NetworkAPIFixture, self).setUp()
-        self.api = network_api.get_network_api(cfg.CONF.network_api)
-        self.fake = fake_network_api
-        self.addCleanup(self.fake.reset_floatingips)
+pool_id = cfg.CONF['service:central'].default_pool_id
 
 
 class TestCase(base.BaseTestCase):
@@ -247,6 +162,24 @@ class TestCase(base.BaseTestCase):
         'pattern': 'blacklisted.org.'
     }]
 
+    pool_attributes_fixtures = [
+        {'pool_id': pool_id,
+         'key': 'name_server',
+         'value': 'ns1.example.com.'},
+        {'pool_id': pool_id,
+         'key': 'scope',
+         'value': 'public'}
+    ]
+
+    pool_attribute_nameserver_fixtures = [
+        {'pool_id': pool_id,
+         'key': 'name_server',
+         'value': 'ns1.example.org'},
+        {'pool_id': pool_id,
+         'key': 'name_server',
+         'value': 'ns2.example.org'},
+    ]
+
     pool_manager_status_fixtures = [{
         'server_id': '1d7a26e6-e604-4aa0-bbc5-d01081bf1f45',
         'status': 'SUCCESS',
@@ -289,13 +222,16 @@ class TestCase(base.BaseTestCase):
 
         self.CONF = self.useFixture(cfg_fixture.Config(cfg.CONF)).conf
 
-        self.messaging_conf = self.useFixture(
-            messaging_fixture.ConfFixture(cfg.CONF))
+        self.messaging_conf = messaging_fixture.ConfFixture(cfg.CONF)
         self.messaging_conf.transport_driver = 'fake'
+        self.messaging_conf.response_timeout = 5
+        self.useFixture(self.messaging_conf)
 
         self.config(notification_driver='test')
 
-        self.notifications = self.useFixture(NotifierFixture())
+        self.notifications = self.useFixture(fixtures.NotifierFixture())
+
+        self.useFixture(fixtures.RPCFixture(cfg.CONF))
 
         self.config(
             storage_driver='sqlalchemy',
@@ -314,7 +250,7 @@ class TestCase(base.BaseTestCase):
                                                   'impl_sqlalchemy',
                                                   'migrate_repo'))
         self.db_fixture = self.useFixture(
-            DatabaseFixture.get_fixture(
+            fixtures.DatabaseFixture.get_fixture(
                 REPOSITORY, manage_database.INIT_VERSION))
         self.config(
             connection=self.db_fixture.url,
@@ -333,12 +269,14 @@ class TestCase(base.BaseTestCase):
         self.CONF([], project='designate')
         utils.register_plugin_opts()
 
-        self.useFixture(PolicyFixture())
-        self.network_api = NetworkAPIFixture()
+        self.useFixture(fixtures.PolicyFixture())
+        self.network_api = fixtures.NetworkAPIFixture()
         self.useFixture(self.network_api)
         self.central_service = self.start_service('central')
 
         self.admin_context = self.get_admin_context()
+        storage_driver = cfg.CONF['service:central'].storage_driver
+        self.storage = storage.get_storage(storage_driver)
 
     def _setup_pool_manager_cache(self):
 
@@ -353,7 +291,7 @@ class TestCase(base.BaseTestCase):
                                                   'impl_sqlalchemy',
                                                   'migrate_repo'))
         db_fixture = self.useFixture(
-            DatabaseFixture.get_fixture(repository))
+            fixtures.DatabaseFixture.get_fixture(repository))
         self.config(
             connection=db_fixture.url,
             connection_debug=50,
@@ -385,7 +323,7 @@ class TestCase(base.BaseTestCase):
         """
         Convenience method for starting a service!
         """
-        fixture = ServiceFixture(svc_name, *args, **kw)
+        fixture = fixtures.ServiceFixture(svc_name, *args, **kw)
         self.useFixture(fixture)
         return fixture.svc
 
@@ -485,6 +423,20 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
+    def get_pool_attributes_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.pool_attributes_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def get_pool_attribute_nameserver_fixtures(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.pool_attribute_nameserver_fixtures[fixture])
+        _values.update(values)
+        return _values
+
     def get_pool_manager_status_fixture(self, fixture=0, values=None):
         values = values or {}
 
@@ -506,7 +458,7 @@ class TestCase(base.BaseTestCase):
         _nameserver_values = self.get_nameserver_fixture(
             fixture=fixture, values=None)
         _values['nameservers'] = objects.NameServerList(
-            objects=[objects.NameServer(key='nameserver', value=r)
+            objects=[objects.NameServer(key='name_server', value=r)
                      for r in _nameserver_values])
 
         return _values
@@ -539,13 +491,31 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
-    def create_server(self, **kwargs):
+    def create_nameserver(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
-        values = self.get_server_fixture(fixture=fixture, values=kwargs)
-        return self.central_service.create_server(
-            context, objects.Server(**values))
+        values = self.get_pool_attribute_nameserver_fixtures(fixture=fixture,
+                                                             values=kwargs)
+
+        nameserver = objects.PoolAttribute(**values)
+
+        # Get the default pool
+        pool = self.central_service.get_pool(self.admin_context, pool_id)
+
+        # Add the new PoolAttribute to the pool as a nameserver
+        pool.nameservers.append(nameserver)
+
+        # Update the pool
+        self.central_service.update_pool(self.admin_context, pool)
+
+        # Get the new PoolAttribute from the db in order to return it
+        created_nameserver = self.storage.find_pool_attribute(
+            context=context,
+            criterion=values
+        )
+
+        return created_nameserver
 
     def create_tld(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -583,9 +553,15 @@ class TestCase(base.BaseTestCase):
         fixture = kwargs.pop('fixture', 0)
 
         try:
-            # We always need a server to create a domain..
-            self.create_server()
-        except exceptions.DuplicateServer:
+            # We always need a server to create a server
+            nameservers = self.storage.find_pool_attributes(
+                context=self.admin_context,
+                criterion={'pool_id': pool_id,
+                           'key': 'name_server'}
+            )
+            if len(nameservers) == 0:
+                self.create_nameserver()
+        except exceptions.DuplicatePoolAttribute:
             pass
 
         values = self.get_domain_fixture(fixture=fixture, values=kwargs)
@@ -675,6 +651,19 @@ class TestCase(base.BaseTestCase):
 
         return self.central_service.create_zone_transfer_accept(
             context, zone_transfer_accept)
+
+    def create_pool_attribute(self, **kwargs):
+        context = kwargs.pop('context', self.admin_context)
+        fixture = kwargs.pop('fixture', 0)
+
+        values = self.get_pool_attributes_fixture(fixture=fixture,
+                                                  values=kwargs)
+        pool_attribute = objects.PoolAttribute(**values)
+        return self.storage.create_pool_attribute(
+            context,
+            pool_attribute.pool_id,
+            pool_attribute
+        )
 
     def _ensure_interface(self, interface, implementation):
         for name in interface.__abstractmethods__:

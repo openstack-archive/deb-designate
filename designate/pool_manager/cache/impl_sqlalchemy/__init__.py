@@ -14,9 +14,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from oslo.config import cfg
-from oslo.db import options
+from oslo_db import options
+from oslo_log import log as logging
 
-from designate.openstack.common import log as logging
 from designate import exceptions
 from designate import objects
 from designate.pool_manager.cache import base as cache_base
