@@ -26,14 +26,20 @@ MDNS_API = None
 
 
 class MdnsAPI(object):
+
     """
     Client side of the mdns RPC API.
 
     Notify API version history:
 
         1.0 - Added notify_zone_changed and poll_for_serial_number.
+        1.1 - Added get_serial_number.
+
+    XFR API version history:
+        1.0 - Added perform_zone_xfr.
     """
-    RPC_NOTIFY_API_VERSION = '1.0'
+    RPC_NOTIFY_API_VERSION = '1.1'
+    RPC_XFR_API_VERSION = '1.0'
 
     def __init__(self, topic=None):
         topic = topic if topic else cfg.CONF.mdns_topic
@@ -41,7 +47,12 @@ class MdnsAPI(object):
         notify_target = messaging.Target(topic=topic,
                                          namespace='notify',
                                          version=self.RPC_NOTIFY_API_VERSION)
-        self.notify_client = rpc.get_client(notify_target, version_cap='1.0')
+        self.notify_client = rpc.get_client(notify_target, version_cap='1.1')
+
+        xfr_target = messaging.Target(topic=topic,
+                                      namespace='xfr',
+                                      version=self.RPC_XFR_API_VERSION)
+        self.xfr_client = rpc.get_client(xfr_target, version_cap='1.0')
 
     @classmethod
     def get_instance(cls):
@@ -83,3 +94,20 @@ class MdnsAPI(object):
             context, 'poll_for_serial_number', domain=domain,
             server=server, timeout=timeout, retry_interval=retry_interval,
             max_retries=max_retries, delay=delay)
+
+    def get_serial_number(self, context, domain, server, timeout,
+                          retry_interval, max_retries, delay):
+        LOG.info(_LI("get_serial_number: Calling mdns for zone '%(zone)s'"
+                     ", serial '%(serial)s' to server '%(host)s:%(port)s'") %
+                 {'zone': domain.name, 'serial': domain.serial,
+                  'host': server.host, 'port': server.port})
+        cctxt = self.notify_client.prepare(version='1.1')
+        return cctxt.call(
+            context, 'get_serial_number', domain=domain,
+            server=server, timeout=timeout, retry_interval=retry_interval,
+            max_retries=max_retries, delay=delay)
+
+    def perform_zone_xfr(self, context, domain):
+        LOG.info(_LI("perform_zone_xfr: Calling mdns for zone %(zone)s") %
+                 {"zone": domain.name})
+        return self.xfr_client.cast(context, 'perform_zone_xfr', domain=domain)

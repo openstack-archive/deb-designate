@@ -15,6 +15,9 @@
 # under the License.
 from oslo.config import cfg
 
+from designate import dnsutils
+
+
 cfg.CONF.register_group(cfg.OptGroup(
     name='service:mdns', title="Configuration for mDNS Service"
 ))
@@ -30,8 +33,14 @@ OPTS = [
                help='mDNS TCP Backlog'),
     cfg.FloatOpt('tcp-recv-timeout', default=0.5,
                  help='mDNS TCP Receive Timeout'),
+    cfg.BoolOpt('all-tcp', default=False,
+                help='Send all traffic over TCP'),
+    cfg.BoolOpt('query-enforce-tsig', default=False,
+                help='Enforce all incoming queries (including AXFR) are TSIG '
+                     'signed'),
     cfg.StrOpt('storage-driver', default='sqlalchemy',
                help='The storage driver to use'),
 ]
 
 cfg.CONF.register_opts(OPTS, group='service:mdns')
+cfg.CONF.register_opts(dnsutils.util_opts, group='service:mdns')

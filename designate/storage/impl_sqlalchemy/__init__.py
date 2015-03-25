@@ -230,8 +230,18 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             exceptions.DomainNotFound, criterion, one, marker, limit,
             sort_key, sort_dir)
 
-        if not one:
+        def _load_relations(domain):
+            if domain.type == 'SECONDARY':
+                domain.attributes = self._find_domain_attributes(
+                    context, {'domain_id': domain.id})
+                domain.obj_reset_changes(['attributes'])
+
+        if one:
+            _load_relations(domains)
+        else:
             domains.total_count = self.count_domains(context, criterion)
+            for d in domains:
+                _load_relations(d)
 
         return domains
 
@@ -240,32 +250,110 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         extra_values = {"reverse_name": domain.name[::-1]}
 
         # Don't handle recordsets for now
-        return self._create(
-            tables.domains, domain, exceptions.DuplicateDomain, ['recordsets'],
+        domain = self._create(
+            tables.domains, domain, exceptions.DuplicateDomain,
+            ['attributes', 'recordsets'],
             extra_values=extra_values)
 
+        if domain.obj_attr_is_set('attributes'):
+            for attrib in domain.attributes:
+                self.create_domain_attribute(context, domain.id, attrib)
+        else:
+            domain.attributes = objects.DomainAttributeList()
+        domain.obj_reset_changes('attributes')
+
+        return domain
+
     def get_domain(self, context, domain_id):
-        return self._find_domains(context, {'id': domain_id}, one=True)
+        domain = self._find_domains(context, {'id': domain_id}, one=True)
+        return domain
 
     def find_domains(self, context, criterion=None, marker=None, limit=None,
                      sort_key=None, sort_dir=None):
-        return self._find_domains(context, criterion, marker=marker,
-                                  limit=limit, sort_key=sort_key,
-                                  sort_dir=sort_dir)
+        domains = self._find_domains(context, criterion, marker=marker,
+                                     limit=limit, sort_key=sort_key,
+                                     sort_dir=sort_dir)
+        return domains
 
     def find_domain(self, context, criterion):
-        return self._find_domains(context, criterion, one=True)
+        domain = self._find_domains(context, criterion, one=True)
+        return domain
 
     def update_domain(self, context, domain):
-        # Don't handle recordsets for now
-
         tenant_id_changed = False
         if 'tenant_id' in domain.obj_what_changed():
             tenant_id_changed = True
 
+        # Don't handle recordsets for now
         updated_domain = self._update(
             context, tables.domains, domain, exceptions.DuplicateDomain,
-            exceptions.DomainNotFound, ['recordsets'])
+            exceptions.DomainNotFound,
+            ['attributes', 'recordsets'])
+
+        if domain.obj_attr_is_set('attributes'):
+            # Gather the Attribute ID's we have
+            have = set([r.id for r in self._find_domain_attributes(
+                context, {'domain_id': domain.id})])
+
+            # Prep some lists of changes
+            keep = set([])
+            create = []
+            update = []
+
+            # Determine what to change
+            for i in domain.attributes:
+                keep.add(i.id)
+                try:
+                    i.obj_get_original_value('id')
+                except KeyError:
+                    create.append(i)
+                else:
+                    update.append(i)
+
+            # NOTE: Since we're dealing with mutable objects, the return value
+            #       of create/update/delete attribute is not needed.
+            #       The original item will be mutated in place on the input
+            #       "domain.attributes" list.
+
+            # Delete Attributes
+            for i_id in have - keep:
+                attr = self._find_domain_attributes(
+                    context, {'id': i_id}, one=True)
+                self.delete_domain_attribute(context, attr.id)
+
+            # Update Attributes
+            for i in update:
+                self.update_domain_attribute(context, i)
+
+            # Create Attributes
+            for attr in create:
+                attr.domain_id = domain.id
+                self.create_domain_attribute(context, domain.id, attr)
+
+        if domain.obj_attr_is_set('recordsets'):
+            existing = self.find_recordsets(context, {'domain_id': domain.id})
+
+            data = {}
+            for rrset in existing:
+                data[rrset.name, rrset.type] = rrset
+
+            keep = set()
+            for rrset in domain.recordsets:
+                current = data.get((rrset.name, rrset.type))
+
+                if current:
+                    current.update(rrset)
+                    current.records = rrset.records
+                    self.update_recordset(context, current)
+                    keep.add(current.id)
+                else:
+                    self.create_recordset(context, domain.id, rrset)
+                    keep.add(rrset.id)
+
+            if domain.type == 'SECONDARY':
+                # Purge anything that shouldn't be there :P
+                for i in set([i.id for i in data.values()]) - keep:
+                    self.delete_recordset(context, i)
 
         if tenant_id_changed:
             recordsets_query = tables.recordsets.update().\
@@ -300,6 +388,48 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             return 0
 
         return result[0]
+
+    # Domain attribute methods
+    def _find_domain_attributes(self, context, criterion, one=False,
+                                marker=None, limit=None, sort_key=None,
+                                sort_dir=None):
+        return self._find(context, tables.domain_attributes,
+                          objects.DomainAttribute, objects.DomainAttributeList,
+                          exceptions.DomainAttributeNotFound, criterion, one,
+                          marker, limit, sort_key, sort_dir)
+
+    def create_domain_attribute(self, context, domain_id, domain_attribute):
+        domain_attribute.domain_id = domain_id
+        return self._create(tables.domain_attributes, domain_attribute,
+                            exceptions.DuplicateDomainAttribute)
+
+    def get_domain_attributes(self, context, domain_attribute_id):
+        return self._find_domain_attributes(
+            context, {'id': domain_attribute_id}, one=True)
+
+    def find_domain_attributes(self, context, criterion=None, marker=None,
+                   limit=None, sort_key=None, sort_dir=None):
+        return self._find_domain_attributes(context, criterion, marker=marker,
+                                            limit=limit, sort_key=sort_key,
+                                            sort_dir=sort_dir)
+
+    def find_domain_attribute(self, context, criterion):
+        return self._find_domain_attributes(context, criterion, one=True)
+
+    def update_domain_attribute(self, context, domain_attribute):
+        return self._update(context, tables.domain_attributes,
+                            domain_attribute,
+                            exceptions.DuplicateDomainAttribute,
+                            exceptions.DomainAttributeNotFound)
+
+    def delete_domain_attribute(self, context, domain_attribute_id):
+        domain_attribute = self._find_domain_attributes(
+            context, {'id': domain_attribute_id}, one=True)
+        deleted_domain_attribute = self._delete(
+            context, tables.domain_attributes, domain_attribute,
+            exceptions.DomainAttributeNotFound)
+
+        return deleted_domain_attribute
 
     # RecordSet Methods
     def _find_recordsets(self, context, criterion, one=False, marker=None,
@@ -438,7 +568,15 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
                             exceptions.RecordSetNotFound)
 
     def count_recordsets(self, context, criterion=None):
-        query = select([func.count(tables.recordsets.c.id)])
+        # Ensure that we return only active recordsets
+        rjoin = tables.recordsets.join(
+            tables.domains,
+            tables.recordsets.c.domain_id == tables.domains.c.id)
+
+        query = select([func.count(tables.recordsets.c.id)]).\
+            select_from(rjoin).\
+            where(tables.domains.c.deleted == '0')
+
         query = self._apply_criterion(tables.recordsets, query, criterion)
         query = self._apply_tenant_criteria(context, tables.recordsets, query)
         query = self._apply_deleted_criteria(context, tables.recordsets, query)
@@ -507,7 +645,15 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
                             exceptions.RecordNotFound)
 
     def count_records(self, context, criterion=None):
-        query = select([func.count(tables.records.c.id)])
+        # Ensure that we return only active records
+        rjoin = tables.records.join(
+            tables.domains,
+            tables.records.c.domain_id == tables.domains.c.id)
+
+        query = select([func.count(tables.records.c.id)]).\
+            select_from(rjoin).\
+            where(tables.domains.c.deleted == '0')
+
         query = self._apply_criterion(tables.records, query, criterion)
         query = self._apply_tenant_criteria(context, tables.records, query)
         query = self._apply_deleted_criteria(context, tables.records, query)
@@ -827,16 +973,6 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
                 objects.ZoneTransferAcceptList,
                 exceptions.ZoneTransferAcceptNotFound, criterion,
                 one, marker, limit, sort_key, sort_dir)
-
-    def _get_domain_name(self, context, domain_id, all_tenants=False):
-
-        if all_tenants:
-            ctxt = context.elevated()
-            ctxt.all_tenants = True
-        else:
-            ctxt = context
-
-        return self.get_domain(ctxt, domain_id).name
 
     def create_zone_transfer_accept(self, context, zone_transfer_accept):
 

@@ -51,6 +51,9 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self.assertIn('created_at', response.json['recordset'])
         self.assertIsNone(response.json['recordset']['updated_at'])
         self.assertIn('records', response.json['recordset'])
+        # The action and status are NONE and ACTIVE as there are no records
+        self.assertEqual('NONE', response.json['recordset']['action'])
+        self.assertEqual('ACTIVE', response.json['recordset']['status'])
 
     def test_create_recordset_with_records(self):
         # Prepare a RecordSet fixture
@@ -65,7 +68,7 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
             '/zones/%s/recordsets' % self.domain['id'], {'recordset': fixture})
 
         # Check the headers are what we expect
-        self.assertEqual(201, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
@@ -74,6 +77,18 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         # Check the values returned are what we expect
         self.assertIn('records', response.json['recordset'])
         self.assertEqual(2, len(response.json['recordset']['records']))
+        self.assertEqual('CREATE', response.json['recordset']['action'])
+        self.assertEqual('PENDING', response.json['recordset']['status'])
+
+        # Check the zone's status is as expected
+        response = self.client.get('/zones/%s' % self.domain['id'],
+                                   headers=[('Accept', 'application/json')])
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('zone', response.json)
+        self.assertEqual('UPDATE', response.json['zone']['action'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
 
     def test_create_recordset_invalid_id(self):
         self._assert_invalid_uuid(self.client.post, '/zones/%s/recordsets')
@@ -161,8 +176,12 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self.assertIn('links', response.json)
         self.assertIn('self', response.json['links'])
 
-        # We should start with 2 recordsets for SOA & NS
+        # We should start with 2 pending recordsets for SOA & NS
+        # pending because pool manager is not active
         self.assertEqual(2, len(response.json['recordsets']))
+        for recordset in response.json['recordsets']:
+            self.assertEqual('CREATE', recordset['action'])
+            self.assertEqual('PENDING', recordset['status'])
 
         soa = self.central_service.find_recordset(
             self.admin_context, criterion={'domain_id': self.domain['id'],
@@ -243,7 +262,7 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self.assertEqual(200, response.status_int)
 
         # now delete the domain and get the recordsets
-        self.client.delete('/zones/%s' % zone['id'], status=204)
+        self.client.delete('/zones/%s' % zone['id'], status=202)
 
         # Simulate the domain having been deleted on the backend
         domain_serial = self.central_service.get_domain(
@@ -276,6 +295,9 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self.assertIsNone(response.json['recordset']['updated_at'])
         self.assertEqual(recordset['name'], response.json['recordset']['name'])
         self.assertEqual(recordset['type'], response.json['recordset']['type'])
+        # The action and status are NONE and ACTIVE as there are no records
+        self.assertEqual('NONE', response.json['recordset']['action'])
+        self.assertEqual('ACTIVE', response.json['recordset']['status'])
 
     def test_get_recordset_invalid_id(self):
         self._assert_invalid_uuid(self.client.get, '/zones/%s/recordsets/%s')
@@ -323,10 +345,27 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self.assertIn('id', response.json['recordset'])
         self.assertIsNotNone(response.json['recordset']['updated_at'])
         self.assertEqual('Tester', response.json['recordset']['description'])
+        # The action and status are NONE and ACTIVE as there are no records
+        self.assertEqual('NONE', response.json['recordset']['action'])
+        self.assertEqual('ACTIVE', response.json['recordset']['status'])
+
+        # Check the zone's status is as expected
+        response = self.client.get('/zones/%s' % recordset['domain_id'],
+                                   headers=[('Accept', 'application/json')])
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('zone', response.json)
+        self.assertEqual('UPDATE', response.json['zone']['action'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
 
     def test_update_recordset_with_record_create(self):
         # Create a recordset
         recordset = self.create_recordset(self.domain, 'A')
+
+        # The action and status are NONE and ACTIVE as there are no records
+        self.assertEqual('NONE', recordset['action'])
+        self.assertEqual('ACTIVE', recordset['status'])
 
         # Prepare an update body
         body = {'recordset': {'description': 'Tester',
@@ -334,10 +373,10 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
 
         url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
                                            recordset['id'])
-        response = self.client.put_json(url, body, status=200)
+        response = self.client.put_json(url, body, status=202)
 
         # Check the headers are what we expect
-        self.assertEqual(200, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
@@ -348,6 +387,18 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self.assertEqual(2, len(response.json['recordset']['records']))
         self.assertEqual(set(['192.0.2.1', '192.0.2.2']),
                          set(response.json['recordset']['records']))
+        self.assertEqual('UPDATE', response.json['recordset']['action'])
+        self.assertEqual('PENDING', response.json['recordset']['status'])
+
+        # Check the zone's status is as expected
+        response = self.client.get('/zones/%s' % recordset['domain_id'],
+                                   headers=[('Accept', 'application/json')])
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('zone', response.json)
+        self.assertEqual('UPDATE', response.json['zone']['action'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
 
     def test_update_recordset_with_record_replace(self):
         # Create a recordset with one record
@@ -360,10 +411,10 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
 
         url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
                                            recordset['id'])
-        response = self.client.put_json(url, body, status=200)
+        response = self.client.put_json(url, body, status=202)
 
         # Check the headers are what we expect
-        self.assertEqual(200, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
@@ -374,6 +425,16 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self.assertEqual(2, len(response.json['recordset']['records']))
         self.assertEqual(set(['192.0.2.201', '192.0.2.202']),
                          set(response.json['recordset']['records']))
+
+        # Check the zone's status is as expected
+        response = self.client.get('/zones/%s' % recordset['domain_id'],
+                                   headers=[('Accept', 'application/json')])
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('zone', response.json)
+        self.assertEqual('UPDATE', response.json['zone']['action'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
 
     def test_update_recordset_with_record_clear(self):
         # Create a recordset with one record
@@ -397,6 +458,16 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         # Check the values returned are what we expect
         self.assertIn('records', response.json['recordset'])
         self.assertEqual(0, len(response.json['recordset']['records']))
+
+        # Check the zone's status is as expected
+        response = self.client.get('/zones/%s' % recordset['domain_id'],
+                                   headers=[('Accept', 'application/json')])
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('zone', response.json)
+        self.assertEqual('UPDATE', response.json['zone']['action'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
 
     def test_update_recordset_invalid_id(self):
         self._assert_invalid_uuid(
@@ -471,7 +542,48 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
 
         url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
                                            recordset['id'])
-        self.client.delete(url, status=204)
+        response = self.client.delete(url, status=202)
+
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('recordset', response.json)
+        # Currently recordset does not have a status field. As there are no
+        # records, the recordset action/status show up as 'NONE', 'ACTIVE'
+        self.assertEqual('NONE', response.json['recordset']['action'])
+        self.assertEqual('ACTIVE', response.json['recordset']['status'])
+
+        # Check the zone's status is as expected
+        response = self.client.get('/zones/%s' % recordset['domain_id'],
+                                   headers=[('Accept', 'application/json')])
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('zone', response.json)
+        self.assertEqual('UPDATE', response.json['zone']['action'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
+
+    def test_delete_recordset_with_records(self):
+        # Create a recordset with one record
+        recordset = self.create_recordset(self.domain, 'A')
+        self.create_record(self.domain, recordset)
+
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+        response = self.client.delete(url, status=202)
+
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('recordset', response.json)
+        self.assertEqual('DELETE', response.json['recordset']['action'])
+        self.assertEqual('PENDING', response.json['recordset']['status'])
+
+        # Check the zone's status is as expected
+        response = self.client.get('/zones/%s' % recordset['domain_id'],
+                                   headers=[('Accept', 'application/json')])
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+        self.assertIn('zone', response.json)
+        self.assertEqual('UPDATE', response.json['zone']['action'])
+        self.assertEqual('PENDING', response.json['zone']['status'])
 
     @patch.object(central_service.Service, 'delete_recordset',
                   side_effect=exceptions.RecordSetNotFound())
@@ -533,3 +645,102 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
 
         # But there should be four in total (NS/SOA + the created)
         self.assertEqual(4, response.json['metadata']['total_count'])
+
+    # Secondary Zones specific tests
+    def test_get_secondary_zone_recordset(self):
+        fixture = self.get_domain_fixture('SECONDARY', 1)
+        fixture['email'] = 'root@example.com'
+        secondary = self.create_domain(**fixture)
+
+        # Create a recordset
+        recordset = self.create_recordset(secondary)
+
+        url = '/zones/%s/recordsets/%s' % (secondary['id'], recordset['id'])
+        response = self.client.get(url)
+
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+
+        # Check the body structure is what we expect
+        self.assertIn('recordset', response.json)
+        self.assertIn('links', response.json['recordset'])
+        self.assertIn('self', response.json['recordset']['links'])
+
+        # Check the values returned are what we expect
+        self.assertIn('id', response.json['recordset'])
+        self.assertIn('created_at', response.json['recordset'])
+        self.assertIsNone(response.json['recordset']['updated_at'])
+        self.assertEqual(recordset['name'], response.json['recordset']['name'])
+        self.assertEqual(recordset['type'], response.json['recordset']['type'])
+
+    def test_get_secondary_zone_recordsets(self):
+        fixture = self.get_domain_fixture('SECONDARY', 1)
+        fixture['email'] = 'foo@bar.io'
+        secondary = self.create_domain(**fixture)
+
+        url = '/zones/%s/recordsets' % secondary['id']
+
+        response = self.client.get(url)
+
+        # Check the headers are what we expect
+        self.assertEqual(200, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+
+        # Check the body structure is what we expect
+        self.assertIn('recordsets', response.json)
+        self.assertIn('links', response.json)
+        self.assertIn('self', response.json['links'])
+
+        # We should start with 2 recordsets for SOA & NS
+        self.assertEqual(1, len(response.json['recordsets']))
+
+        soa = self.central_service.find_recordset(
+            self.admin_context, criterion={'domain_id': secondary['id'],
+                                           'type': 'SOA'})
+        data = [self.create_recordset(secondary,
+                name='x-%s.%s' % (i, secondary['name']))
+                for i in xrange(0, 10)]
+        data.insert(0, soa)
+
+        self._assert_paging(data, url, key='recordsets')
+
+        self._assert_invalid_paging(data, url, key='recordsets')
+
+    def test_create_secondary_zone_recordset(self):
+        fixture = self.get_domain_fixture('SECONDARY', 1)
+        fixture['email'] = 'foo@bar.io'
+        secondary = self.create_domain(**fixture)
+
+        fixture = self.get_recordset_fixture(secondary['name'], fixture=0)
+
+        url = '/zones/%s/recordsets' % secondary['id']
+        self._assert_exception('forbidden', 403, self.client.post_json, url,
+                               {'recordset': fixture})
+
+    def test_update_secondary_zone_recordset(self):
+        fixture = self.get_domain_fixture('SECONDARY', 1)
+        fixture['email'] = 'foo@bar.io'
+        secondary = self.create_domain(**fixture)
+
+        # Set the context so that we can create a RRSet
+        recordset = self.create_recordset(secondary)
+
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+
+        self._assert_exception('forbidden', 403, self.client.put_json, url,
+                               {'recordset': {'ttl': 100}})
+
+    def test_delete_secondary_zone_recordset(self):
+        fixture = self.get_domain_fixture('SECONDARY', 1)
+        fixture['email'] = 'foo@bar.io'
+        secondary = self.create_domain(**fixture)
+
+        # Set the context so that we can create a RRSet
+        recordset = self.create_recordset(secondary)
+
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+
+        self._assert_exception('forbidden', 403, self.client.delete, url)

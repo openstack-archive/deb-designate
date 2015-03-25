@@ -14,6 +14,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import dns
+import dns.opcode
+import dns.rcode
+import dns.message
+import dns.flags
+import dns.opcode
 from oslo.config import cfg
 from oslo_log import log as logging
 
@@ -51,6 +56,7 @@ class RequestHandler(object):
                  {'masters': self.masters})
 
         self.allow_notify = CONF['service:agent'].allow_notify
+        self.transfer_source = CONF['service:agent'].transfer_source
         backend_driver = cfg.CONF['service:agent'].backend_driver
         self.backend = agent_backend.get_backend(backend_driver, self)
 
@@ -109,16 +115,18 @@ class RequestHandler(object):
         serial = self.backend.find_domain_serial(domain_name)
 
         if serial is not None:
-            LOG.warn(_LW("Refusing CREATE for %(name)s, zone already exists") %
+            LOG.warn(_LW("Not creating %(name)s, zone already exists") %
                  {'name': domain_name})
-            response.set_rcode(dns.rcode.from_text("REFUSED"))
+            # Provide an authoritative answer
+            response.flags |= dns.flags.AA
             return response
 
         LOG.debug("Received %(verb)s for %(name)s from %(host)s" %
                  {'verb': "CREATE", 'name': domain_name, 'host': requester})
 
         try:
-            zone = dnsutils.do_axfr(domain_name, self.masters)
+            zone = dnsutils.do_axfr(domain_name, self.masters,
+                source=self.transfer_source)
             self.backend.create_domain(zone)
         except Exception:
             response.set_rcode(dns.rcode.from_text("SERVFAIL"))
@@ -168,7 +176,8 @@ class RequestHandler(object):
         # Check that the serial is < serial above
 
         try:
-            zone = dnsutils.do_axfr(domain_name, self.masters)
+            zone = dnsutils.do_axfr(domain_name, self.masters,
+                source=self.transfer_source)
             self.backend.update_domain(zone)
         except Exception:
             response.set_rcode(dns.rcode.from_text("SERVFAIL"))
@@ -196,6 +205,15 @@ class RequestHandler(object):
 
         if not self._allowed(request, requester, "DELETE", domain_name):
             response.set_rcode(dns.rcode.from_text("REFUSED"))
+            return response
+
+        serial = self.backend.find_domain_serial(domain_name)
+
+        if serial is None:
+            LOG.warn(_LW("Not deleting %(name)s, zone doesn't exist") %
+                 {'name': domain_name})
+            # Provide an authoritative answer
+            response.flags |= dns.flags.AA
             return response
 
         LOG.debug("Received DELETE for %(name)s from %(host)s" %

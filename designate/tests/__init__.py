@@ -49,7 +49,7 @@ cfg.CONF.import_opt('cache_driver', 'designate.pool_manager',
 cfg.CONF.import_opt('connection',
                     'designate.pool_manager.cache.impl_sqlalchemy',
                     group='pool_manager_cache:sqlalchemy')
-pool_id = cfg.CONF['service:central'].default_pool_id
+default_pool_id = cfg.CONF['service:central'].default_pool_id
 
 
 class TestCase(base.BaseTestCase):
@@ -90,26 +90,54 @@ class TestCase(base.BaseTestCase):
         'name': 'test-key-one',
         'algorithm': 'hmac-md5',
         'secret': 'SomeSecretKey',
+        'scope': 'POOL',
+        'resource_id': '6ca6baef-3305-4ad0-a52b-a82df5752b62',
     }, {
         'name': 'test-key-two',
         'algorithm': 'hmac-sha256',
         'secret': 'AnotherSecretKey',
+        'scope': 'ZONE',
+        'resource_id': '7fbb6304-5e74-4691-bd80-cef3cff5fe2f',
     }]
 
     # The last domain is invalid
-    domain_fixtures = [{
-        'name': 'example.com.',
-        'email': 'example@example.com',
-    }, {
-        'name': 'example.net.',
-        'email': 'example@example.net',
-    }, {
-        'name': 'example.org.',
-        'email': 'example@example.org',
-    }, {
-        'name': 'invalid.com.....',
-        'email': 'example@invalid.com',
-    }]
+    domain_fixtures = {
+        'PRIMARY': [
+            {
+                'name': 'example.com.',
+                'type': 'PRIMARY',
+                'email': 'example@example.com',
+            }, {
+                'name': 'example.net.',
+                'type': 'PRIMARY',
+                'email': 'example@example.net',
+            }, {
+                'name': 'example.org.',
+                'type': 'PRIMARY',
+                'email': 'example@example.org',
+            }, {
+                'name': 'invalid.com.....',
+                'type': 'PRIMARY',
+                'email': 'example@invalid.com',
+            }
+        ],
+        'SECONDARY': [
+            {
+                'name': 'example.com.',
+                'type': 'SECONDARY',
+            }, {
+                'name': 'example.net.',
+                'type': 'SECONDARY',
+            }, {
+                'name': 'example.org.',
+                'type': 'SECONDARY',
+            }, {
+                'name': 'invalid.com.....',
+                'type': 'SECONDARY',
+            }
+        ]
+
+    }
 
     recordset_fixtures = {
         'A': [
@@ -163,19 +191,19 @@ class TestCase(base.BaseTestCase):
     }]
 
     pool_attributes_fixtures = [
-        {'pool_id': pool_id,
+        {'pool_id': default_pool_id,
          'key': 'name_server',
          'value': 'ns1.example.com.'},
-        {'pool_id': pool_id,
+        {'pool_id': default_pool_id,
          'key': 'scope',
          'value': 'public'}
     ]
 
     pool_attribute_nameserver_fixtures = [
-        {'pool_id': pool_id,
+        {'pool_id': default_pool_id,
          'key': 'name_server',
          'value': 'ns1.example.org'},
-        {'pool_id': pool_id,
+        {'pool_id': default_pool_id,
          'key': 'name_server',
          'value': 'ns2.example.org'},
     ]
@@ -193,10 +221,15 @@ class TestCase(base.BaseTestCase):
     }]
 
     pool_fixtures = [
-        {'name': 'test1',
-         'description': 'default description1'},
-        {'name': 'test2',
-         'description': 'default description2'}
+        {'name': 'Pool-One',
+         'description': 'Pool-One description',
+         'attributes': [{'key': 'scope', 'value': 'public'}],
+         'nameservers': [{'key': 'name_server', 'value': 'ns1.example.org.'}]},
+
+        {'name': 'Pool-Two',
+         'description': 'Pool-Two description',
+         'attributes': [{'key': 'scope', 'value': 'public'}],
+         'nameservers': [{'key': 'name_server', 'value': 'ns1.example.org.'}]},
     ]
 
     pool_attribute_fixtures = [
@@ -206,8 +239,8 @@ class TestCase(base.BaseTestCase):
     ]
 
     name_server_fixtures = [
-        ['examplens1.com', 'examplens2.com'],
-        ['examplens1.org', 'examplens2.org']
+        ['examplens1.com.', 'examplens2.com.'],
+        ['examplens1.org.', 'examplens2.org.']
     ]
 
     zone_transfers_request_fixtures = [{
@@ -228,8 +261,6 @@ class TestCase(base.BaseTestCase):
         self.useFixture(self.messaging_conf)
 
         self.config(notification_driver='test')
-
-        self.notifications = self.useFixture(fixtures.NotifierFixture())
 
         self.useFixture(fixtures.RPCFixture(cfg.CONF))
 
@@ -252,9 +283,15 @@ class TestCase(base.BaseTestCase):
         self.db_fixture = self.useFixture(
             fixtures.DatabaseFixture.get_fixture(
                 REPOSITORY, manage_database.INIT_VERSION))
+
+        if os.getenv('DESIGNATE_SQL_DEBUG', True):
+            connection_debug = 50
+        else:
+            connection_debug = 0
+
         self.config(
             connection=self.db_fixture.url,
-            connection_debug=50,
+            connection_debug=connection_debug,
             group='storage:sqlalchemy'
         )
 
@@ -292,9 +329,15 @@ class TestCase(base.BaseTestCase):
                                                   'migrate_repo'))
         db_fixture = self.useFixture(
             fixtures.DatabaseFixture.get_fixture(repository))
+
+        if os.getenv('DESIGNATE_SQL_DEBUG', True):
+            connection_debug = 50
+        else:
+            connection_debug = 0
+
         self.config(
             connection=db_fixture.url,
-            connection_debug=50,
+            connection_debug=connection_debug,
             group='pool_manager_cache:sqlalchemy')
 
     # Config Methods
@@ -311,13 +354,6 @@ class TestCase(base.BaseTestCase):
 
         # Set the rules
         policy.set_rules(rules, default_rule, overwrite)
-
-    # Other Utility Methods
-    def get_notifications(self):
-        return self.notifications.get()
-
-    def reset_notifications(self):
-        self.notifications.clear()
 
     def start_service(self, svc_name, *args, **kw):
         """
@@ -372,10 +408,12 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
-    def get_domain_fixture(self, fixture=0, values=None):
+    def get_domain_fixture(self, domain_type=None, fixture=0, values=None):
+        domain_type = domain_type or 'PRIMARY'
         values = values or {}
 
-        _values = copy.copy(self.domain_fixtures[fixture])
+        _values = copy.copy(self.domain_fixtures[domain_type][fixture])
+
         _values.update(values)
         return _values
 
@@ -449,18 +487,6 @@ class TestCase(base.BaseTestCase):
 
         _values = copy.copy(self.pool_fixtures[fixture])
         _values.update(values)
-        _attribute_values = self.get_pool_attribute_fixture(
-            fixture=fixture, values=None)
-        _values['attributes'] = objects.PoolAttributeList(
-            objects=[objects.PoolAttribute(key=r, value=_attribute_values[r])
-                     for r in _attribute_values])
-
-        _nameserver_values = self.get_nameserver_fixture(
-            fixture=fixture, values=None)
-        _values['nameservers'] = objects.NameServerList(
-            objects=[objects.NameServer(key='name_server', value=r)
-                     for r in _nameserver_values])
-
         return _values
 
     def get_pool_attribute_fixture(self, fixture=0, values=None):
@@ -498,10 +524,11 @@ class TestCase(base.BaseTestCase):
         values = self.get_pool_attribute_nameserver_fixtures(fixture=fixture,
                                                              values=kwargs)
 
-        nameserver = objects.PoolAttribute(**values)
+        nameserver = objects.PoolAttribute.from_dict(values)
 
         # Get the default pool
-        pool = self.central_service.get_pool(self.admin_context, pool_id)
+        pool = self.central_service.get_pool(
+            self.admin_context, default_pool_id)
 
         # Add the new PoolAttribute to the pool as a nameserver
         pool.nameservers.append(nameserver)
@@ -522,16 +549,18 @@ class TestCase(base.BaseTestCase):
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_tld_fixture(fixture=fixture, values=kwargs)
-        tld = objects.Tld(**values)
-        return self.central_service.create_tld(context, tld=tld)
+
+        return self.central_service.create_tld(
+            context, objects.Tld.from_dict(values))
 
     def create_default_tld(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_default_tld_fixture(fixture=fixture, values=kwargs)
-        tld = objects.Tld(**values)
-        return self.central_service.create_tld(context, tld=tld)
+
+        return self.central_service.create_tld(
+            context, objects.Tld.from_dict(values))
 
     def create_default_tlds(self):
         for index in range(len(self.default_tld_fixtures)):
@@ -545,18 +574,20 @@ class TestCase(base.BaseTestCase):
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_tsigkey_fixture(fixture=fixture, values=kwargs)
+
         return self.central_service.create_tsigkey(
-            context, objects.TsigKey(**values))
+            context, objects.TsigKey.from_dict(values))
 
     def create_domain(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
+        domain_type = kwargs.pop('type', None)
 
         try:
             # We always need a server to create a server
             nameservers = self.storage.find_pool_attributes(
                 context=self.admin_context,
-                criterion={'pool_id': pool_id,
+                criterion={'pool_id': default_pool_id,
                            'key': 'name_server'}
             )
             if len(nameservers) == 0:
@@ -564,13 +595,14 @@ class TestCase(base.BaseTestCase):
         except exceptions.DuplicatePoolAttribute:
             pass
 
-        values = self.get_domain_fixture(fixture=fixture, values=kwargs)
+        values = self.get_domain_fixture(domain_type=domain_type,
+                                         fixture=fixture, values=kwargs)
 
         if 'tenant_id' not in values:
             values['tenant_id'] = context.tenant
 
         return self.central_service.create_domain(
-            context, objects.Domain(**values))
+            context, objects.Domain.from_dict(values))
 
     def create_recordset(self, domain, type='A', **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -579,8 +611,9 @@ class TestCase(base.BaseTestCase):
         values = self.get_recordset_fixture(domain['name'], type=type,
                                             fixture=fixture,
                                             values=kwargs)
+
         return self.central_service.create_recordset(
-            context, domain['id'], recordset=objects.RecordSet(**values))
+            context, domain['id'], objects.RecordSet.from_dict(values))
 
     def create_record(self, domain, recordset, **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -588,20 +621,19 @@ class TestCase(base.BaseTestCase):
 
         values = self.get_record_fixture(recordset['type'], fixture=fixture,
                                          values=kwargs)
+
         return self.central_service.create_record(
-            context,
-            domain['id'],
-            recordset['id'],
-            record=objects.Record(**values))
+            context, domain['id'], recordset['id'],
+            objects.Record.from_dict(values))
 
     def create_blacklist(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
         values = self.get_blacklist_fixture(fixture=fixture, values=kwargs)
-        blacklist = objects.Blacklist(**values)
+
         return self.central_service.create_blacklist(
-            context, blacklist=blacklist)
+            context, objects.Blacklist.from_dict(values))
 
     def create_pool(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -613,7 +645,7 @@ class TestCase(base.BaseTestCase):
             values['tenant_id'] = context.tenant
 
         return self.central_service.create_pool(
-            context, objects.Pool(**values))
+            context, objects.Pool.from_dict(values))
 
     def create_zone_transfer_request(self, domain, **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -625,10 +657,8 @@ class TestCase(base.BaseTestCase):
         if 'domain_id' not in values:
             values['domain_id'] = domain.id
 
-        zone_transfer_request = objects.ZoneTransferRequest(**values)
-
         return self.central_service.create_zone_transfer_request(
-            context, zone_transfer_request=zone_transfer_request)
+            context, objects.ZoneTransferRequest.from_dict(values))
 
     def create_zone_transfer_accept(self, zone_transfer_request, **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -647,10 +677,8 @@ class TestCase(base.BaseTestCase):
         if 'key' not in values:
             values['key'] = zone_transfer_request.key
 
-        zone_transfer_accept = objects.ZoneTransferAccept(**values)
-
         return self.central_service.create_zone_transfer_accept(
-            context, zone_transfer_accept)
+            context, objects.ZoneTransferAccept.from_dict(values))
 
     def create_pool_attribute(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
@@ -658,12 +686,11 @@ class TestCase(base.BaseTestCase):
 
         values = self.get_pool_attributes_fixture(fixture=fixture,
                                                   values=kwargs)
-        pool_attribute = objects.PoolAttribute(**values)
+
+        # TODO(kiall): We shouldn't be assuming the default_pool_id here
         return self.storage.create_pool_attribute(
-            context,
-            pool_attribute.pool_id,
-            pool_attribute
-        )
+            context, default_pool_id,
+            objects.PoolAttribute.from_dict(values))
 
     def _ensure_interface(self, interface, implementation):
         for name in interface.__abstractmethods__:

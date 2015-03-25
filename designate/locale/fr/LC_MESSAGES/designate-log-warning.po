@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Designate\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2015-01-24 06:08+0000\n"
-"PO-Revision-Date: 2015-01-24 02:38+0000\n"
+"POT-Creation-Date: 2015-03-19 06:06+0000\n"
+"PO-Revision-Date: 2015-03-17 13:34+0000\n"
 "Last-Translator: openstackjenkins <jenkins@openstack.org>\n"
 "Language-Team: French (http://www.transifex.com/projects/p/designate/"
 "language/fr/)\n"
@@ -20,26 +20,27 @@ msgstr ""
 "Generated-By: Babel 1.3\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
-#: designate/dnsutils.py:195
+#: designate/service.py:292
 #, python-format
 msgid "TCP Timeout from: %(host)s:%(port)d"
 msgstr ""
 
-#: designate/dnsutils.py:248
-msgid "Both sock_udp and client are None"
-msgstr ""
-
-#: designate/agent/handler.py:112
+#: designate/agent/handler.py:118
 #, python-format
-msgid "Refusing CREATE for %(name)s, zone already exists"
+msgid "Not creating %(name)s, zone already exists"
 msgstr ""
 
-#: designate/agent/handler.py:154
+#: designate/agent/handler.py:162
 #, python-format
 msgid "Refusing NOTIFY for %(name)s, doesn't exist"
 msgstr ""
 
-#: designate/agent/handler.py:218
+#: designate/agent/handler.py:213
+#, python-format
+msgid "Not deleting %(name)s, zone doesn't exist"
+msgstr ""
+
+#: designate/agent/handler.py:236
 #, python-format
 msgid "%(verb)s for %(name)s from %(server)s refused"
 msgstr ""
@@ -48,14 +49,14 @@ msgstr ""
 msgid "Request authorized to bypass maintenance mode"
 msgstr "Requête non assujettie au mode de maintenance"
 
-#: designate/backend/base.py:121
+#: designate/backend/base.py:112
 #, python-format
 msgid "Failed to delete domain '%(domain)s' during sync. Message: %(message)s"
 msgstr ""
 "N'a pas pu supprimer le domaine '%(domain)s' pendant la sync. Message : "
 "%(message)s"
 
-#: designate/backend/base.py:147
+#: designate/backend/base.py:138
 #, python-format
 msgid ""
 "Failed to delete record '%(record)s' in domain '%(domain)s' during sync. "
@@ -84,28 +85,62 @@ msgstr "**** Étape manuelle de post-migration requise ****"
 msgid "Please issue this query: %s"
 msgstr "Veuillez lancer cette demande : %s"
 
-#: designate/mdns/notify.py:109
+#: designate/central/service.py:61
+msgid "Deadlock detected. Retrying..."
+msgstr ""
+
+#: designate/central/service.py:1019
+#, python-format
+msgid "Abandoning zone '%(zone)s'"
+msgstr ""
+
+#: designate/mdns/handler.py:116
+#, python-format
+msgid "NOTIFY for %(name)s from non-master server %(addr)s, ignoring."
+msgstr ""
+
+#: designate/mdns/handler.py:224
+#, python-format
+msgid "DomainNotFound while handling axfr request. Question was %(qr)s"
+msgstr ""
+
+#: designate/mdns/handler.py:230
+#, python-format
+msgid "Forbidden while handling axfr request. Question was %(qr)s"
+msgstr ""
+
+#: designate/mdns/handler.py:288
+#, python-format
+msgid "DomainNotFound while handling query request. Question was %(qr)s"
+msgstr ""
+
+#: designate/mdns/handler.py:294
+#, python-format
+msgid "Forbidden while handling query request. Question was %(qr)s"
+msgstr ""
+
+#: designate/mdns/notify.py:149
 #, python-format
 msgid ""
 "Got lower serial for '%(zone)s' to '%(host)s:%(port)s'. Expected:'%(es)d'. "
 "Got:'%(as)d'.Retries left='%(retries)d'"
 msgstr ""
 
-#: designate/mdns/notify.py:169
+#: designate/mdns/notify.py:206
 #, python-format
 msgid ""
 "Got Timeout while trying to send '%(msg)s' for '%(zone)s' to '%(server)s:"
 "%(port)d'. Timeout='%(timeout)d' seconds. Retry='%(retry)d'"
 msgstr ""
 
-#: designate/mdns/notify.py:181
+#: designate/mdns/notify.py:218
 #, python-format
 msgid ""
 "Got BadResponse while trying to send '%(msg)s' for '%(zone)s' to '%(server)s:"
 "%(port)d'. Timeout='%(timeout)d' seconds. Retry='%(retry)d'"
 msgstr ""
 
-#: designate/mdns/notify.py:194
+#: designate/mdns/notify.py:237
 #, python-format
 msgid ""
 "Failed to get expected response while trying to send '%(msg)s' for "
@@ -120,37 +155,49 @@ msgstr ""
 "L'appel à Neutron s'est traduit par un 401, veuillez procéder à des "
 "investigations."
 
+#: designate/notification_handler/base.py:123
+#: designate/notification_handler/base.py:175
+msgid ""
+"Deprecation notice: Unmanaged designate-sink records are being deprecated "
+"please update the call to remove managed=False"
+msgstr ""
+
 #: designate/openstack/common/loopingcall.py:87
 #, python-format
-msgid "task %(func_name)s run outlasted interval by %(delay).2f sec"
-msgstr "la tâche %(func_name)s a dépassé l'intervalle de %(delay).2f sec"
+msgid "task %(func_name)r run outlasted interval by %(delay).2f sec"
+msgstr ""
 
-#: designate/openstack/common/service.py:357
+#: designate/openstack/common/service.py:355
 #, python-format
 msgid "pid %d not in child list"
 msgstr "pid %d ne fait pas partie de la liste enfant"
 
-#: designate/pool_manager/service.py:187
+#: designate/pool_manager/service.py:186
 #, python-format
-msgid "Consensus not reached for deleting domain %(domain)s"
+msgid "Consensus not reached for creating domain %(domain)s"
 msgstr ""
 
-#: designate/pool_manager/service.py:249
+#: designate/pool_manager/service.py:286
 #, python-format
 msgid "For domain %(domain)s the error serial is %(error_serial)s."
 msgstr ""
 
-#: designate/pool_manager/service.py:326
+#: designate/pool_manager/service.py:367
 #, python-format
 msgid "Failed to create domain %(domain)s on server %(server)s."
 msgstr ""
 
-#: designate/pool_manager/service.py:374
+#: designate/pool_manager/service.py:404
 #, python-format
 msgid "Failed to delete domain %(domain)s from server %(server)s."
 msgstr ""
 
-#: designate/sink/service.py:48
+#: designate/pool_manager/service.py:416
+#, python-format
+msgid "Consensus not reached for deleting domain %(domain)s"
+msgstr ""
+
+#: designate/sink/service.py:52
 msgid "No designate-sink handlers enabled or loaded"
 msgstr "Aucun gestionnaire designate-sink n'a été activé ou téléchargé"
 

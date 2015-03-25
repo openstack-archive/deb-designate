@@ -1,11 +1,8 @@
+.. _production-architecture:
+
 =============================
 Production Architecture
 =============================
-
-Multi-Zone Architecture
------------------------
-
-.. image:: images/Designate-MultiZone.png
 
 Outline
 -------
@@ -27,7 +24,10 @@ Roles
 A Designate deploy breaks down into several key roles:
 
 - `Designate API`_
+- `Designate Sink`_
 - `Designate Central`_
+- `Designate MiniDNS`_
+- `Designate Pool Manager`_
 - `Message Queue`_
 - `Database`_ (MySQL or derivative)
 - `DNS Backend`_
@@ -38,13 +38,21 @@ Typically, API nodes would be made available in multiple AZs, providing redundan
 
 In a Multi-AZ deployment, the API nodes should be configured to talk to all members of the MQ Cluster - so that in the event of MQ node failing, requests continue to flow to the MQ.
 
+Designate Sink
+~~~~~~~~~~~~~~~~~~~~~~~
+In a Multi-AZ deployment, the sink node should be configured to talk to all members of the MQ Cluster - so that in the event of MQ node failing, requests continue to flow to the MQ.
+
 Designate Central
 ~~~~~~~~~~~~~~~~~~~~~~~
 In a Multi-AZ deployment, the Central nodes should be configured to talk to all members of the MQ Cluster - so that in the event of MQ node failing, requests continue to be processed.
 
-Designate Sink
+Designate MiniDNS
 ~~~~~~~~~~~~~~~~~~~~~~~
-In a Multi-AZ deployment, the sink node should be configured to talk to all members of the MQ Cluster - so that in the event of MQ node failing, requests continue to flow to the MQ.
+In a Multi-AZ deployment, the MiniDNS nodes should be configured to talk to all members of the MQ Cluster - so that in the event of MQ node failing, requests continue to be processed. It should also be configured to talk to multiple DB servers, to allow for reliable access to the data store
+
+Designate Pool Manager
+~~~~~~~~~~~~~~~~~~~~~~~
+In a Multi-AZ deployment, the Pool Manager nodes should be configured to talk to all members of the MQ Cluster - so that in the event of MQ node failing, requests continue to be processed.
 
 Message Queue
 ~~~~~~~~~~~~~

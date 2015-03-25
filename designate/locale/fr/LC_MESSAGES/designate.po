@@ -8,8 +8,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version:  Designate\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2015-01-22 06:12+0000\n"
-"PO-Revision-Date: 2015-01-21 21:43+0000\n"
+"POT-Creation-Date: 2015-03-16 06:05+0000\n"
+"PO-Revision-Date: 2015-03-13 18:48+0000\n"
 "Last-Translator: openstackjenkins <jenkins@openstack.org>\n"
 "Language-Team: French "
 "(http://www.transifex.com/projects/p/designate/language/fr/)\n"
@@ -19,31 +19,48 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 1.3\n"
 
-#: designate/policy.py:95
+#: designate/policy.py:100
 #, python-format
 msgid "Policy check succeeded for rule '%(rule)s' on target %(target)s"
 msgstr ""
 "Vérification de stratégie réussie pour la règle '%(rule)s' pour la cible "
 "%(target)s"
 
-#: designate/policy.py:99
+#: designate/policy.py:104
 #, python-format
 msgid "Policy check failed for rule '%(rule)s' on target %(target)s"
 msgstr ""
 "Vérification de stratégie ayant échoué pour la règle '%(rule)s' pour la "
 "cible %(target)s"
 
-#: designate/service.py:73
+#: designate/service.py:90
 #, python-format
-msgid "Starting %(topic)s node (version %(version_string)s)"
-msgstr "Démarrage du noeud %(topic)s (version %(version_string)s)"
+msgid "Starting %(name)s service (version: %(version)s)"
+msgstr ""
 
-#: designate/service.py:76
+#: designate/service.py:95
 #, python-format
-msgid "Creating RPC server on topic '%s'"
-msgstr "Créer un serveur RPC pour topic '%s'"
+msgid "Stopping %(name)s service"
+msgstr ""
 
-#: designate/service.py:159
+#: designate/service.py:107
+#, python-format
+msgid "Creating RPC Server on topic '%s'"
+msgstr ""
+
+#: designate/service.py:123
+#, python-format
+msgid "Starting RPC server on topic '%s'"
+msgstr ""
+
+#: designate/service.py:204
+#, python-format
+msgid "Could not bind to %(host)s:%(port)s after trying for 30 seconds"
+msgstr ""
+"Impossible de se connecter au %(host)s:%(port)s après un effort d'une "
+"durée de 30 secondes"
+
+#: designate/service.py:349
 msgid "serve() can only be called once"
 msgstr "serve() ne peut être appelé qu'une seule fois"
 
@@ -63,34 +80,6 @@ msgstr "sudo a échoué, continue comme si de rien n'était"
 #: designate/cmd/manage.py:119
 msgid "Please re-run designate-manage as root."
 msgstr "Veuillez exécuter designate-manage à nouveau en tant que root"
-
-#: designate/openstack/common/policy.py:111
-msgid "The JSON file that defines policies."
-msgstr "Le fichier JSON qui définit les stratégies."
-
-#: designate/openstack/common/policy.py:114
-msgid "Default rule. Enforced when a requested rule is not found."
-msgstr "Règle par défaut. Respectée quand une règle demandée n'est pas trouvée."
-
-#: designate/openstack/common/policy.py:118
-msgid ""
-"Directories where policy configuration files are stored. They can be "
-"relative to any directory in the search path defined by the config_dir "
-"option, or absolute paths. The file defined by policy_file must exist for"
-" these directories to be searched."
-msgstr ""
-
-#: designate/openstack/common/policy.py:142
-#, python-format
-msgid "Policy doesn't allow %s to be performed."
-msgstr "Stratégie ne permettant pas d'effectuer %s."
-
-#: designate/openstack/common/policy.py:239
-#, python-format
-msgid "Rules must be an instance of dict or Rules, got %s instead"
-msgstr ""
-"Les règles doivent représenter une instance de dict ou Règles, %s obtenu "
-"à la place"
 
 #: designate/openstack/common/sslutils.py:53
 #, python-format
@@ -116,81 +105,8 @@ msgstr ""
 "valeur des l'options cert_file et key_file dans votre fichier de "
 "configuration"
 
-#: designate/openstack/common/sslutils.py:101
+#: designate/openstack/common/sslutils.py:105
 #, python-format
 msgid "Invalid SSL version : %s"
 msgstr "Version SSL non valide : %s"
-
-#: designate/openstack/common/versionutils.py:90
-#, python-format
-msgid ""
-"%(what)s is deprecated as of %(as_of)s in favor of %(in_favor_of)s and "
-"may be removed in %(remove_in)s."
-msgstr ""
-"%(what)s déprécié depuis %(as_of)s au bénéfice de %(in_favor_of)s et sera"
-" sans doute retiré dans %(remove_in)s."
-
-#: designate/openstack/common/versionutils.py:94
-#, python-format
-msgid ""
-"%(what)s is deprecated as of %(as_of)s and may be removed in "
-"%(remove_in)s. It will not be superseded."
-msgstr ""
-"%(what)s déprécié depuis %(as_of)s et sera sans doute retiré dans "
-"%(remove_in)s. Ne sera pas remplacé."
-
-#: designate/openstack/common/versionutils.py:98
-#, python-format
-msgid "%(what)s is deprecated as of %(as_of)s in favor of %(in_favor_of)s."
-msgstr "%(what)s déprécié depuis %(as_of)s au bénéfice de %(in_favor_of)s."
-
-#: designate/openstack/common/versionutils.py:101
-#, python-format
-msgid "%(what)s is deprecated as of %(as_of)s. It will not be superseded."
-msgstr "%(what)s déprécié depuis %(as_of)s. Ne sera pas remplacé."
-
-#: designate/openstack/deprecated/exception.py:104
-msgid "Uncaught exception"
-msgstr "Exception non interceptée"
-
-#: designate/openstack/deprecated/wsgi.py:111
-#, python-format
-msgid "Could not bind to %(host)s:%(port)s after trying for 30 seconds"
-msgstr ""
-"Impossible de se connecter au %(host)s:%(port)s après un effort d'une "
-"durée de 30 secondes"
-
-#: designate/openstack/deprecated/wsgi.py:373
-msgid "Unsupported Content-Type"
-msgstr "Type de contenu non pris en charge"
-
-#: designate/openstack/deprecated/wsgi.py:376
-msgid "Malformed request body"
-msgstr "Corps de texte de la requête malformé"
-
-#: designate/openstack/deprecated/wsgi.py:661
-msgid "Empty body provided in request"
-msgstr "Aucun contenu dans la requête"
-
-#: designate/openstack/deprecated/wsgi.py:667
-msgid "Unrecognized Content-Type provided in request"
-msgstr "Type de contenu fourni dans la requête non reconnu"
-
-#: designate/openstack/deprecated/wsgi.py:671
-msgid "No Content-Type provided in request"
-msgstr "Aucun Type de contenu fourni dans la requête"
-
-#: designate/openstack/deprecated/wsgi.py:677
-msgid "Unable to deserialize body as provided Content-Type"
-msgstr ""
-"Impossible de dé sérialiser le corps de contenu fourni par le Type de "
-"contenu"
-
-#: designate/openstack/deprecated/wsgi.py:727
-msgid "cannot understand JSON"
-msgstr "ne comprend pas JSON"
-
-#: designate/openstack/deprecated/wsgi.py:751
-msgid "cannot understand XML"
-msgstr "ne comprend pas XML"
 

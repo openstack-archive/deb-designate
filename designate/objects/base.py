@@ -85,21 +85,36 @@ def _schema_ref_resolver(uri):
 
 
 def make_class_validator(cls):
+
     schema = {
         '$schema': 'http://json-schema.org/draft-04/hyper-schema',
         'title': cls.obj_name(),
         'description': 'Designate %s Object' % cls.obj_name(),
-        'type': 'object',
-        'additionalProperties': False,
-        'required': [],
-        'properties': {},
     }
 
-    for name, properties in cls.FIELDS.items():
-        schema['properties'][name] = properties.get('schema', {})
+    if issubclass(cls, ListObjectMixin):
 
-        if properties.get('required', False):
-            schema['required'].append(name)
+        schema['type'] = 'array',
+        schema['items'] = {
+            '$ref': 'obj://%s#/' % cls.LIST_ITEM_TYPE.obj_name()
+        }
+
+    else:
+        schema['type'] = 'object'
+        schema['additionalProperties'] = False
+        schema['required'] = []
+        schema['properties'] = {}
+
+        for name, properties in cls.FIELDS.items():
+            if properties.get('relation', False):
+                schema['properties'][name] = {
+                    '$ref': 'obj://%s#/' % properties.get('relation_cls')
+                }
+            else:
+                schema['properties'][name] = properties.get('schema', {})
+
+            if properties.get('required', False):
+                schema['required'].append(name)
 
     resolver = jsonschema.RefResolver.from_schema(
         schema, handlers={'obj': _schema_ref_resolver})
@@ -171,6 +186,33 @@ class DesignateObject(object):
         return instance
 
     @classmethod
+    def from_dict(cls, _dict):
+        instance = cls()
+
+        for field, value in _dict.items():
+            if (field in instance.FIELDS and
+                    instance.FIELDS[field].get('relation', False)):
+
+                # We're dealing with a relation, we'll want to create the
+                # correct object type and recurse
+                relation_cls = cls.obj_cls_from_name(
+                    instance.FIELDS[field]['relation_cls'])
+
+                if isinstance(value, list):
+                    setattr(instance, field, relation_cls.from_list(value))
+                else:
+                    setattr(instance, field, relation_cls.from_dict(value))
+
+            else:
+                setattr(instance, field, value)
+
+        return instance
+
+    @classmethod
+    def from_list(cls, _list):
+        raise NotImplementedError()
+
+    @classmethod
     def obj_name(cls):
         """Return a canonical name for this object which will be used over
         the wire and in validation schemas.
@@ -223,7 +265,9 @@ class DesignateObject(object):
 
         for field in self.FIELDS.keys():
             if self.obj_attr_is_set(field):
-                if isinstance(getattr(self, field), DesignateObject):
+                if isinstance(getattr(self, field), ListObjectMixin):
+                    data[field] = getattr(self, field).to_list()
+                elif isinstance(getattr(self, field), DesignateObject):
                     data[field] = getattr(self, field).to_dict()
                 else:
                     data[field] = getattr(self, field)
@@ -385,7 +429,11 @@ class DictObjectMixin(object):
 
 class ListObjectMixin(object):
     """Mixin to allow DesignateObjects to behave like python lists."""
-    FIELDS = {'objects': {}}
+    FIELDS = {
+        'objects': {
+            'relation': True
+        }
+    }
     LIST_ITEM_TYPE = DesignateObject
 
     @classmethod
@@ -406,6 +454,29 @@ class ListObjectMixin(object):
             primitive['designate_object.original_values']
 
         return instance
+
+    @classmethod
+    def from_list(cls, _list):
+        instance = cls()
+
+        for item in _list:
+            instance.append(cls.LIST_ITEM_TYPE.from_dict(item))
+
+        return instance
+
+    def to_list(self):
+
+        list_ = []
+
+        for item in self.objects:
+            if isinstance(item, ListObjectMixin):
+                list_.append(item.to_list())
+            elif isinstance(item, DesignateObject):
+                list_.append(item.to_dict())
+            else:
+                list_.append(item)
+
+        return list_
 
     def __init__(self, *args, **kwargs):
         super(ListObjectMixin, self).__init__(*args, **kwargs)

@@ -1,11 +1,15 @@
 {
     "admin": "role:admin or is_admin:True",
+    "primary_zone": "target.domain_type:SECONDARY",
+
     "owner": "tenant:%(tenant_id)s",
     "admin_or_owner": "rule:admin or rule:owner",
     "target": "tenant:%(target_tenant_id)s",
     "owner_or_target":"rule:target or rule:owner",
     "admin_or_owner_or_target":"rule:owner_or_target or rule:admin",
     "admin_or_target":"rule:admin or rule:target",
+
+    "domain_primary_or_admin": "('PRIMARY':%(domain_type)s and rule:admin_or_owner) OR ('SECONDARY':%(domain_type)s AND is_admin:True)",
 
     "default": "rule:admin_or_owner",
 
@@ -17,12 +21,6 @@
     "get_quota": "rule:admin_or_owner",
     "set_quota": "rule:admin",
     "reset_quotas": "rule:admin",
-
-    "create_server": "rule:admin",
-    "find_servers": "rule:admin",
-    "get_server": "rule:admin",
-    "update_server": "rule:admin",
-    "delete_server": "rule:admin",
 
     "create_tld": "rule:admin",
     "find_tlds": "rule:admin",
@@ -48,8 +46,18 @@
     "find_domain": "rule:admin_or_owner",
     "update_domain": "rule:admin_or_owner",
     "delete_domain": "rule:admin_or_owner",
+    "abandon_domain": "rule:admin",
     "count_domains": "rule:admin_or_owner",
     "touch_domain": "rule:admin_or_owner",
+
+    "create_recordset": "rule:domain_primary_or_admin",
+    "get_recordsets": "rule:admin_or_owner",
+    "get_recordset": "rule:admin_or_owner",
+    "find_recordsets": "rule:admin_or_owner",
+    "find_recordset": "rule:admin_or_owner",
+    "update_recordset": "rule:domain_primary_or_admin",
+    "delete_recordset": "rule:domain_primary_or_admin",
+    "count_recordset": "rule:admin_or_owner",
 
     "create_record": "rule:admin_or_owner",
     "get_records": "rule:admin_or_owner",

@@ -16,20 +16,24 @@
 # under the License.
 import re
 import collections
+import copy
 import functools
 import threading
 import itertools
 import string
 import random
+import time
 
 from oslo.config import cfg
 from oslo import messaging
 from oslo_log import log as logging
 from oslo_utils import excutils
 from oslo_concurrency import lockutils
+from oslo_db import exception as db_exception
 
 from designate.i18n import _LI
 from designate.i18n import _LC
+from designate.i18n import _LW
 from designate import context as dcontext
 from designate import exceptions
 from designate import network_api
@@ -39,27 +43,85 @@ from designate import quota
 from designate import service
 from designate import utils
 from designate import storage
+from designate.mdns import rpcapi as mdns_rpcapi
 from designate.pool_manager import rpcapi as pool_manager_rpcapi
 
 
 LOG = logging.getLogger(__name__)
 DOMAIN_LOCKS = threading.local()
 NOTIFICATION_BUFFER = threading.local()
+RETRY_STATE = threading.local()
 
 
+def _retry_on_deadlock(exc):
+    """Filter to trigger retry a when a Deadlock is received."""
+    # TODO(kiall): This is a total leak of the SQLA Driver, we'll need a better
+    #              way to handle this.
+    if isinstance(exc, db_exception.DBDeadlock):
+        LOG.warn(_LW("Deadlock detected. Retrying..."))
+        return True
+    return False
+
+
+def retry(cb=None, retries=50, delay=150):
+    """A retry decorator that ignores attempts at creating nested retries"""
+    def outer(f):
+        @functools.wraps(f)
+        def wrapper(self, *args, **kwargs):
+            if not hasattr(RETRY_STATE, 'held'):
+                # Create the state vars if necessary
+                RETRY_STATE.held = False
+                RETRY_STATE.retries = 0
+
+            if not RETRY_STATE.held:
+                # We're the outermost retry decorator
+                RETRY_STATE.held = True
+
+                try:
+                    while True:
+                        try:
+                            result = f(self, *copy.deepcopy(args),
+                                       **copy.deepcopy(kwargs))
+                            break
+                        except Exception as exc:
+                            RETRY_STATE.retries += 1
+                            if RETRY_STATE.retries >= retries:
+                                # Exceeded retry attempts, raise.
+                                raise
+                            elif cb is not None and cb(exc) is False:
+                                # We're not setup to retry on this exception.
+                                raise
+                            else:
+                                # Retry, with a delay.
+                                time.sleep(delay / float(1000))
+
+                finally:
+                    RETRY_STATE.held = False
+                    RETRY_STATE.retries = 0
+
+            else:
+                # We're an inner retry decorator, just pass on through.
+                result = f(self, *copy.deepcopy(args), **copy.deepcopy(kwargs))
+
+            return result
+        return wrapper
+    return outer
+
+
+# TODO(kiall): Get this a better home :)
 def transaction(f):
-    # TODO(kiall): Get this a better home :)
+    @retry(cb=_retry_on_deadlock)
     @functools.wraps(f)
     def wrapper(self, *args, **kwargs):
         self.storage.begin()
         try:
             result = f(self, *args, **kwargs)
+            self.storage.commit()
+            return result
         except Exception:
             with excutils.save_and_reraise_exception():
                 self.storage.rollback()
-        else:
-            self.storage.commit()
-            return result
+
     return wrapper
 
 
@@ -184,13 +246,13 @@ def notification(notification_type):
     return outer
 
 
-class Service(service.RPCService):
-    RPC_API_VERSION = '4.3'
+class Service(service.RPCService, service.Service):
+    RPC_API_VERSION = '5.0'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
-    def __init__(self, *args, **kwargs):
-        super(Service, self).__init__(*args, **kwargs)
+    def __init__(self, threads=None):
+        super(Service, self).__init__(threads=threads)
 
         # Get a storage connection
         storage_driver = cfg.CONF['service:central'].storage_driver
@@ -200,6 +262,10 @@ class Service(service.RPCService):
         self.quota = quota.get_quota()
 
         self.network_api = network_api.get_network_api(cfg.CONF.network_api)
+
+    @property
+    def service_name(self):
+        return 'central'
 
     def start(self):
         # Check to see if there are any TLDs in the database
@@ -215,6 +281,10 @@ class Service(service.RPCService):
 
     def stop(self):
         super(Service, self).stop()
+
+    @property
+    def mdns_api(self):
+        return mdns_rpcapi.MdnsAPI.get_instance()
 
     @property
     def pool_manager_api(self):
@@ -379,7 +449,7 @@ class Service(service.RPCService):
         context.all_tenants = True
 
         # Create wildcard term to catch all subdomains
-        search_term = "*%s" % domain_name
+        search_term = "*.%s" % domain_name
 
         criterion = {'name': search_term}
         subdomains = self.storage.find_domains(context, criterion)
@@ -417,6 +487,7 @@ class Service(service.RPCService):
                                           zone['minimum'])
 
     def _create_soa(self, context, zone):
+        # Need elevated context to get the servers
         elevated_context = context.elevated()
         elevated_context.all_tenants = True
 
@@ -434,12 +505,15 @@ class Service(service.RPCService):
             'type': "SOA",
             'records': recordlist
         }
-        soa = self._create_recordset_in_storage(
+        soa, zone = self._create_recordset_in_storage(
             context, zone, objects.RecordSet(**values),
             increment_serial=False)
         return soa
 
     def _update_soa(self, context, zone):
+        # NOTE: We should not be updating SOA records when a zone is SECONDARY.
+        if zone.type != 'PRIMARY':
+            return
 
         nameservers = self.get_domain_servers(context, zone['id'])
 
@@ -454,6 +528,10 @@ class Service(service.RPCService):
 
     # NS Recordset Methods
     def _create_ns(self, context, zone, nameservers):
+        # NOTE: We should not be creating NS records when a zone is SECONDARY.
+        if zone.type != 'PRIMARY':
+            return
+
         # Create an NS record for each server
         ns_values = []
         for s in nameservers:
@@ -465,13 +543,17 @@ class Service(service.RPCService):
             'type': "NS",
             'records': recordlist
         }
-        ns = self._create_recordset_in_storage(
+        ns, zone = self._create_recordset_in_storage(
             context, zone, objects.RecordSet(**values),
             increment_serial=False)
 
         return ns
 
     def _update_ns(self, context, zone, orig_name, new_name):
+        # NOTE: We should not be updating NS records when a zone is SECONDARY.
+        if zone.type != 'PRIMARY':
+            return
+
         # Get the zone's NS recordset
         ns = self.find_recordset(context,
                                  criterion={'domain_id': zone['id'],
@@ -761,9 +843,15 @@ class Service(service.RPCService):
                              'Please create at least one nameserver'))
             raise exceptions.NoServersConfigured()
 
+        if domain.type == 'SECONDARY' and domain.serial is None:
+            domain.serial = 1
+
         domain = self._create_domain_in_storage(context, domain)
 
         self.pool_manager_api.create_domain(context, domain)
+
+        if domain.type == 'SECONDARY':
+            self.mdns_api.perform_zone_xfr(context, domain)
 
         # If domain is a superdomain, update subdomains
         # with new parent IDs
@@ -781,9 +869,6 @@ class Service(service.RPCService):
 
         domain.action = 'CREATE'
         domain.status = 'PENDING'
-
-        # Set the serial number
-        domain.serial = utils.increment_serial()
 
         domain = self.storage.create_domain(context, domain)
         nameservers = self.get_domain_servers(context, domain['id'])
@@ -885,6 +970,10 @@ class Service(service.RPCService):
         domain = self._update_domain_in_storage(
             context, domain, increment_serial=increment_serial)
 
+        # Fire off a XFR
+        if 'masters' in changes:
+            self.mdns_api.perform_zone_xfr(context, domain)
+
         self.pool_manager_api.update_domain(context, domain)
 
         return domain
@@ -897,9 +986,10 @@ class Service(service.RPCService):
         domain.status = 'PENDING'
 
         if increment_serial:
+            # _increment_domain_serial increments and updates the domain
             domain = self._increment_domain_serial(context, domain)
-
-        domain = self.storage.update_domain(context, domain)
+        else:
+            domain = self.storage.update_domain(context, domain)
 
         return domain
 
@@ -914,7 +1004,10 @@ class Service(service.RPCService):
             'tenant_id': domain.tenant_id
         }
 
-        policy.check('delete_domain', context, target)
+        if hasattr(context, 'abandon') and context.abandon:
+            policy.check('abandon_domain', context, target)
+        else:
+            policy.check('delete_domain', context, target)
 
         # Prevent deletion of a zone which has child zones
         criterion = {'parent_domain_id': domain_id}
@@ -923,9 +1016,12 @@ class Service(service.RPCService):
             raise exceptions.DomainHasSubdomain('Please delete any subdomains '
                                                 'before deleting this domain')
 
-        domain = self._delete_domain_in_storage(context, domain)
-
-        self.pool_manager_api.delete_domain(context, domain)
+        if hasattr(context, 'abandon') and context.abandon:
+            LOG.info(_LW("Abandoning zone '%(zone)s'") % {'zone': domain.name})
+            domain = self.storage.delete_domain(context, domain.id)
+        else:
+            domain = self._delete_domain_in_storage(context, domain)
+            self.pool_manager_api.delete_domain(context, domain)
 
         return domain
 
@@ -1007,13 +1103,14 @@ class Service(service.RPCService):
         target = {
             'domain_id': domain_id,
             'domain_name': domain.name,
+            'domain_type': domain.type,
             'recordset_name': recordset.name,
             'tenant_id': domain.tenant_id,
         }
 
         policy.check('create_recordset', context, target)
 
-        recordset = self._create_recordset_in_storage(
+        recordset, domain = self._create_recordset_in_storage(
             context, domain, recordset, increment_serial=increment_serial)
 
         self.pool_manager_api.update_domain(context, domain)
@@ -1039,9 +1136,11 @@ class Service(service.RPCService):
         self._is_valid_recordset_placement_subdomain(
             context, domain, recordset.name)
 
-        if recordset.records and len(recordset.records) > 0:
+        if recordset.obj_attr_is_set('records') and len(recordset.records) > 0:
             if increment_serial:
-                domain = self._increment_domain_serial(context, domain)
+                # update the zone's status and increment the serial
+                domain = self._update_domain_in_storage(
+                    context, domain, increment_serial)
 
             for record in recordset.records:
                 record.action = 'CREATE'
@@ -1051,7 +1150,8 @@ class Service(service.RPCService):
         recordset = self.storage.create_recordset(context, domain.id,
                                                   recordset)
 
-        return recordset
+        # Return the domain too in case it was updated
+        return (recordset, domain)
 
     def get_recordset(self, context, domain_id, recordset_id):
         domain = self.storage.get_domain(context, domain_id)
@@ -1115,6 +1215,7 @@ class Service(service.RPCService):
 
         target = {
             'domain_id': recordset.obj_get_original_value('domain_id'),
+            'domain_type': domain.type,
             'recordset_id': recordset.obj_get_original_value('id'),
             'domain_name': domain.name,
             'tenant_id': domain.tenant_id
@@ -1122,7 +1223,7 @@ class Service(service.RPCService):
 
         policy.check('update_recordset', context, target)
 
-        recordset = self._update_recordset_in_storage(
+        recordset, domain = self._update_recordset_in_storage(
             context, domain, recordset, increment_serial=increment_serial)
 
         self.pool_manager_api.update_domain(context, domain)
@@ -1148,7 +1249,9 @@ class Service(service.RPCService):
             self._is_valid_ttl(context, ttl)
 
         if increment_serial:
-            domain = self._increment_domain_serial(context, domain)
+            # update the zone's status and increment the serial
+            domain = self._update_domain_in_storage(
+                context, domain, increment_serial)
 
         if recordset.records:
             for record in recordset.records:
@@ -1160,7 +1263,7 @@ class Service(service.RPCService):
         # Update the recordset
         recordset = self.storage.update_recordset(context, recordset)
 
-        return recordset
+        return (recordset, domain)
 
     @notification('dns.recordset.delete')
     @synchronized_domain()
@@ -1176,13 +1279,14 @@ class Service(service.RPCService):
         target = {
             'domain_id': domain_id,
             'domain_name': domain.name,
+            'domain_type': domain.type,
             'recordset_id': recordset.id,
             'tenant_id': domain.tenant_id
         }
 
         policy.check('delete_recordset', context, target)
 
-        recordset = self._delete_recordset_in_storage(
+        recordset, domain = self._delete_recordset_in_storage(
             context, domain, recordset, increment_serial=increment_serial)
 
         self.pool_manager_api.update_domain(context, domain)
@@ -1194,7 +1298,9 @@ class Service(service.RPCService):
                                      increment_serial=True):
 
         if increment_serial:
-            domain = self._increment_domain_serial(context, domain)
+            # update the zone's status and increment the serial
+            domain = self._update_domain_in_storage(
+                context, domain, increment_serial)
 
         if recordset.records:
             for record in recordset.records:
@@ -1202,9 +1308,11 @@ class Service(service.RPCService):
                 record.status = 'PENDING'
                 record.serial = domain.serial
 
+        # Update the recordset's action/status and then delete it
+        self.storage.update_recordset(context, recordset)
         recordset = self.storage.delete_recordset(context, recordset.id)
 
-        return recordset
+        return (recordset, domain)
 
     def count_recordsets(self, context, criterion=None):
         if criterion is None:
@@ -1224,11 +1332,13 @@ class Service(service.RPCService):
     def create_record(self, context, domain_id, recordset_id, record,
                       increment_serial=True):
         domain = self.storage.get_domain(context, domain_id)
+
         recordset = self.storage.get_recordset(context, recordset_id)
 
         target = {
             'domain_id': domain_id,
             'domain_name': domain.name,
+            'domain_type': domain.type,
             'recordset_id': recordset_id,
             'recordset_name': recordset.name,
             'tenant_id': domain.tenant_id
@@ -1236,7 +1346,7 @@ class Service(service.RPCService):
 
         policy.check('create_record', context, target)
 
-        record = self._create_record_in_storage(
+        record, domain = self._create_record_in_storage(
             context, domain, recordset, record,
             increment_serial=increment_serial)
 
@@ -1252,7 +1362,9 @@ class Service(service.RPCService):
         self._enforce_record_quota(context, domain, recordset)
 
         if increment_serial:
-            domain = self._increment_domain_serial(context, domain)
+            # update the zone's status and increment the serial
+            domain = self._update_domain_in_storage(
+                context, domain, increment_serial)
 
         record.action = 'CREATE'
         record.status = 'PENDING'
@@ -1261,7 +1373,7 @@ class Service(service.RPCService):
         record = self.storage.create_record(context, domain.id, recordset.id,
                                             record)
 
-        return record
+        return (record, domain)
 
     def get_record(self, context, domain_id, recordset_id, record_id):
         domain = self.storage.get_domain(context, domain_id)
@@ -1330,6 +1442,7 @@ class Service(service.RPCService):
         target = {
             'domain_id': record.obj_get_original_value('domain_id'),
             'domain_name': domain.name,
+            'domain_type': domain.type,
             'recordset_id': record.obj_get_original_value('recordset_id'),
             'recordset_name': recordset.name,
             'record_id': record.obj_get_original_value('id'),
@@ -1338,7 +1451,7 @@ class Service(service.RPCService):
 
         policy.check('update_record', context, target)
 
-        record = self._update_record_in_storage(
+        record, domain = self._update_record_in_storage(
             context, domain, record, increment_serial=increment_serial)
 
         self.pool_manager_api.update_domain(context, domain)
@@ -1350,7 +1463,9 @@ class Service(service.RPCService):
                                   increment_serial=True):
 
         if increment_serial:
-            domain = self._increment_domain_serial(context, domain)
+            # update the zone's status and increment the serial
+            domain = self._update_domain_in_storage(
+                context, domain, increment_serial)
 
         record.action = 'UPDATE'
         record.status = 'PENDING'
@@ -1359,13 +1474,14 @@ class Service(service.RPCService):
         # Update the record
         record = self.storage.update_record(context, record)
 
-        return record
+        return (record, domain)
 
     @notification('dns.record.delete')
     @synchronized_domain()
     def delete_record(self, context, domain_id, recordset_id, record_id,
                       increment_serial=True):
         domain = self.storage.get_domain(context, domain_id)
+
         recordset = self.storage.get_recordset(context, recordset_id)
         record = self.storage.get_record(context, record_id)
 
@@ -1380,6 +1496,7 @@ class Service(service.RPCService):
         target = {
             'domain_id': domain_id,
             'domain_name': domain.name,
+            'domain_type': domain.type,
             'recordset_id': recordset_id,
             'recordset_name': recordset.name,
             'record_id': record.id,
@@ -1388,7 +1505,7 @@ class Service(service.RPCService):
 
         policy.check('delete_record', context, target)
 
-        record = self._delete_record_in_storage(
+        record, domain = self._delete_record_in_storage(
             context, domain, record, increment_serial=increment_serial)
 
         self.pool_manager_api.update_domain(context, domain)
@@ -1400,7 +1517,9 @@ class Service(service.RPCService):
                                   increment_serial=True):
 
         if increment_serial:
-            domain = self._increment_domain_serial(context, domain)
+            # update the zone's status and increment the serial
+            domain = self._update_domain_in_storage(
+                context, domain, increment_serial)
 
         record.action = 'DELETE'
         record.status = 'PENDING'
@@ -1408,7 +1527,7 @@ class Service(service.RPCService):
 
         record = self.storage.update_record(context, record)
 
-        return record
+        return (record, domain)
 
     def count_records(self, context, criterion=None):
         if criterion is None:
@@ -1691,6 +1810,7 @@ class Service(service.RPCService):
             tenant_id = cfg.CONF['service:central'].managed_resource_tenant_id
 
             zone_values = {
+                'type': 'PRIMARY',
                 'name': zone_name,
                 'email': email,
                 'tenant_id': tenant_id
@@ -1997,6 +2117,8 @@ class Service(service.RPCService):
         # used to indicate the domain has been deleted and not the deleted
         # column.  The deleted column is needed for unique constraints.
         if deleted:
+            # TODO(vinod): Pass a domain to delete_domain rather than id so
+            # that the action, status and serial are updated correctly.
             self.storage.delete_domain(context, domain.id)
 
     def _update_record_status(self, context, domain_id, status, serial):

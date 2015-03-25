@@ -19,7 +19,6 @@ import copy
 from oslo_context import context
 from oslo_log import log as logging
 
-from designate.openstack.common import local
 from designate import policy
 
 
@@ -29,16 +28,16 @@ LOG = logging.getLogger(__name__)
 class DesignateContext(context.RequestContext):
 
     _all_tenants = False
+    _abandon = None
 
     def __init__(self, auth_token=None, user=None, tenant=None, domain=None,
                  user_domain=None, project_domain=None, is_admin=False,
                  read_only=False, show_deleted=False, request_id=None,
-                 resource_uuid=None, roles=None, service_catalog=None,
-                 all_tenants=False, user_identity=None):
+                 resource_uuid=None, overwrite=True, roles=None,
+                 service_catalog=None, all_tenants=False, abandon=None,
+                 tsigkey_id=None, user_identity=None):
         # NOTE: user_identity may be passed in, but will be silently dropped as
         #       it is a generated field based on several others.
-
-        roles = roles or []
         super(DesignateContext, self).__init__(
             auth_token=auth_token,
             user=user,
@@ -50,18 +49,15 @@ class DesignateContext(context.RequestContext):
             read_only=read_only,
             show_deleted=show_deleted,
             request_id=request_id,
-            resource_uuid=resource_uuid)
+            resource_uuid=resource_uuid,
+            overwrite=overwrite)
 
-        self.roles = roles
+        self.roles = roles or []
         self.service_catalog = service_catalog
+        self.tsigkey_id = tsigkey_id
 
         self.all_tenants = all_tenants
-
-        if not hasattr(local.store, 'context'):
-            self.update_store()
-
-    def update_store(self):
-        local.store.context = self
+        self.abandon = abandon
 
     def deepcopy(self):
         d = self.to_dict()
@@ -71,10 +67,29 @@ class DesignateContext(context.RequestContext):
     def to_dict(self):
         d = super(DesignateContext, self).to_dict()
 
+        # Override the user_identity field to account for TSIG. When a TSIG key
+        # is used as authentication e.g. via MiniDNS, it will act as a form
+        # of "user",
+        user = self.user or '-'
+
+        if self.tsigkey_id and not self.user:
+            user = 'TSIG:%s' % self.tsigkey_id
+
+        user_idt = (
+            self.user_idt_format.format(user=user,
+                                        tenant=self.tenant or '-',
+                                        domain=self.domain or '-',
+                                        user_domain=self.user_domain or '-',
+                                        p_domain=self.project_domain or '-'))
+
+        # Update the dict with Designate specific extensions and overrides
         d.update({
+            'user_identity': user_idt,
             'roles': self.roles,
             'service_catalog': self.service_catalog,
             'all_tenants': self.all_tenants,
+            'abandon': self.abandon,
+            'tsigkey_id': self.tsigkey_id
         })
 
         return copy.deepcopy(d)
@@ -128,3 +143,17 @@ class DesignateContext(context.RequestContext):
         if value:
             policy.check('all_tenants', self)
         self._all_tenants = value
+
+    @property
+    def abandon(self):
+        return self._abandon
+
+    @abandon.setter
+    def abandon(self, value):
+        if value:
+            policy.check('abandon_domain', self)
+        self._abandon = value
+
+
+def get_current():
+    return context.get_current()

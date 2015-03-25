@@ -23,3 +23,17 @@ class SqlalchemyPoolManagerCacheTest(PoolManagerCacheTestCase, TestCase):
         super(SqlalchemyPoolManagerCacheTest, self).setUp()
 
         self.cache = cache.get_pool_manager_cache('sqlalchemy')
+
+    def test_store_and_retrieve(self):
+        expected = self.create_pool_manager_status()
+        self.cache.store(self.admin_context, expected)
+
+        actual = self.cache.retrieve(
+            self.admin_context, expected.server_id, expected.domain_id,
+            expected.action)
+
+        self.assertEqual(expected.server_id, actual.server_id)
+        self.assertEqual(expected.domain_id, actual.domain_id)
+        self.assertEqual(expected.status, actual.status)
+        self.assertEqual(expected.serial_number, actual.serial_number)
+        self.assertEqual(expected.action, actual.action)

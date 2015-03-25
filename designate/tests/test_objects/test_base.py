@@ -31,7 +31,14 @@ class TestObject(objects.DesignateObject):
     FIELDS = {
         'id': {},
         'name': {},
-        'nested': {},
+        'nested': {
+            'relation': True,
+            'relation_cls': 'TestObject',
+        },
+        'nested_list': {
+            'relation': True,
+            'relation_cls': 'TestObjectList',
+        },
     }
 
 
@@ -40,7 +47,7 @@ class TestObjectDict(objects.DictObjectMixin, TestObject):
 
 
 class TestObjectList(objects.ListObjectMixin, objects.DesignateObject):
-    pass
+    LIST_ITEM_TYPE = TestObject
 
 
 class TestValidatableObject(objects.DesignateObject):
@@ -53,6 +60,8 @@ class TestValidatableObject(objects.DesignateObject):
             'required': True,
         },
         'nested': {
+            'relation': True,
+            'relation_cls': 'TestValidatableObject',
             'schema': {
                 '$ref': 'obj://TestValidatableObject#/'
             }
@@ -118,6 +127,61 @@ class DesignateObjectTest(tests.TestCase):
         # Validate it has been thawed correctly
         self.assertEqual('MyID', obj.id)
         self.assertEqual('MyID-Nested', obj.nested.id)
+
+    def test_from_dict(self):
+        obj = TestObject.from_dict({
+            'id': 'MyID',
+        })
+
+        # Validate it has been thawed correctly
+        self.assertEqual('MyID', obj.id)
+
+        # Ensure the ID field has a value
+        self.assertTrue(obj.obj_attr_is_set('id'))
+
+        # Ensure the name field has no value
+        self.assertFalse(obj.obj_attr_is_set('name'))
+
+        # Ensure the changes list has one entry for the id field
+        self.assertEqual(set(['id']), obj.obj_what_changed())
+
+    def test_from_dict_recursive(self):
+        obj = TestObject.from_dict({
+            'id': 'MyID',
+            'nested': {
+                'id': 'MyID-Nested',
+            },
+        })
+
+        # Validate it has been thawed correctly
+        self.assertEqual('MyID', obj.id)
+        self.assertEqual('MyID-Nested', obj.nested.id)
+
+        # Ensure the changes list has two entries, one for the id field and the
+        # other for the nested field
+        self.assertEqual(set(['id', 'nested']), obj.obj_what_changed())
+
+        # Ensure the changes list has one entry for the id field
+        self.assertEqual(set(['id']), obj.nested.obj_what_changed())
+
+    def test_from_dict_nested_list(self):
+        obj = TestObject.from_dict({
+            'id': 'MyID',
+            'nested_list': [{
+                'id': 'MyID-Nested1',
+            }, {
+                'id': 'MyID-Nested2',
+            }],
+        })
+
+        # Validate it has been thawed correctly
+        self.assertEqual('MyID', obj.id)
+        self.assertEqual('MyID-Nested1', obj.nested_list[0].id)
+        self.assertEqual('MyID-Nested2', obj.nested_list[1].id)
+
+        # Ensure the changes list has two entries, one for the id field and the
+        # other for the nested field
+        self.assertEqual(set(['id', 'nested_list']), obj.obj_what_changed())
 
     def test_init_invalid(self):
         with testtools.ExpectedException(TypeError):
@@ -317,8 +381,9 @@ class DesignateObjectTest(tests.TestCase):
         self.assertEqual('format', error.validator)
 
         # Ensure the nested ID field has triggered the failure.
-        self.assertEqual('nested.id', error.absolute_path)
-        self.assertEqual('nested.id', error.relative_path)
+        # For some reason testtools turns lists into deques :/
+        self.assertEqual(list(error.absolute_path), ['nested', 'id'])
+        self.assertEqual(list(error.relative_path), ['nested', 'id'])
 
         # Set the Nested ID field to a valid value
         obj.nested.id = 'ffded5c4-e4f6-4e02-a175-48e13c5c12a0'
@@ -418,10 +483,11 @@ class DesignateObjectTest(tests.TestCase):
         # Deepcopy the object
         c_obj = copy.deepcopy(o_obj)
 
-        # Ensure the copy was sucessful
+        # Ensure the copy was successful
         self.assertEqual(o_obj.id, c_obj.id)
         self.assertEqual(o_obj.name, c_obj.name)
-        self.assertEqual(o_obj.nested, c_obj.nested)
+        self.assertEqual(o_obj.obj_attr_is_set('nested'),
+                         c_obj.obj_attr_is_set('nested'))
 
         self.assertEqual(o_obj.obj_get_changes(), c_obj.obj_get_changes())
         self.assertEqual(o_obj.to_primitive(), c_obj.to_primitive())

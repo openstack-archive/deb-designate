@@ -30,8 +30,8 @@ CONF.import_opt('workers', 'designate.central', group='service:central')
 def main():
     utils.read_config('designate', sys.argv)
     logging.setup(CONF, 'designate')
+    utils.setup_gmr(log_dir=cfg.CONF.log_dir)
 
-    server = central.Service.create(binary='designate-central',
-                                    service_name='central')
+    server = central.Service()
     service.serve(server, workers=CONF['service:central'].workers)
     service.wait()

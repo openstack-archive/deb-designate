@@ -2,7 +2,7 @@
 # Install and start **Designate** service
 
 # To enable Designate services, add the following to localrc
-# enable_service designate,designate-api,designate-central,designate-mdns,designate-sink,designate-pool-manager
+# enable_service designate,designate-central,designate-api,designate-pool-manager,designate-mdns,designate-agent,designate-sink
 
 # stack.sh
 # ---------
@@ -55,7 +55,11 @@ DESIGNATE_SERVICE_PORT_MDNS=${DESIGNATE_SERVICE_PORT_MDNS:-5354}
 DESIGNATE_TEST_NSREC=${DESIGNATE_TEST_NSREC:-ns1.devstack.org.}
 
 DESIGNATE_ENABLED_EXTENSIONS_V1=${DESIGNATE_ENABLED_EXTENSIONS_V1:-"quotas"}
-DESIGNATE_ENABLED_EXTENSIONS_V2=${DESIGNATE_ENABLED_EXTENSIONS_V2:-"quotas"}
+DESIGNATE_ENABLED_EXTENSIONS_V2=${DESIGNATE_ENABLED_EXTENSIONS_V2:-""}
+DESIGNATE_ENABLED_EXTENSIONS_ADMIN=${DESIGNATE_ENABLED_EXTENSIONS_ADMIN:-"quotas"}
+
+# Tell Tempest this project is present
+TEMPEST_SERVICES+=,designate
 
 # Get backend configuration
 # ----------------------------
@@ -63,6 +67,24 @@ if is_service_enabled designate && [[ -r $DESIGNATE_PLUGINS/backend-$DESIGNATE_B
     # Load plugin
     source $DESIGNATE_PLUGINS/backend-$DESIGNATE_BACKEND_DRIVER
 fi
+
+# Helper Functions
+# ----------------
+function setup_colorized_logging_designate {
+    local conf_file=$1
+    local conf_section=$2
+    local project_var=${3:-"project_name"}
+    local user_var=${4:-"user_name"}
+
+    setup_colorized_logging $conf_file $conf_section $project_var $user_var
+
+    # Override the logging_context_format_string value chosen by
+    # setup_colorized_logging.
+    iniset $conf_file $conf_section logging_context_format_string "%(asctime)s.%(msecs)03d %(color)s%(levelname)s %(name)s [[01;36m%(request_id)s [00;36m%(user_identity)s%(color)s] [01;35m%(instance)s%(color)s%(message)s[00m"
+}
+
+# DevStack Plugin
+# ---------------
 
 # cleanup_designate - Remove residual data files, anything left over from previous
 # runs that a clean run would need to clean up
@@ -92,6 +114,7 @@ function configure_designate {
     iniset $DESIGNATE_CONF pool_manager_cache:sqlalchemy connection `database_connection_url designate_pool_manager`
     iniset $DESIGNATE_CONF service:api enabled_extensions_v1 $DESIGNATE_ENABLED_EXTENSIONS_V1
     iniset $DESIGNATE_CONF service:api enabled_extensions_v2 $DESIGNATE_ENABLED_EXTENSIONS_V2
+    iniset $DESIGNATE_CONF service:api enabled_extensions_admin $DESIGNATE_ENABLED_EXTENSIONS_ADMIN
 
     sudo cp $DESIGNATE_DIR/etc/designate/rootwrap.conf.sample $DESIGNATE_ROOTWRAP_CONF
     iniset $DESIGNATE_ROOTWRAP_CONF DEFAULT filters_path $DESIGNATE_DIR/etc/designate/rootwrap.d root-helper
@@ -112,7 +135,7 @@ function configure_designate {
 
     # Format logging
     if [ "$LOG_COLOR" == "True" ] && [ "$SYSLOG" == "False" ]; then
-        setup_colorized_logging $DESIGNATE_CONF DEFAULT "tenant" "user"
+        setup_colorized_logging_designate $DESIGNATE_CONF DEFAULT "tenant" "user"
     fi
 
     if is_service_enabled key; then
@@ -125,6 +148,7 @@ function configure_designate {
     iniset $DESIGNATE_CONF service:api api_base_uri $DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/
     iniset $DESIGNATE_CONF service:api enable_api_v1 True
     iniset $DESIGNATE_CONF service:api enable_api_v2 True
+    iniset $DESIGNATE_CONF service:api enable_api_admin True
     if is_service_enabled tls-proxy; then
         # Set the service port for a proxy to take the original
         iniset $DESIGNATE_CONF service:api api_port $DESIGNATE_SERVICE_PORT_INT
@@ -151,7 +175,7 @@ function create_designate_accounts {
     if [[ "$ENABLED_SERVICES" =~ "designate-api" ]]; then
         local designate_user=$(get_or_create_user "designate" \
             "$SERVICE_PASSWORD" $service_tenant)
-        get_or_add_user_role $admin_role $designate_user $service_tenant
+        get_or_add_user_project_role $admin_role $designate_user $service_tenant
 
         if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
             local designate_service=$(get_or_create_service "designate" \
@@ -221,21 +245,12 @@ function install_designateclient {
 function start_designate {
     start_designate_backend
 
-    # If using bind9, central must have access to the bind zone/db files.
-    # The configure phase has already added the $STACK_USER to the bind
-    # system daemon group - we need to start central using that group using sg.
-    # nova does a similar "trick" with libvirtd and compute.
-    # sg will be used in run_process to execute designate-central as a member
-    # of the **$BIND_GROUP** group.
-    if [[ "$DESIGNATE_BACKEND_DRIVER" = 'bind9' ]]; then
-        run_process designate-central "designate-central --config-file $DESIGNATE_CONF" $BIND_GROUP
-    else
-        run_process designate-central "$DESIGNATE_BIN_DIR/designate-central --config-file $DESIGNATE_CONF"
-    fi
+    run_process designate-central "$DESIGNATE_BIN_DIR/designate-central --config-file $DESIGNATE_CONF"
     run_process designate-api "$DESIGNATE_BIN_DIR/designate-api --config-file $DESIGNATE_CONF"
-    run_process designate-mdns "$DESIGNATE_BIN_DIR/designate-mdns --config-file $DESIGNATE_CONF"
-    run_process designate-sink "$DESIGNATE_BIN_DIR/designate-sink --config-file $DESIGNATE_CONF"
     run_process designate-pool-manager "$DESIGNATE_BIN_DIR/designate-pool-manager --config-file $DESIGNATE_CONF"
+    run_process designate-mdns "$DESIGNATE_BIN_DIR/designate-mdns --config-file $DESIGNATE_CONF"
+    run_process designate-agent "$DESIGNATE_BIN_DIR/designate-agent --config-file $DESIGNATE_CONF"
+    run_process designate-sink "$DESIGNATE_BIN_DIR/designate-sink --config-file $DESIGNATE_CONF"
 
     # Start proxies if enabled
     if is_service_enabled designate-api && is_service_enabled tls-proxy; then
@@ -250,11 +265,12 @@ function start_designate {
 # stop_designate - Stop running processes
 function stop_designate {
     # Kill the designate screen windows
-    stop_process designate-api
     stop_process designate-central
-    stop_process designate-mdns
-    stop_process designate-sink
+    stop_process designate-api
     stop_process designate-pool-manager
+    stop_process designate-mdns
+    stop_process designate-agent
+    stop_process designate-sink
 
     stop_designate_backend
 }
