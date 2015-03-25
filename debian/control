@@ -4,13 +4,13 @@ Priority: extra
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
 Uploaders: Thomas Goirand <zigo@debian.org>
 Build-Depends: debhelper (>= 9),
-               dh-systemd,
                dh-python,
+               dh-systemd,
                openstack-pkg-tools (>= 13~),
                python-all (>= 2.6.6-3~),
                python-pbr (>=0.6),
                python-setuptools,
-               python-sphinx
+               python-sphinx,
 Build-Depends-Indep: python-anyjson (>= 0.3.3),
                      python-babel (>= 1.3),
                      python-cmd2,
@@ -25,35 +25,38 @@ Build-Depends-Indep: python-anyjson (>= 0.3.3),
                      python-jinja2 (>= 2.6),
                      python-jsonschema (>= 2.0.0),
                      python-keystonemiddleware,
-                     python-migrate (>= 0.9.1),
+                     python-memcache (>= 1.48),
+                     python-migrate (>= 0.9.5),
                      python-mock (>= 1.0),
                      python-netaddr (>= 0.7.6),
-                     python-neutronclient (>= 2.3.6),
+                     python-neutronclient (>= 2.3.11),
                      python-oslo.concurrency (>= 1.4.1),
-                     python-oslo.config (>= 1:1.6.0),
-                     python-oslo-context,
-                     python-oslo.db (>= 1.4.1),
+                     python-oslo.config (>= 1:1.9.0),
+                     python-oslo.context (>= 0.2.0),
+                     python-oslo.db (>= 1.5.0),
                      python-oslo.i18n (>= 1.3.0),
-                     python-oslo.log,
+                     python-oslo.log (>= 0.4.0),
                      python-oslo.messaging (>= 1.6.0),
                      python-oslo.middleware (>= 0.3.0),
+                     python-oslo.policy (>= 0.3.0),
                      python-oslo.rootwrap (>= 1.5.0),
                      python-oslo.serialization (>= 1.2.0),
                      python-oslo.utils (>= 1.2.0),
-                     python-oslotest (>= 1.2.0),
                      python-oslosphinx (>= 2.2.0.0~a3),
+                     python-oslotest (>= 1.2.0),
                      python-paste,
                      python-pastedeploy (>= 1.5.0),
                      python-pecan (>= 0.8.0),
                      python-prettytable (>= 0.6),
+                     python-psutil (>= 1.1.1),
                      python-requests (>= 2.2.0),
                      python-routes,
-                     python-six (>= 1.7.0),
+                     python-six (>= 1.9.0),
                      python-sphinxcontrib-httpdomain,
                      python-sqlalchemy (>= 0.9.7),
                      python-stevedore (>= 1.1.0),
                      python-subunit (>= 0.0.18),
-                     python-tempest-lib (>= 0.1.0),
+                     python-tempest-lib (>= 0.3.0),
                      python-testscenarios (>= 0.4),
                      python-testtools (>= 0.9.36),
                      python-webob (>= 1.2.3),
@@ -61,7 +64,7 @@ Build-Depends-Indep: python-anyjson (>= 0.3.3),
                      python-werkzeug,
                      sqlite3,
                      subunit (>= 0.0.18),
-                     testrepository (>= 0.0.18)
+                     testrepository (>= 0.0.18),
 Standards-Version: 3.9.6
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/designate.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/designate.git
@@ -82,18 +85,20 @@ Depends: python-anyjson (>= 0.3.3),
          python-jinja2 (>= 2.6),
          python-jsonschema (>= 2.0.0),
          python-keystonemiddleware,
-         python-migrate (>= 0.9.1),
+         python-memcache (>= 1.48),
+         python-migrate (>= 0.9.5),
          python-mysqldb,
          python-netaddr (>= 0.7.6),
-         python-neutronclient (>= 2.3.6),
+         python-neutronclient (>= 2.3.11),
          python-oslo.concurrency (>= 1.4.1),
-         python-oslo.config (>= 1:1.6.0),
-         python-oslo-context,
-         python-oslo.db (>= 1.4.1),
+         python-oslo.config (>= 1:1.9.0),
+         python-oslo.context (>= 0.2.0),
+         python-oslo.db (>= 1.5.0),
          python-oslo.i18n (>= 1.3.0),
-         python-oslo.log,
+         python-oslo.log (>= 0.4.0),
          python-oslo.messaging (>= 1.6.0),
          python-oslo.middleware (>= 0.3.0),
+         python-oslo.policy (>= 0.3.0),
          python-oslo.rootwrap (>= 1.5.0),
          python-oslo.serialization (>= 1.2.0),
          python-oslo.utils (>= 1.2.0),
@@ -102,16 +107,17 @@ Depends: python-anyjson (>= 0.3.3),
          python-pbr (>= 0.6),
          python-pecan (>= 0.8.0),
          python-prettytable (>= 0.6),
+         python-psutil (>= 1.1.1),
          python-pyparsing,
          python-requests (>= 2.2.0),
          python-routes,
-         python-six (>= 1.7.0),
+         python-six (>= 1.9.0),
          python-sqlalchemy (>= 0.9.7),
          python-stevedore (>= 1.1.0),
          python-webob (>= 1.2.3),
          python-werkzeug,
          ${misc:Depends},
-         ${python:Depends}
+         ${python:Depends},
 Provides: ${python:Provides}
 XB-Python-Version: ${python:Versions}
 Description: OpenStack DNS as a Service - Python libs
@@ -130,8 +136,8 @@ Depends: adduser,
          dbconfig-common,
          python-designate (= ${binary:Version}),
          sqlite3,
+         ${misc:Depends},
          ${python:Depends},
-         ${misc:Depends}
 Description: OpenStack DNS as a Service - common files
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
@@ -149,7 +155,7 @@ Depends: designate-agent (= ${binary:Version}),
          designate-central (= ${binary:Version}),
          designate-common (= ${binary:Version}),
          ${misc:Depends},
-         ${python:Depends}
+         ${python:Depends},
 Description: OpenStack DNS as a Service - metapackage
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
@@ -166,7 +172,7 @@ Depends: adduser,
          designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
-         ${python:Depends}
+         ${python:Depends},
 Description: OpenStack DNS as a Service - API server
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
@@ -182,7 +188,7 @@ Pre-Depends: dpkg (>= 1.15.6~)
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
-         ${python:Depends}
+         ${python:Depends},
 Description: OpenStack DNS as a Service - central daemon
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
@@ -198,7 +204,7 @@ Pre-Depends: dpkg (>= 1.15.6~)
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
-         ${python:Depends}
+         ${python:Depends},
 Description: OpenStack DNS as a Service - agent
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
@@ -214,7 +220,7 @@ Pre-Depends: dpkg (>= 1.15.6~)
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
-         ${python:Depends}
+         ${python:Depends},
 Description: OpenStack DNS as a Service - sink
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
  REST API for domain & record management. It is Integrated with Keystone for
