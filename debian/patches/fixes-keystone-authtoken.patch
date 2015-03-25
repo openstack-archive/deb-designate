@@ -5,9 +5,9 @@ Last-Update: 2013-12-05
 
 Index: designate/etc/designate/designate.conf.sample
 ===================================================================
---- designate.orig/etc/designate/designate.conf.sample	2014-12-24 14:44:25.000000000 +0800
-+++ designate/etc/designate/designate.conf.sample	2014-12-24 14:57:56.000000000 +0800
-@@ -94,12 +94,12 @@
+--- designate.orig/etc/designate/designate.conf.sample
++++ designate/etc/designate/designate.conf.sample
+@@ -108,12 +108,12 @@ debug = False
  # Keystone Middleware
  #-----------------------
  [keystone_authtoken]
