@@ -14,54 +14,39 @@
 #    under the License.
 import time
 
+import eventlet
 import dns
 import dns.rdataclass
 import dns.rdatatype
 import dns.exception
-import dns.query
 import dns.flags
 import dns.rcode
 import dns.message
 import dns.opcode
-from oslo import messaging
 from oslo.config import cfg
 from oslo_log import log as logging
 
-from designate.pool_manager import rpcapi as pool_mngr_api
-from designate.central import rpcapi as central_api
-from designate.mdns import xfr
+from designate.mdns import base
 from designate.i18n import _LI
 from designate.i18n import _LW
+
+dns_query = eventlet.import_patched('dns.query')
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 
-class NotifyEndpoint(xfr.XFRMixin):
-    RPC_NOTIFY_API_VERSION = '1.1'
+class NotifyEndpoint(base.BaseEndpoint):
+    RPC_API_VERSION = '1.1'
+    RPC_API_NAMESPACE = 'notify'
 
-    target = messaging.Target(
-        namespace='notify', version=RPC_NOTIFY_API_VERSION)
-
-    def __init__(self, tg, *args, **kwargs):
-        LOG.info(_LI("started mdns notify endpoint"))
-        self.tg = tg
-
-    @property
-    def central_api(self):
-        return central_api.CentralAPI.get_instance()
-
-    @property
-    def pool_manager_api(self):
-        return pool_mngr_api.PoolManagerAPI.get_instance()
-
-    def notify_zone_changed(self, context, domain, server, timeout,
+    def notify_zone_changed(self, context, domain, nameserver, timeout,
                             retry_interval, max_retries, delay):
         """
         :param context: The user context.
         :param domain: The designate domain object.  This contains the domain
             name.
-        :param server: A notify is sent to server.host:server.port.
+        :param nameserver: A notify is sent to nameserver.host:nameserver.port.
         :param timeout: The time (in seconds) to wait for a NOTIFY response
             from server.
         :param retry_interval: The time (in seconds) between retries.
@@ -75,18 +60,19 @@ class NotifyEndpoint(xfr.XFRMixin):
         """
         time.sleep(delay)
         return self._make_and_send_dns_message(
-            domain, server, timeout, retry_interval, max_retries, notify=True)
+            domain, nameserver, timeout, retry_interval, max_retries,
+            notify=True)
 
-    def poll_for_serial_number(self, context, domain, server, timeout,
+    def poll_for_serial_number(self, context, domain, nameserver, timeout,
                                retry_interval, max_retries, delay):
         """
         :param context: The user context.
         :param domain: The designate domain object.  This contains the domain
             name. domain.serial = expected_serial
-        :param server: server.host:server.port is checked for an updated serial
-            number.
+        :param nameserver: nameserver.host:nameserver.port is checked for an
+            updated serial number.
         :param timeout: The time (in seconds) to wait for a SOA response from
-            server.
+            nameserver.
         :param retry_interval: The time (in seconds) between retries.
         :param max_retries: The maximum number of retries mindns would do for
             an expected serial number. After this many retries, mindns returns
@@ -95,21 +81,21 @@ class NotifyEndpoint(xfr.XFRMixin):
         :return: The pool manager is informed of the status with update_status.
         """
         (status, actual_serial, retries) = self.get_serial_number(
-            context, domain, server, timeout, retry_interval, max_retries,
+            context, domain, nameserver, timeout, retry_interval, max_retries,
             delay)
         self.pool_manager_api.update_status(
-            context, domain, server, status, actual_serial)
+            context, domain, nameserver, status, actual_serial)
 
-    def get_serial_number(self, context, domain, server, timeout,
+    def get_serial_number(self, context, domain, nameserver, timeout,
                           retry_interval, max_retries, delay):
         """
         :param context: The user context.
         :param domain: The designate domain object.  This contains the domain
             name. domain.serial = expected_serial
-        :param server: server.host:server.port is checked for an updated serial
-            number.
+        :param nameserver: nameserver.host:nameserver.port is checked for an
+            updated serial number.
         :param timeout: The time (in seconds) to wait for a SOA response from
-            server.
+            nameserver.
         :param retry_interval: The time (in seconds) between retries.
         :param max_retries: The maximum number of retries mindns would do for
             an expected serial number. After this many retries, mindns returns
@@ -118,7 +104,7 @@ class NotifyEndpoint(xfr.XFRMixin):
         :return: a tuple of (status, actual_serial, retries)
             status is either "SUCCESS" or "ERROR".
             actual_serial is either the serial number returned in the SOA
-            message from the server or None.
+            message from the nameserver or None.
             retries is the number of retries left.
             The return value is just used for testing and not by pool manager.
             The pool manager is informed of the status with update_status.
@@ -129,7 +115,7 @@ class NotifyEndpoint(xfr.XFRMixin):
         time.sleep(delay)
         while (True):
             (response, retry) = self._make_and_send_dns_message(
-                domain, server, timeout, retry_interval, retries)
+                domain, nameserver, timeout, retry_interval, retries)
             if response and response.rcode() in (
                     dns.rcode.NXDOMAIN, dns.rcode.REFUSED, dns.rcode.SERVFAIL):
                 status = 'NO_DOMAIN'
@@ -141,16 +127,14 @@ class NotifyEndpoint(xfr.XFRMixin):
                 rrset = response.answer[0]
                 actual_serial = rrset.to_rdataset().items[0].serial
 
-            if actual_serial is None:
-                break
-            # TODO(vinod): Account for serial number wrap around.
-            elif actual_serial < domain.serial:
+            if actual_serial is None or actual_serial < domain.serial:
+                # TODO(vinod): Account for serial number wrap around.
                 retries = retries - retry
                 LOG.warn(_LW("Got lower serial for '%(zone)s' to '%(host)s:"
-                             "%(port)s'. Expected:'%(es)d'. Got:'%(as)d'."
+                             "%(port)s'. Expected:'%(es)d'. Got:'%(as)s'."
                              "Retries left='%(retries)d'") %
-                         {'zone': domain.name, 'host': server.host,
-                          'port': server.port, 'es': domain.serial,
+                         {'zone': domain.name, 'host': nameserver.host,
+                          'port': nameserver.port, 'es': domain.serial,
                           'as': actual_serial, 'retries': retries})
                 if retries > 0:
                     # retry again
@@ -166,7 +150,7 @@ class NotifyEndpoint(xfr.XFRMixin):
         # Return retries for testing purposes.
         return (status, actual_serial, retries)
 
-    def _make_and_send_dns_message(self, domain, server, timeout,
+    def _make_and_send_dns_message(self, domain, nameserver, timeout,
                                    retry_interval, max_retries, notify=False):
         """
         :param domain: The designate domain object.  This contains the domain
@@ -184,8 +168,8 @@ class NotifyEndpoint(xfr.XFRMixin):
             response is the response on success or None on failure.
             current_retry is the current retry number
         """
-        dest_ip = server.host
-        dest_port = server.port
+        dest_ip = nameserver.host
+        dest_port = nameserver.port
 
         dns_message = self._make_dns_message(domain.name, notify=notify)
 
@@ -214,7 +198,7 @@ class NotifyEndpoint(xfr.XFRMixin):
                 # retry sending the message if we get a Timeout.
                 time.sleep(retry_interval)
                 continue
-            elif isinstance(response, dns.query.BadResponse):
+            elif isinstance(response, dns_query.BadResponse):
                 LOG.warn(_LW("Got BadResponse while trying to send '%(msg)s' "
                              "for '%(zone)s' to '%(server)s:%(port)d'. Timeout"
                              "='%(timeout)d' seconds. Retry='%(retry)d'") %
@@ -260,10 +244,11 @@ class NotifyEndpoint(xfr.XFRMixin):
         dns_message.flags = 0
         if notify:
             dns_message.set_opcode(dns.opcode.NOTIFY)
+            dns_message.flags |= dns.flags.AA
         else:
             # Setting the flags to RD causes BIND9 to respond with a NXDOMAIN.
-            dns_message.flags = dns.flags.RD
             dns_message.set_opcode(dns.opcode.QUERY)
+            dns_message.flags |= dns.flags.RD
 
         return dns_message
 
@@ -273,17 +258,17 @@ class NotifyEndpoint(xfr.XFRMixin):
         :param dest_ip: The destination ip of dns_message.
         :param dest_port: The destination port of dns_message.
         :param timeout: The timeout in seconds to wait for a response.
-        :return: response or dns.exception.Timeout or dns.query.BadResponse
+        :return: response or dns.exception.Timeout or dns_query.BadResponse
         """
         try:
             if not CONF['service:mdns'].all_tcp:
-                response = dns.query.udp(
+                response = dns_query.udp(
                     dns_message, dest_ip, port=dest_port, timeout=timeout)
             else:
-                response = dns.query.tcp(
+                response = dns_query.tcp(
                     dns_message, dest_ip, port=dest_port, timeout=timeout)
             return response
         except dns.exception.Timeout as timeout:
             return timeout
-        except dns.query.BadResponse as badResponse:
+        except dns_query.BadResponse as badResponse:
             return badResponse

@@ -13,6 +13,11 @@ if is_service_enabled designate; then
         echo_summary "Installing Designate Client"
         install_designateclient
 
+        if is_service_enabled horizon; then
+            echo_summary "Installing Designate Dashboard"
+            install_designatedashboard
+        fi
+
     elif [[ "$1" == "stack" && "$2" == "post-config" ]]; then
         echo_summary "Configuring Designate"
         configure_designate
@@ -29,8 +34,8 @@ if is_service_enabled designate; then
         echo_summary "Starting Designate"
         start_designate
 
-        echo_summary "Creating Initial Designate Resources"
-        create_designate_initial_resources
+        echo_summary "Creating Pool NS Records"
+        create_designate_ns_records
     fi
 
     if [[ "$1" == "unstack" ]]; then

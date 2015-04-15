@@ -26,7 +26,6 @@ class Record(base.DictObjectMixin, base.PersistentObjectMixin,
                 'type': 'string',
                 'format': 'uuid',
             },
-            'required': True
         },
         'managed': {
             'schema': {
@@ -62,7 +61,6 @@ class Record(base.DictObjectMixin, base.PersistentObjectMixin,
                 'type': 'string',
                 'maxLength': 32
             },
-            'required': True
         },
         'description': {
             'schema': {
@@ -86,7 +84,6 @@ class Record(base.DictObjectMixin, base.PersistentObjectMixin,
                 'type': 'string',
                 'format': 'uuid',
             },
-            'required': True
         },
         'managed_tenant_id': {
             'schema': {
@@ -119,6 +116,12 @@ class Record(base.DictObjectMixin, base.PersistentObjectMixin,
             },
         },
     }
+
+    @classmethod
+    def get_recordset_schema_changes(cls):
+        # This is to allow record types to override the validation on a
+        # recordset
+        return {}
 
 
 class RecordList(base.ListObjectMixin, base.DesignateObject):

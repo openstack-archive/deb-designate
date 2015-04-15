@@ -27,6 +27,7 @@ from designate import exceptions
 from designate import notifications
 from designate import context
 from designate import objects
+from designate.objects.adapters import DesignateAdapter
 from designate.i18n import _LI
 from designate.i18n import _LW
 from designate.i18n import _LE
@@ -70,19 +71,40 @@ class ContextMiddleware(base.Middleware):
         headers = request.headers
         params = request.params
 
-        if headers.get('X-Auth-All-Projects'):
-            ctxt.all_tenants = \
-                strutils.bool_from_string(headers.get('X-Auth-All-Projects'))
-        elif 'all_projects' in params:
-            ctxt.all_tenants = \
-                strutils.bool_from_string(params['all_projects'])
-        elif 'all_tenants' in params:
-            ctxt.all_tenants = \
-                strutils.bool_from_string(params['all_tenants'])
-        else:
-            ctxt.all_tenants = False
+        try:
+            if headers.get('X-Auth-Sudo-Tenant-ID') or \
+                    headers.get('X-Auth-Sudo-Project-ID'):
 
-        request.environ['context'] = ctxt
+                ctxt.sudo(
+                    headers.get('X-Auth-Sudo-Tenant-ID') or
+                    headers.get('X-Auth-Sudo-Project-ID')
+                )
+
+            if headers.get('X-Auth-All-Projects'):
+                ctxt.all_tenants = \
+                    strutils.bool_from_string(
+                        headers.get('X-Auth-All-Projects'))
+            elif 'all_projects' in params:
+                ctxt.all_tenants = \
+                    strutils.bool_from_string(params['all_projects'])
+            elif 'all_tenants' in params:
+                ctxt.all_tenants = \
+                    strutils.bool_from_string(params['all_tenants'])
+            else:
+                ctxt.all_tenants = False
+            if 'edit_managed_records' in params:
+                ctxt.edit_managed_records = \
+                    strutils.bool_from_string(params['edit_managed_records'])
+
+            elif headers.get('X-Designate-Edit-Managed-Records'):
+                ctxt.edit_managed_records = \
+                    strutils.bool_from_string(
+                        headers.get('X-Designate-Edit-Managed-Records'))
+
+            else:
+                ctxt.edit_managed_records = False
+        finally:
+            request.environ['context'] = ctxt
 
         return ctxt
 
@@ -296,16 +318,16 @@ class ValidationErrorMiddleware(base.Middleware):
             ('Content-Type', 'application/json'),
         ]
 
+        rendered_errors = DesignateAdapter.render(
+            self.api_version, exception.errors, failed_object=exception.object)
+
         url = getattr(request, 'url', None)
 
         response['code'] = exception.error_code
 
         response['type'] = exception.error_type or 'unknown'
 
-        response['errors'] = list()
-
-        for error in exception.errors:
-            response['errors'].append(error.to_dict())
+        response['errors'] = rendered_errors
 
         # Return the new response
         if 'context' in request.environ:

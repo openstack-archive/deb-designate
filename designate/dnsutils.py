@@ -27,6 +27,7 @@ from oslo.config import cfg
 
 from designate import context
 from designate import exceptions
+from designate import utils
 from designate import objects
 from designate.i18n import _LE
 from designate.i18n import _LI
@@ -123,11 +124,13 @@ class SerializationMiddleware(DNSMiddleware):
 
         else:
             # Hand the Deserialized packet onto the Application
-            response = self.application(message)
+            for response in self.application(message):
+                # Serialize and return the response if present
+                if isinstance(response, dns.message.Message):
+                    yield response.to_wire(max_size=65535)
 
-        # Serialize and return the response if present
-        if response is not None:
-            return response.to_wire()
+                elif isinstance(response, dns.renderer.Renderer):
+                    yield response.get_wire()
 
 
 class TsigInfoMiddleware(DNSMiddleware):
@@ -270,9 +273,7 @@ def expand_servers(servers):
     data = []
     for srv in servers:
         if isinstance(srv, basestring):
-            parts = srv.split(":")
-            host = parts[0]
-            port = int(parts[1]) if len(parts) == 2 else 53
+            host, port = utils.split_host_port(srv, 53)
         srv = {"ip": host, "port": port}
         data.append(srv)
 

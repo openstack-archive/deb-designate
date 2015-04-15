@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: designate 2015.1.dev181\n"
+"Project-Id-Version: designate 2015.1.dev86\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2015-03-19 06:06+0000\n"
+"POT-Creation-Date: 2015-04-01 06:04+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -22,49 +22,54 @@ msgstr ""
 msgid "TCP Timeout from: %(host)s:%(port)d"
 msgstr ""
 
-#: designate/agent/handler.py:118
+#: designate/agent/handler.py:119
 #, python-format
 msgid "Not creating %(name)s, zone already exists"
 msgstr ""
 
-#: designate/agent/handler.py:162
+#: designate/agent/handler.py:163
 #, python-format
 msgid "Refusing NOTIFY for %(name)s, doesn't exist"
 msgstr ""
 
-#: designate/agent/handler.py:213
+#: designate/agent/handler.py:214
 #, python-format
 msgid "Not deleting %(name)s, zone doesn't exist"
 msgstr ""
 
-#: designate/agent/handler.py:236
+#: designate/agent/handler.py:237
 #, python-format
 msgid "%(verb)s for %(name)s from %(server)s refused"
 msgstr ""
 
-#: designate/api/middleware.py:181
+#: designate/api/middleware.py:183
 msgid "Request authorized to bypass maintenance mode"
 msgstr ""
 
-#: designate/backend/base.py:112
-#, python-format
-msgid "Failed to delete domain '%(domain)s' during sync. Message: %(message)s"
-msgstr ""
-
-#: designate/backend/base.py:138
+#: designate/backend/agent.py:79 designate/mdns/notify.py:190
 #, python-format
 msgid ""
-"Failed to delete record '%(record)s' in domain '%(domain)s' during sync. "
-"Message: %(message)s"
+"Got Timeout while trying to send '%(msg)s' for '%(zone)s' to "
+"'%(server)s:%(port)d'. Timeout='%(timeout)d' seconds. Retry='%(retry)d'"
 msgstr ""
 
-#: designate/backend/impl_dynect.py:381
+#: designate/backend/agent.py:88 designate/mdns/notify.py:202
+#, python-format
+msgid ""
+"Got BadResponse while trying to send '%(msg)s' for '%(zone)s' to "
+"'%(server)s:%(port)d'. Timeout='%(timeout)d' seconds. Retry='%(retry)d'"
+msgstr ""
+
+#: designate/backend/agent.py:101
+#, python-format
+msgid ""
+"Failed to get expected response while trying to send '%(msg)s' for "
+"'%(zone)s' to '%(server)s:%(port)d'. Response message: %(resp)s"
+msgstr ""
+
+#: designate/backend/impl_dynect.py:390
 #, python-format
 msgid "Attempt to delete %(d_id)s / %(d_name)s caused 404, ignoring."
-msgstr ""
-
-#: designate/backend/impl_ipa/auth.py:41
-msgid "No IPA client kerberos keytab file given"
 msgstr ""
 
 #: designate/backend/impl_powerdns/migrate_repo/versions/006_add_inherit_ttl_col.py:56
@@ -76,11 +81,19 @@ msgstr ""
 msgid "Please issue this query: %s"
 msgstr ""
 
+#: designate/backend/impl_powerdns/migrate_repo/versions/011_records_drop_designate_ids.py:32
+msgid "It will not be possible to downgrade from schema #11"
+msgstr ""
+
 #: designate/central/service.py:61
 msgid "Deadlock detected. Retrying..."
 msgstr ""
 
-#: designate/central/service.py:1019
+#: designate/central/service.py:282
+msgid "Managed Resource Tenant ID is not properly configured"
+msgstr ""
+
+#: designate/central/service.py:1004
 #, python-format
 msgid "Abandoning zone '%(zone)s'"
 msgstr ""
@@ -90,48 +103,34 @@ msgstr ""
 msgid "NOTIFY for %(name)s from non-master server %(addr)s, ignoring."
 msgstr ""
 
-#: designate/mdns/handler.py:224
+#: designate/mdns/handler.py:259
 #, python-format
 msgid "DomainNotFound while handling axfr request. Question was %(qr)s"
 msgstr ""
 
-#: designate/mdns/handler.py:230
+#: designate/mdns/handler.py:265
 #, python-format
 msgid "Forbidden while handling axfr request. Question was %(qr)s"
 msgstr ""
 
-#: designate/mdns/handler.py:288
+#: designate/mdns/handler.py:321
 #, python-format
 msgid "DomainNotFound while handling query request. Question was %(qr)s"
 msgstr ""
 
-#: designate/mdns/handler.py:294
+#: designate/mdns/handler.py:327
 #, python-format
 msgid "Forbidden while handling query request. Question was %(qr)s"
 msgstr ""
 
-#: designate/mdns/notify.py:149
+#: designate/mdns/notify.py:133
 #, python-format
 msgid ""
 "Got lower serial for '%(zone)s' to '%(host)s:%(port)s'. "
-"Expected:'%(es)d'. Got:'%(as)d'.Retries left='%(retries)d'"
+"Expected:'%(es)d'. Got:'%(as)s'.Retries left='%(retries)d'"
 msgstr ""
 
-#: designate/mdns/notify.py:206
-#, python-format
-msgid ""
-"Got Timeout while trying to send '%(msg)s' for '%(zone)s' to "
-"'%(server)s:%(port)d'. Timeout='%(timeout)d' seconds. Retry='%(retry)d'"
-msgstr ""
-
-#: designate/mdns/notify.py:218
-#, python-format
-msgid ""
-"Got BadResponse while trying to send '%(msg)s' for '%(zone)s' to "
-"'%(server)s:%(port)d'. Timeout='%(timeout)d' seconds. Retry='%(retry)d'"
-msgstr ""
-
-#: designate/mdns/notify.py:237
+#: designate/mdns/notify.py:221
 #, python-format
 msgid ""
 "Failed to get expected response while trying to send '%(msg)s' for "
@@ -161,29 +160,24 @@ msgstr ""
 msgid "pid %d not in child list"
 msgstr ""
 
-#: designate/pool_manager/service.py:186
+#: designate/pool_manager/service.py:246
 #, python-format
-msgid "Consensus not reached for creating domain %(domain)s"
+msgid "Consensus not reached for creating domain %(domain)s on pool targets"
 msgstr ""
 
-#: designate/pool_manager/service.py:286
+#: designate/pool_manager/service.py:307
+#, python-format
+msgid "Consensus not reached for updating domain %(domain)s on pool targets"
+msgstr ""
+
+#: designate/pool_manager/service.py:402
+#, python-format
+msgid "Consensus not reached for deleting domain %(domain)s on pool targets"
+msgstr ""
+
+#: designate/pool_manager/service.py:487
 #, python-format
 msgid "For domain %(domain)s the error serial is %(error_serial)s."
-msgstr ""
-
-#: designate/pool_manager/service.py:367
-#, python-format
-msgid "Failed to create domain %(domain)s on server %(server)s."
-msgstr ""
-
-#: designate/pool_manager/service.py:404
-#, python-format
-msgid "Failed to delete domain %(domain)s from server %(server)s."
-msgstr ""
-
-#: designate/pool_manager/service.py:416
-#, python-format
-msgid "Consensus not reached for deleting domain %(domain)s"
 msgstr ""
 
 #: designate/sink/service.py:52

@@ -13,20 +13,74 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from designate.objects.record import Record
+from designate.objects.record import RecordList
 
 
-class RRData_SRV(Record):
+class SRV(Record):
     """
     SRV Resource Record Type
     Defined in: RFC2782
     """
     FIELDS = {
-        'priority': {},
-        'weight': {},
-        'port': {},
-        'target': {}
+        'priority': {
+            'schema': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 65535
+            },
+            'required': True
+        },
+        'weight': {
+            'schema': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 65535
+            },
+            'required': True
+        },
+        'port': {
+            'schema': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 65535
+            },
+            'required': True
+        },
+        'target': {
+            'schema': {
+                'type': 'string',
+                'format': 'domainname',
+                'maxLength': 255,
+            },
+            'required': True
+        }
     }
+
+    @classmethod
+    def get_recordset_schema_changes(cls):
+        return {
+            'name': {
+                'schema': {
+                    'format': 'srv-hostname',
+                },
+            },
+        }
+
+    def _to_string(self):
+        return "%(priority)s %(weight)s %(target)s %(port)s" % self
+
+    def _from_string(self, value):
+        priority, weight, port, target = value.split(' ')
+        self.priority = int(priority)
+        self.weight = int(weight)
+        self.port = int(port)
+        self.target = target
 
     # The record type is defined in the RFC. This will be used when the record
     # is sent by mini-dns.
     RECORD_TYPE = 33
+
+
+class SRVList(RecordList):
+
+    LIST_ITEM_TYPE = SRV

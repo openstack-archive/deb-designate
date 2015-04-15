@@ -23,6 +23,7 @@ class Base(Exception):
 
     def __init__(self, *args, **kwargs):
         self.errors = kwargs.pop('errors', None)
+        self.object = kwargs.pop('object', None)
 
         super(Base, self).__init__(*args, **kwargs)
 
@@ -82,9 +83,9 @@ class NoServersConfigured(ConfigurationError):
     error_type = 'no_servers_configured'
 
 
-class NoPoolServersConfigured(ConfigurationError):
+class NoPoolTargetsConfigured(ConfigurationError):
     error_code = 500
-    error_type = 'no_pool_servers_configured'
+    error_type = 'no_pool_targets_configured'
 
 
 class OverQuota(Base):
@@ -99,11 +100,13 @@ class QuotaResourceUnknown(Base):
 class InvalidObject(Base):
     error_code = 400
     error_type = 'invalid_object'
+    expected = True
 
 
 class BadRequest(Base):
     error_code = 400
     error_type = 'bad_request'
+    expected = True
 
 
 class InvalidUUID(BadRequest):
@@ -252,6 +255,10 @@ class DuplicateDomainAttribute(Duplicate):
     error_type = 'duplicate_domain_attribute'
 
 
+class DuplicatePoolNsRecord(Duplicate):
+    error_type = 'duplicate_pool_ns_record'
+
+
 class MethodNotAllowed(Base):
     expected = True
     error_code = 405
@@ -322,6 +329,10 @@ class PoolNotFound(NotFound):
 
 class PoolAttributeNotFound(NotFound):
     error_type = 'pool_attribute_not_found'
+
+
+class PoolNsRecordNotFound(NotFound):
+    error_type = 'pool_ns_record_not_found'
 
 
 class ZoneTransferRequestNotFound(NotFound):

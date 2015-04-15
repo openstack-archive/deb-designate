@@ -26,6 +26,9 @@ LOG = logging.getLogger(__name__)
 RE_DOMAINNAME = r'^(?!.{255,})(?:(?!\-)[A-Za-z0-9_\-]{1,63}(?<!\-)\.)+$'
 RE_HOSTNAME = r'^(?!.{255,})(?:(?:^\*|(?!\-)[A-Za-z0-9_\-]{1,63})(?<!\-)\.)+$'
 
+RE_SRV_HOST_NAME = r'^(?:(?!\-)(?:\_[A-Za-z0-9_\-]{1,63}\.){2})(?!.{255,})' \
+                   r'(?:(?!\-)[A-Za-z0-9_\-]{1,63}(?<!\-)\.)+$'
+
 # The TLD name will not end in a period.
 RE_TLDNAME = r'^(?!.{255,})(?:(?!\-)[A-Za-z0-9_\-]{1,63}(?<!\-))' \
              r'(?:\.(?:(?!\-)[A-Za-z0-9_\-]{1,63}(?<!\-)))*$'
@@ -38,6 +41,11 @@ RE_IP_AND_PORT = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}' \
                  r'(?::(6553[0-5]|655[0-2]\d|65[0-4]\d\d|6[0-4]\d{3}' \
                  r'|[1-5]\d{4}|[1-9]\d{0,3}|0))?$'
 
+RE_FIP_ID = r'^(?P<region>[A-Za-z0-9\\.\\-_]{1,100}):' \
+            r'(?P<id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-' \
+            r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$'
+
+RE_SSHFP = r'^[0-9A-Fa-f]{40}$'
 
 draft3_format_checker = jsonschema.draft3_format_checker
 draft4_format_checker = jsonschema.draft4_format_checker
@@ -101,6 +109,17 @@ def is_domainname(instance):
     return True
 
 
+@draft4_format_checker.checks("srv-hostname")
+def is_srv_hostname(instance):
+    if not isinstance(instance, compat.str_types):
+        return True
+
+    if not re.match(RE_SRV_HOST_NAME, instance):
+        return False
+
+    return True
+
+
 @draft3_format_checker.checks("tld-name")
 @draft4_format_checker.checks("tldname")
 def is_tldname(instance):
@@ -131,6 +150,17 @@ def is_email(instance):
     return True
 
 
+@draft4_format_checker.checks("sshfp")
+def is_sshfp(instance):
+    if not isinstance(instance, compat.str_types):
+        return True
+
+    if not re.match(RE_SSHFP, instance):
+        return False
+
+    return True
+
+
 @draft3_format_checker.checks("uuid")
 @draft4_format_checker.checks("uuid")
 def is_uuid(instance):
@@ -138,6 +168,18 @@ def is_uuid(instance):
         return True
 
     if not re.match(RE_UUID, instance):
+        return False
+
+    return True
+
+
+@draft3_format_checker.checks("floating-ip-id")
+@draft4_format_checker.checks("floating-ip-id")
+def is_floating_ip_id(instance):
+    if not isinstance(instance, compat.str_types):
+        return True
+
+    if not re.match(RE_FIP_ID, instance):
         return False
 
     return True

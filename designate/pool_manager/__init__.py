@@ -15,13 +15,13 @@
 # under the License.
 from oslo.config import cfg
 
-cfg.CONF.register_group(cfg.OptGroup(
+CONF = cfg.CONF
+
+CONF.register_group(cfg.OptGroup(
     name='service:pool_manager', title="Configuration for Pool Manager Service"
 ))
 
 OPTS = [
-    cfg.ListOpt('backends', default=[],
-                help='List of enabled backend drivers'),
     cfg.IntOpt('workers', default=None,
                help='Number of Pool Manager worker processes to spawn'),
     cfg.StrOpt('pool-id', default='794ccc2c-d751-44fe-b57f-8894c9f5c842',
@@ -47,13 +47,66 @@ OPTS = [
                help='The time between recovering from failures'),
     cfg.BoolOpt('enable-sync-timer', default=True,
                 help='The flag for the sync timer'),
-    cfg.IntOpt('periodic-sync-interval', default=300,
-               help='The time between synchronizing the servers with Storage'),
-    cfg.IntOpt('periodic-sync-seconds', default=None,
+    cfg.IntOpt('periodic-sync-interval', default=1800,
+               help='The time between synchronizing the servers with storage'),
+    cfg.IntOpt('periodic-sync-seconds', default=21600,
                help='Zones Updated within last N seconds will be syncd. Use '
                     'None to sync all zones.'),
     cfg.StrOpt('cache-driver', default='sqlalchemy',
                help='The cache driver to use'),
 ]
 
-cfg.CONF.register_opts(OPTS, group='service:pool_manager')
+CONF.register_opts(OPTS, group='service:pool_manager')
+
+
+def register_dynamic_pool_options():
+    # Pool Options Registration Pass One
+
+    # Find the Current Pool ID
+    pool_id = CONF['service:pool_manager'].pool_id
+
+    # Build the [pool:<id>] config section
+    pool_group = cfg.OptGroup('pool:%s' % pool_id)
+
+    pool_opts = [
+        cfg.ListOpt('targets', default=[]),
+        cfg.ListOpt('nameservers', default=[]),
+        cfg.ListOpt('also_notifies', default=[]),
+    ]
+
+    CONF.register_group(pool_group)
+    CONF.register_opts(pool_opts, group=pool_group)
+
+    # Pool Options Registration Pass Two
+
+    # Find the Current Pools Target ID's
+    pool_target_ids = CONF['pool:%s' % pool_id].targets
+
+    # Build the [pool_target:<id>] config sections
+    pool_target_opts = [
+        cfg.StrOpt('type'),
+        cfg.ListOpt('masters', default=[]),
+        cfg.DictOpt('options', default={}),
+    ]
+
+    for pool_target_id in pool_target_ids:
+        pool_target_group = cfg.OptGroup('pool_target:%s' % pool_target_id)
+
+        CONF.register_group(pool_target_group)
+        CONF.register_opts(pool_target_opts, group=pool_target_group)
+
+    # Find the Current Pools Nameserver ID's
+    pool_nameserver_ids = CONF['pool:%s' % pool_id].nameservers
+
+    # Build the [pool_nameserver:<id>] config sections
+    pool_nameserver_opts = [
+        cfg.StrOpt('host'),
+        cfg.IntOpt('port'),
+    ]
+
+    for pool_nameserver_id in pool_nameserver_ids:
+        pool_nameserver_group = cfg.OptGroup(
+            'pool_nameserver:%s' % pool_nameserver_id)
+
+        CONF.register_group(pool_nameserver_group)
+        CONF.register_opts(pool_nameserver_opts, group=pool_nameserver_group)

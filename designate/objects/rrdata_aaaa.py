@@ -13,17 +13,35 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from designate.objects.record import Record
+from designate.objects.record import RecordList
 
 
-class RRData_AAAA(Record):
+class AAAA(Record):
     """
     AAAA Resource Record Type
     Defined in: RFC3596
     """
     FIELDS = {
-        'address': {}
+        'address': {
+            'schema': {
+                'type': 'string',
+                'format': 'ipv6',
+            },
+            'required': True
+        }
     }
+
+    def _to_string(self):
+        return self.address
+
+    def _from_string(self, value):
+        self.address = value
 
     # The record type is defined in the RFC. This will be used when the record
     # is sent by mini-dns.
     RECORD_TYPE = 28
+
+
+class AAAAList(RecordList):
+
+    LIST_ITEM_TYPE = AAAA

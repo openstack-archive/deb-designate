@@ -906,7 +906,7 @@ class StorageTestCase(object):
 
         criterion = dict(
             domain_id=domain['id'],
-            name="*%s" % domain['name'],
+            name="%%%(name)s" % {"name": domain['name']},
         )
 
         results = self.storage.find_recordsets(self.admin_context, criterion)
@@ -1307,7 +1307,7 @@ class StorageTestCase(object):
         criterion = dict(
             domain_id=domain['id'],
             recordset_id=recordset['id'],
-            data="*.0.0.1",
+            data="%.0.0.1",
         )
 
         results = self.storage.find_records(self.admin_context, criterion)
@@ -2179,8 +2179,8 @@ class StorageTestCase(object):
     def test_create_pool_attribute(self):
         values = {
             'pool_id': "d5d10661-0312-4ae1-8664-31188a4310b7",
-            'key': "name_server",
-            'value': 'ns1.example.org.'
+            'key': "test-attribute",
+            'value': 'test-value'
         }
 
         result = self.storage.create_pool_attribute(

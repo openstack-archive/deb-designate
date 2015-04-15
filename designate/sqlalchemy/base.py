@@ -102,10 +102,9 @@ class SQLAlchemy(object):
             for name, value in criterion.items():
                 column = getattr(table.c, name)
 
-                # Wildcard value: '*'
-                if isinstance(value, basestring) and '*' in value:
-                    queryval = value.replace('*', '%')
-                    query = query.where(column.like(queryval))
+                # Wildcard value: '%'
+                if isinstance(value, basestring) and '%' in value:
+                    query = query.where(column.like(value))
                 elif isinstance(value, basestring) and value.startswith('!'):
                     queryval = value[1:]
                     query = query.where(column != queryval)
@@ -121,6 +120,8 @@ class SQLAlchemy(object):
                 elif isinstance(value, basestring) and value.startswith('>'):
                     queryval = value[1:]
                     query = query.where(column > queryval)
+                elif isinstance(value, list):
+                    query = query.where(column.in_(value))
                 else:
                     query = query.where(column == value)
 
@@ -128,9 +129,7 @@ class SQLAlchemy(object):
 
     def _apply_tenant_criteria(self, context, table, query):
         if hasattr(table.c, 'tenant_id'):
-            if context.all_tenants:
-                LOG.debug('Including all tenants items in query results')
-            else:
+            if not context.all_tenants:
                 # NOTE: The query doesn't work with table.c.tenant_id is None,
                 # so I had to force flake8 to skip the check
                 query = query.where(or_(table.c.tenant_id == context.tenant,
@@ -243,7 +242,7 @@ class SQLAlchemy(object):
             try:
                 query = utils.paginate_query(
                     query, table, limit,
-                    [sort_key, 'id', 'created_at'], marker=marker,
+                    [sort_key, 'id'], marker=marker,
                     sort_dir=sort_dir)
 
                 resultproxy = self.session.execute(query)
@@ -329,3 +328,20 @@ class SQLAlchemy(object):
         resultproxy = self.session.execute(query)
 
         return _set_object_from_model(obj, resultproxy.fetchone())
+
+    def _select_raw(self, context, table, criterion, query=None):
+        # Build the query
+        if query is None:
+            query = select([table])
+
+        query = self._apply_criterion(table, query, criterion)
+        query = self._apply_deleted_criteria(context, table, query)
+
+        try:
+            resultproxy = self.session.execute(query)
+            return resultproxy.fetchall()
+        # Any ValueErrors are propagated back to the user as is.
+        # If however central or storage is called directly, invalid values
+        # show up as ValueError
+        except ValueError as value_error:
+            raise exceptions.ValueError(value_error.message)

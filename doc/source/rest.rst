@@ -17,12 +17,13 @@ example:
    Content-Type: application/json
 
    {                                # The rest is the body of request
-     "pool": {
-       "name": "Example Pool",
-       "nameservers": [
-         "ns1.example.org."
-       ]
-     }
+        "name": "Example Pool",
+        "ns_records": [
+            {
+              "hostname": "ns1.example.org.",
+              "priority": 1
+            }
+        ]
    }
 
 With this info we can make this request using the cURL_ tool. We'll
@@ -44,6 +45,16 @@ tutorial`_ for more info.
 
 .. _cURL: http://curl.haxx.se/
 .. _cURL tutorial: http://curl.haxx.se/docs/manual.html
+
+HTTP Headers
+============
+
+These headers work for all APIs
+
+* X-Designate-Edit-Managed-Records
+    - Allows admins (or users with the right role) to modify managed records (records created by designate-sink / reverse floating ip API)
+* X-Auth-All-Projects
+    - Allows admins (or users with the right role) to view and edit zones / recordsets for all tenants
 
 API Versions
 ============
@@ -77,3 +88,12 @@ V2 API
        rest/v2/blacklists
        rest/v2/quotas
        rest/v2/pools
+
+Admin API
+---------
+    .. toctree::
+       :maxdepth: 2
+       :glob:
+
+       rest/admin/quotas
+

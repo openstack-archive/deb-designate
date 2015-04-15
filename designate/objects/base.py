@@ -84,20 +84,18 @@ def _schema_ref_resolver(uri):
     return obj.obj_get_schema()
 
 
-def make_class_validator(cls):
+def make_class_validator(obj):
 
     schema = {
         '$schema': 'http://json-schema.org/draft-04/hyper-schema',
-        'title': cls.obj_name(),
-        'description': 'Designate %s Object' % cls.obj_name(),
+        'title': obj.obj_name(),
+        'description': 'Designate %s Object' % obj.obj_name(),
     }
 
-    if issubclass(cls, ListObjectMixin):
+    if isinstance(obj, ListObjectMixin):
 
         schema['type'] = 'array',
-        schema['items'] = {
-            '$ref': 'obj://%s#/' % cls.LIST_ITEM_TYPE.obj_name()
-        }
+        schema['items'] = make_class_validator(obj.LIST_ITEM_TYPE)
 
     else:
         schema['type'] = 'object'
@@ -105,11 +103,11 @@ def make_class_validator(cls):
         schema['required'] = []
         schema['properties'] = {}
 
-        for name, properties in cls.FIELDS.items():
+        for name, properties in obj.FIELDS.items():
             if properties.get('relation', False):
-                schema['properties'][name] = {
-                    '$ref': 'obj://%s#/' % properties.get('relation_cls')
-                }
+                if obj.obj_attr_is_set(name):
+                    schema['properties'][name] = \
+                        make_class_validator(getattr(obj, name))
             else:
                 schema['properties'][name] = properties.get('schema', {})
 
@@ -119,8 +117,10 @@ def make_class_validator(cls):
     resolver = jsonschema.RefResolver.from_schema(
         schema, handlers={'obj': _schema_ref_resolver})
 
-    cls._obj_validator = validators.Draft4Validator(
+    obj._obj_validator = validators.Draft4Validator(
         schema, resolver=resolver, format_checker=format.draft4_format_checker)
+
+    return schema
 
 
 class DesignateObjectMetaclass(type):
@@ -132,7 +132,6 @@ class DesignateObjectMetaclass(type):
             return
 
         make_class_properties(cls)
-        make_class_validator(cls)
 
         # Add a reference to the finished class into the _obj_classes
         # dictionary, allowing us to lookup classes by their name later - this
@@ -192,11 +191,10 @@ class DesignateObject(object):
         for field, value in _dict.items():
             if (field in instance.FIELDS and
                     instance.FIELDS[field].get('relation', False)):
-
+                relation_cls_name = instance.FIELDS[field]['relation_cls']
                 # We're dealing with a relation, we'll want to create the
                 # correct object type and recurse
-                relation_cls = cls.obj_cls_from_name(
-                    instance.FIELDS[field]['relation_cls'])
+                relation_cls = cls.obj_cls_from_name(relation_cls_name)
 
                 if isinstance(value, list):
                     setattr(instance, field, relation_cls.from_list(value))
@@ -282,9 +280,15 @@ class DesignateObject(object):
     @property
     def is_valid(self):
         """Returns True if the Object is valid."""
+
+        make_class_validator(self)
+
         return self._obj_validator.is_valid(self.to_dict())
 
     def validate(self):
+
+        make_class_validator(self)
+
         # NOTE(kiall): We make use of the Object registry here in order to
         #              avoid an impossible circular import.
         ValidationErrorList = self.obj_cls_from_name('ValidationErrorList')
@@ -302,8 +306,9 @@ class DesignateObject(object):
             errors.append(ValidationError.from_js_error(error))
 
         if len(errors) > 0:
-            raise exceptions.InvalidObject("Provided object does not match "
-                                           "schema", errors=errors)
+            raise exceptions.InvalidObject(
+                "Provided object does not match "
+                "schema", errors=errors, object=self)
 
     def obj_attr_is_set(self, name):
         """
@@ -347,7 +352,8 @@ class DesignateObject(object):
 
     def __setattr__(self, name, value):
         """Enforces all object attributes are private or well defined"""
-        if name[0:5] == '_obj_' or name in self.FIELDS.keys():
+        if name[0:5] == '_obj_' or name in self.FIELDS.keys() \
+                or name == 'FIELDS':
             super(DesignateObject, self).__setattr__(name, value)
 
         else:
@@ -578,24 +584,28 @@ class PersistentObjectMixin(object):
             'schema': {
                 'type': 'string',
                 'format': 'uuid',
-            }
+            },
+            'read_only': True
         },
         'created_at': {
             'schema': {
                 'type': 'string',
                 'format': 'date-time',
-            }
+            },
+            'read_only': True
         },
         'updated_at': {
             'schema': {
                 'type': ['string', 'null'],
                 'format': 'date-time',
-            }
+            },
+            'read_only': True
         },
         'version': {
             'schema': {
                 'type': 'integer',
-            }
+            },
+            'read_only': True
         }
     }
 
@@ -610,13 +620,15 @@ class SoftDeleteObjectMixin(object):
         'deleted': {
             'schema': {
                 'type': ['string', 'integer'],
-            }
+            },
+            'read_only': True
         },
         'deleted_at': {
             'schema': {
                 'type': ['string', 'null'],
                 'format': 'date-time',
-            }
+            },
+            'read_only': True
         }
     }
 

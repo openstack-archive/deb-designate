@@ -102,7 +102,7 @@ domains = Table('domains', metadata,
     Column('pool_id', UUID, default=None, nullable=True),
     Column('reverse_name', String(255), nullable=False),
 
-    UniqueConstraint('name', 'deleted', name='unique_domain_name'),
+    UniqueConstraint('name', 'deleted', 'pool_id', name='unique_domain_name'),
     ForeignKeyConstraint(['parent_domain_id'],
                          ['domains.id'],
                          ondelete='SET NULL'),
@@ -248,6 +248,21 @@ pool_attributes = Table('pool_attributes', metadata,
     mysql_engine='INNODB',
     mysql_charset='utf8'
 )
+
+pool_ns_records = Table('pool_ns_records', metadata,
+    Column('id', UUID(), default=utils.generate_uuid, primary_key=True),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+    Column('version', Integer(), default=1, nullable=False),
+
+    Column('pool_id', UUID(), nullable=False),
+    Column('priority', Integer(), nullable=False),
+    Column('hostname', String(255), nullable=False),
+
+    ForeignKeyConstraint(['pool_id'], ['pools.id'], ondelete='CASCADE'),
+
+    mysql_engine='INNODB',
+    mysql_charset='utf8')
 
 zone_transfer_requests = Table('zone_transfer_requests', metadata,
     Column('id', UUID, default=utils.generate_uuid, primary_key=True),

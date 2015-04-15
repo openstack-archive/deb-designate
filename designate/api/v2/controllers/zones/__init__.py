@@ -14,38 +14,29 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import pecan
-from dns import zone as dnszone
-from dns import exception as dnsexception
 from oslo.config import cfg
 
 from designate import exceptions
 from designate import utils
-from designate import schema
-from designate import dnsutils
 from designate.api.v2.controllers import rest
-from designate.api.v2.controllers import nameservers
 from designate.api.v2.controllers import recordsets
 from designate.api.v2.controllers.zones import tasks
-from designate.api.v2.views import zones as zones_view
 from designate import objects
+from designate.objects.adapters import DesignateAdapter
 
 
 CONF = cfg.CONF
 
 
 class ZonesController(rest.RestController):
-    _view = zones_view.ZonesView()
-    _resource_schema = schema.Schema('v2', 'zone')
-    _collection_schema = schema.Schema('v2', 'zones')
+
     SORT_KEYS = ['created_at', 'id', 'updated_at', 'name', 'tenant_id',
                  'serial', 'ttl', 'status']
 
-    nameservers = nameservers.NameServersController()
     recordsets = recordsets.RecordSetsController()
     tasks = tasks.TasksController()
 
     @pecan.expose(template='json:', content_type='application/json')
-    @pecan.expose(template=None, content_type='text/dns')
     @utils.validate_uuid('zone_id')
     def get_one(self, zone_id):
         """Get Zone"""
@@ -53,54 +44,11 @@ class ZonesController(rest.RestController):
 
         request = pecan.request
         context = request.environ['context']
-        if 'Accept' not in request.headers:
-            raise exceptions.BadRequest('Missing Accept header')
-        best_match = request.accept.best_match(['application/json',
-                                                'text/dns'])
-        if best_match == 'text/dns':
-            return self._get_zonefile(request, context, zone_id)
-        elif best_match == 'application/json':
-            return self._get_json(request, context, zone_id)
-        else:
-            raise exceptions.UnsupportedAccept(
-                'Accept must be text/dns or application/json')
 
-    def _get_json(self, request, context, zone_id):
-        """'Normal' zone get"""
-        zone = self.central_api.get_domain(context, zone_id)
-
-        return self._view.show(context, request, zone)
-
-    def _get_zonefile(self, request, context, zone_id):
-        """Export zonefile"""
-        servers = self.central_api.get_domain_servers(context, zone_id)
-        domain = self.central_api.get_domain(context, zone_id)
-
-        criterion = {'domain_id': zone_id}
-        recordsets = self.central_api.find_recordsets(context, criterion)
-
-        records = []
-
-        for recordset in recordsets:
-            criterion = {
-                'domain_id': domain['id'],
-                'recordset_id': recordset['id']
-            }
-
-            raw_records = self.central_api.find_records(context, criterion)
-
-            for record in raw_records:
-                records.append({
-                    'name': recordset['name'],
-                    'type': recordset['type'],
-                    'ttl': recordset['ttl'],
-                    'data': record['data'],
-                })
-
-        return utils.render_template('bind9-zone.jinja2',
-                                     servers=servers,
-                                     domain=domain,
-                                     records=records)
+        return DesignateAdapter.render(
+            'API_v2',
+            self.central_api.get_domain(context, zone_id),
+            request=request)
 
     @pecan.expose(template='json:', content_type='application/json')
     def get_all(self, **params):
@@ -108,17 +56,20 @@ class ZonesController(rest.RestController):
         request = pecan.request
         context = request.environ['context']
 
-        marker, limit, sort_key, sort_dir = self._get_paging_params(params)
+        marker, limit, sort_key, sort_dir = utils.get_paging_params(
+            params, self.SORT_KEYS)
 
         # Extract any filter params.
         accepted_filters = ('name', 'email', 'status', )
-        criterion = dict((k, params[k]) for k in accepted_filters
-                         if k in params)
 
-        zones = self.central_api.find_domains(
-            context, criterion, marker, limit, sort_key, sort_dir)
+        criterion = self._apply_filter_params(
+            params, accepted_filters, {})
 
-        return self._view.list(context, request, zones)
+        return DesignateAdapter.render(
+            'API_v2',
+            self.central_api.find_domains(
+                context, criterion, marker, limit, sort_key, sort_dir),
+            request=request)
 
     @pecan.expose(template='json:', content_type='application/json')
     def post_all(self):
@@ -126,39 +77,28 @@ class ZonesController(rest.RestController):
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
-        if request.content_type == 'text/dns':
-            return self._post_zonefile(request, response, context)
-        elif request.content_type == 'application/json':
-            return self._post_json(request, response, context)
-        else:
-            raise exceptions.UnsupportedContentType(
-                'Content-type must be text/dns or application/json')
 
-    def _post_json(self, request, response, context):
-        """'Normal' zone creation"""
-        body = request.body_dict
+        zone = request.body_dict
 
         # We need to check the zone type before validating the schema since if
         # it's the type is SECONDARY we need to set the email to the mgmt email
-        zone = body.get('zone')
+
         if isinstance(zone, dict):
             if 'type' not in zone:
                 zone['type'] = 'PRIMARY'
 
             if zone['type'] == 'SECONDARY':
                 mgmt_email = CONF['service:central'].managed_resource_email
-                body['zone']['email'] = mgmt_email
+                zone['email'] = mgmt_email
 
-        # Validate the request conforms to the schema
-        self._resource_schema.validate(body)
+        zone = DesignateAdapter.parse('API_v2', zone, objects.Domain())
 
-        # Convert from APIv2 -> Central format
-        values = self._view.load(context, request, body)
+        zone.validate()
 
-        # TODO(ekarlso): Fix this once setter or so works.
-        masters = values.pop('masters', [])
-        zone = objects.Domain.from_dict(values)
-        zone.set_masters(masters)
+        # # TODO(ekarlso): Fix this once setter or so works.
+        # masters = values.pop('masters', [])
+        # zone = objects.Domain.from_dict(values)
+        # zone.set_masters(masters)
 
         # Create the zone
         zone = self.central_api.create_domain(context, zone)
@@ -171,46 +111,12 @@ class ZonesController(rest.RestController):
         else:
             response.status_int = 201
 
-        response.headers['Location'] = self._view._get_resource_href(request,
-                                                                     zone)
-
         # Prepare and return the response body
-        return self._view.show(context, request, zone)
+        zone = DesignateAdapter.render('API_v2', zone, request=request)
 
-    def _post_zonefile(self, request, response, context):
-        """Import Zone"""
-        try:
-            dnspython_zone = dnszone.from_text(
-                request.body,
-                # Don't relativize, otherwise we end up with '@' record names.
-                relativize=False,
-                # Dont check origin, we allow missing NS records (missing SOA
-                # records are taken care of in _create_zone).
-                check_origin=False)
-            domain = dnsutils.from_dnspython_zone(dnspython_zone)
-            domain.type = 'PRIMARY'
+        response.headers['Location'] = zone['links']['self']
 
-            for rrset in list(domain.recordsets):
-                if rrset.type in ('NS', 'SOA'):
-                    domain.recordsets.remove(rrset)
-
-        except dnszone.UnknownOrigin:
-            raise exceptions.BadRequest('The $ORIGIN statement is required and'
-                                        ' must be the first statement in the'
-                                        ' zonefile.')
-        except dnsexception.SyntaxError:
-            raise exceptions.BadRequest('Malformed zonefile.')
-
-        zone = self.central_api.create_domain(context, domain)
-
-        if zone['status'] == 'PENDING':
-            response.status_int = 202
-        else:
-            response.status_int = 201
-
-        response.headers['Location'] = self._view._get_resource_href(request,
-                                                                     zone)
-        return self._view.show(context, request, zone)
+        return zone
 
     @pecan.expose(template='json:', content_type='application/json')
     @pecan.expose(template='json:', content_type='application/json-patch+json')
@@ -228,8 +134,9 @@ class ZonesController(rest.RestController):
         # Fetch the existing zone
         zone = self.central_api.get_domain(context, zone_id)
 
-        # Convert to APIv2 Format
-        zone_data = self._view.show(context, request, zone)
+        # Don't allow updates to zones that are being deleted
+        if zone.action == "DELETE":
+            raise exceptions.BadRequest('Can not update a deleting zone')
 
         if request.content_type == 'application/json-patch+json':
             # Possible pattern:
@@ -246,23 +153,16 @@ class ZonesController(rest.RestController):
             # 3) ...?
             raise NotImplemented('json-patch not implemented')
         else:
-            zone_data = utils.deep_dict_merge(zone_data, body)
+            # Update the zone object with the new values
+            zone = DesignateAdapter.parse('API_v2', body, zone)
 
-            # Validate the new set of data
-            self._resource_schema.validate(zone_data)
-
-            # Unpack the values
-            values = self._view.load(context, request, body)
-
-            zone.set_masters(values.pop('masters', []))
-
+            zone.validate()
             # If masters are specified then we set zone.transferred_at to None
             # which will cause a new transfer
             if 'attributes' in zone.obj_what_changed():
                 zone.transferred_at = None
 
             # Update and persist the resource
-            zone.update(values)
 
             if zone.type == 'SECONDARY' and 'email' in zone.obj_what_changed():
                 msg = "Changed email is not allowed."
@@ -277,7 +177,7 @@ class ZonesController(rest.RestController):
         else:
             response.status_int = 200
 
-        return self._view.show(context, request, zone)
+        return DesignateAdapter.render('API_v2', zone, request=request)
 
     @pecan.expose(template='json:', content_type='application/json')
     @utils.validate_uuid('zone_id')
@@ -290,4 +190,4 @@ class ZonesController(rest.RestController):
         zone = self.central_api.delete_domain(context, zone_id)
         response.status_int = 202
 
-        return self._view.show(context, request, zone)
+        return DesignateAdapter.render('API_v2', zone, request=request)

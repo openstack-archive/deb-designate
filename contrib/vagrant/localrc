@@ -31,6 +31,40 @@ ENABLED_SERVICES+=,designate,designate-central,designate-api,designate-pool-mana
 #                 setup.cfg)
 #DESIGNATE_BACKEND_DRIVER=powerdns
 
+# Pool Manager Cache Driver (e.g. noop, memcache, sqlalchemy. See
+#                            designate.backend section of setup.cfg)
+#DESIGNATE_POOL_MANAGER_CACHE_DRIVER=noop
+
+# mDNS Service DNS Port Number
+#DESIGNATE_SERVICE_PORT_MDNS=5354
+
+# Designate Backend Config
+# ========================
+# DynECT Backend
+# NOTEs:
+# - DynECT requires DESIGNATE_SERVICE_PORT_MDNS is set to "53"
+# - DESIGNATE_DYNECT_MASTERS must be a Publicly reachable IP, pointed to mDNS
+#DESIGNATE_DYNECT_CUSTOMER=
+#DESIGNATE_DYNECT_USERNAME=
+#DESIGNATE_DYNECT_PASSWORD=
+#DESIGNATE_DYNECT_NAMESERVERS=ns1.p13.dynect.net,ns2.p13.dynect.net,ns3.p13.dynect.net,ns4.p13.dynect.net
+#DESIGNATE_DYNECT_MASTERS=
+
+# Akamai Backend
+#DESIGNATE_AKAMAI_USERNAME=
+#DESIGNATE_AKAMAI_PASSWORD=
+#DESIGNATE_AKAMAI_NAMESERVERS=a5-64.akam.net,a11-65.akam.net,a13-66.akam.net,a14-64.akam.net,a20-65.akam.net,a22-66.akam.net
+#DESIGNATE_AKAMAI_MASTERS=
+
+# Designate Misc Config
+# =====================
+
+# Enable a Notification Driver (e.g. for Ceiliometer)
+#DESIGNATE_NOTIFICATION_DRIVER=messaging
+
+# Set Notification topics
+#DESIGNATE_NOTIFICATION_TOPICS=notifications
+
 
 # Other Devstack Config
 # =====================
@@ -43,8 +77,14 @@ ENABLED_SERVICES+=,designate,designate-central,designate-api,designate-pool-mana
 # Optional Rally
 #ENABLED_SERVICES+=,rally
 
-# Optional Horizon Panels
+# Optional Horizon
 #ENABLED_SERVICES+=,horizon
 
-# Optional core OpenStack services (needed by horizon)
-#ENABLED_SERVICES+=,g-api,g-reg,n-api,n-crt,n-obj,n-cpu,n-net,n-cond,n-sch,n-novnc,n-xvnc,n-cauth
+# Optional Glance
+#ENABLED_SERVICES+=,g-api,g-reg
+
+# Optional Nova
+#ENABLED_SERVICES+=,n-api,n-cpu,n-net,n-cond,n-sch,n-novnc
+
+# Optional Neutron
+#ENABLED_SERVICES+=,-n-net,q-svc,q-agt,q-dhcp,q-l3,q-meta

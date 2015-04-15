@@ -474,6 +474,28 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
 
         return recordsets
 
+    def find_recordsets_axfr(self, context, criterion=None):
+        query = None
+
+        # Check to see if the criterion can use the reverse_name column
+        criterion = self._rname_check(criterion)
+
+        rjoin = tables.records.join(
+            tables.recordsets,
+            tables.records.c.recordset_id == tables.recordsets.c.id)
+
+        query = select([tables.recordsets.c.id, tables.recordsets.c.type,
+                        tables.recordsets.c.ttl, tables.recordsets.c.name,
+                        tables.records.c.data, tables.records.c.action]).\
+            select_from(rjoin).where(tables.records.c.action != 'DELETE')
+
+        query = query.order_by(tables.recordsets.c.id)
+
+        raw_rows = self._select_raw(
+            context, tables.recordsets, criterion, query)
+
+        return raw_rows
+
     def create_recordset(self, context, domain_id, recordset):
         # Fetch the domain as we need the tenant_id
         domain = self._find_domains(context, {'id': domain_id}, one=True)
@@ -706,71 +728,70 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
     # Pool methods
     def _find_pools(self, context, criterion, one=False, marker=None,
                     limit=None, sort_key=None, sort_dir=None):
-        return self._find(context, tables.pools, objects.Pool,
-                          objects.PoolList, exceptions.PoolNotFound,
-                          criterion, one, marker, limit, sort_key,
-                          sort_dir)
+        pools = self._find(context, tables.pools, objects.Pool,
+                           objects.PoolList, exceptions.PoolNotFound,
+                           criterion, one, marker, limit, sort_key,
+                           sort_dir)
+
+        # Load Relations
+        def _load_relations(pool):
+            pool.attributes = self._find_pool_attributes(
+                context, {'pool_id': pool.id})
+
+            pool.ns_records = self._find_pool_ns_records(
+                context, {'pool_id': pool.id})
+
+            pool.obj_reset_changes(['attributes', 'ns_records'])
+
+        if one:
+            _load_relations(pools)
+        else:
+            for pool in pools:
+                _load_relations(pool)
+
+        return pools
 
     def create_pool(self, context, pool):
         pool = self._create(
             tables.pools, pool, exceptions.DuplicatePool,
-            ['attributes', 'nameservers'])
+            ['attributes', 'ns_records'])
 
         if pool.obj_attr_is_set('attributes'):
             for pool_attribute in pool.attributes:
                 self.create_pool_attribute(context, pool.id, pool_attribute)
         else:
             pool.attributes = objects.PoolAttributeList()
-        pool.obj_reset_changes(['attributes'])
 
-        if pool.obj_attr_is_set('nameservers'):
-            for nameserver in pool.nameservers:
-                self.create_pool_attribute(context, pool.id, nameserver)
+        if pool.obj_attr_is_set('ns_records'):
+            for ns_record in pool.ns_records:
+                self.create_pool_ns_record(context, pool.id, ns_record)
         else:
-            pool.nameservers = objects.NameServerList()
-        pool.obj_reset_changes(['nameservers'])
+            pool.ns_records = objects.PoolNsRecordList()
+
+        pool.obj_reset_changes(['attributes', 'ns_records'])
 
         return pool
 
     def get_pool(self, context, pool_id):
-        pool = self._find_pools(context, {'id': pool_id}, one=True)
-        pool.attributes = self._find_pool_attributes(
-            context, {'pool_id': pool_id, 'key': '!name_server'})
-        pool.nameservers = self._find_pool_attributes(
-            context, {'pool_id': pool_id, 'key': 'name_server'})
-        pool.obj_reset_changes(['attributes', 'nameservers'])
-
-        return pool
+        return self._find_pools(context, {'id': pool_id}, one=True)
 
     def find_pools(self, context, criterion=None, marker=None,
                    limit=None, sort_key=None, sort_dir=None):
-        pools = self._find_pools(context, criterion, marker=marker,
+        return self._find_pools(context, criterion, marker=marker,
                                 limit=limit, sort_key=sort_key,
                                 sort_dir=sort_dir)
-        for pool in pools:
-            pool.attributes = self._find_pool_attributes(
-                context, {'pool_id': pool.id, 'key': '!name_server'})
-            pool.nameservers = self._find_pool_attributes(
-                context, {'pool_id': pool.id, 'key': 'name_server'})
-            pool.obj_reset_changes(['attributes', 'nameservers'])
-
-        return pools
 
     def find_pool(self, context, criterion):
-        pool = self._find_pools(context, criterion, one=True)
-        pool.attributes = self._find_pool_attributes(
-            context, {'pool_id': pool.id, 'key': '!name_server'})
-        pool.nameservers = self._find_pool_attributes(
-            context, {'pool_id': pool.id, 'key': 'name_server'})
-        pool.obj_reset_changes(['attributes', 'nameservers'])
-        return pool
+        return self._find_pools(context, criterion, one=True)
 
     def update_pool(self, context, pool):
         pool = self._update(context, tables.pools, pool,
                             exceptions.DuplicatePool, exceptions.PoolNotFound,
-                            ['attributes', 'nameservers'])
-        if pool.obj_attr_is_set('attributes') or \
-                pool.obj_attr_is_set('nameservers'):
+                            ['attributes', 'ns_records'])
+
+        # TODO(kiall): These two sections below are near identical, we should
+        #              refactor into a single reusable method.
+        if pool.obj_attr_is_set('attributes'):
             # Gather the pool ID's we have
             have_attributes = set([r.id for r in self._find_pool_attributes(
                 context, {'pool_id': pool.id})])
@@ -783,9 +804,6 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             attributes = []
             if pool.obj_attr_is_set('attributes'):
                 for r in pool.attributes.objects:
-                    attributes.append(r)
-            if pool.obj_attr_is_set('nameservers'):
-                for r in pool.nameservers.objects:
                     attributes.append(r)
 
             # Determine what to change
@@ -801,7 +819,7 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             # NOTE: Since we're dealing with mutable objects, the return value
             #       of create/update/delete attribute is not needed. The
             #       original item will be mutated in place on the input
-            #       "pool.attributes" or "pool.nameservers" list.
+            #       "pool.attributes" list.
 
             # Delete attributes
             for attribute_id in have_attributes - keep_attributes:
@@ -816,7 +834,50 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
                 self.create_pool_attribute(
                     context, pool.id, attribute)
 
-        # Call get_pool to get the ids of all the attributes/nameservers
+        if pool.obj_attr_is_set('ns_records'):
+            # Gather the pool ID's we have
+            have_ns_records = set([r.id for r in self._find_pool_ns_records(
+                context, {'pool_id': pool.id})])
+
+            # Prep some lists of changes
+            keep_ns_records = set([])
+            create_ns_records = []
+            update_ns_records = []
+
+            ns_records = []
+            if pool.obj_attr_is_set('ns_records'):
+                for r in pool.ns_records.objects:
+                    ns_records.append(r)
+
+            # Determine what to change
+            for ns_record in ns_records:
+                keep_ns_records.add(ns_record.id)
+                try:
+                    ns_record.obj_get_original_value('id')
+                except KeyError:
+                    create_ns_records.append(ns_record)
+                else:
+                    update_ns_records.append(ns_record)
+
+            # NOTE: Since we're dealing with mutable objects, the return value
+            #       of create/update/delete ns_record is not needed. The
+            #       original item will be mutated in place on the input
+            #       "pool.ns_records" list.
+
+            # Delete ns_records
+            for ns_record_id in have_ns_records - keep_ns_records:
+                self.delete_pool_ns_record(context, ns_record_id)
+
+            # Update ns_records
+            for ns_record in update_ns_records:
+                self.update_pool_ns_record(context, ns_record)
+
+            # Create ns_records
+            for ns_record in create_ns_records:
+                self.create_pool_ns_record(
+                    context, pool.id, ns_record)
+
+        # Call get_pool to get the ids of all the attributes/ns_records
         # refreshed in the pool object
         updated_pool = self.get_pool(context, pool.id)
 
@@ -869,10 +930,51 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
 
         return deleted_pool_attribute
 
+    # Pool ns_record methods
+    def _find_pool_ns_records(self, context, criterion, one=False, marker=None,
+                    limit=None, sort_key=None, sort_dir=None):
+        return self._find(context, tables.pool_ns_records,
+                          objects.PoolNsRecord, objects.PoolNsRecordList,
+                          exceptions.PoolNsRecordNotFound, criterion, one,
+                          marker, limit, sort_key, sort_dir)
+
+    def create_pool_ns_record(self, context, pool_id, pool_ns_record):
+        pool_ns_record.pool_id = pool_id
+
+        return self._create(tables.pool_ns_records, pool_ns_record,
+                            exceptions.DuplicatePoolNsRecord)
+
+    def get_pool_ns_record(self, context, pool_ns_record_id):
+        return self._find_pool_ns_records(
+            context, {'id': pool_ns_record_id}, one=True)
+
+    def find_pool_ns_records(self, context, criterion=None, marker=None,
+                   limit=None, sort_key=None, sort_dir=None):
+        return self._find_pool_ns_records(context, criterion, marker=marker,
+                                          limit=limit, sort_key=sort_key,
+                                          sort_dir=sort_dir)
+
+    def find_pool_ns_record(self, context, criterion):
+        return self._find_pool_ns_records(context, criterion, one=True)
+
+    def update_pool_ns_record(self, context, pool_ns_record):
+        return self._update(context, tables.pool_ns_records, pool_ns_record,
+                            exceptions.DuplicatePoolNsRecord,
+                            exceptions.PoolNsRecordNotFound)
+
+    def delete_pool_ns_record(self, context, pool_ns_record_id):
+        pool_ns_record = self._find_pool_ns_records(
+            context, {'id': pool_ns_record_id}, one=True)
+        deleted_pool_ns_record = self._delete(
+            context, tables.pool_ns_records, pool_ns_record,
+            exceptions.PoolNsRecordNotFound)
+
+        return deleted_pool_ns_record
+
     # Zone Transfer Methods
     def _find_zone_transfer_requests(self, context, criterion, one=False,
-                                    marker=None, limit=None, sort_key=None,
-                                    sort_dir=None):
+                                     marker=None, limit=None, sort_key=None,
+                                     sort_dir=None):
 
         table = tables.zone_transfer_requests
 
@@ -884,9 +986,7 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             [table, tables.domains.c.name.label("domain_name")]
         ).select_from(ljoin)
 
-        if context.all_tenants:
-            LOG.debug('Including all tenants items in query results')
-        else:
+        if not context.all_tenants:
             query = query.where(or_(
                 table.c.tenant_id == context.tenant,
                 table.c.target_tenant_id == context.tenant))

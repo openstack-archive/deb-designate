@@ -20,6 +20,14 @@ from designate.tests.test_api.test_v2 import ApiV2TestCase
 LOG = logging.getLogger(__name__)
 
 
+def _attributes_to_api(attributes):
+    result = {}
+    for attribute in attributes:
+        result[attribute['key']] = attribute['value']
+
+    return result
+
+
 class ApiV2PoolsTest(ApiV2TestCase):
     def setUp(self):
         super(ApiV2PoolsTest, self).setUp()
@@ -31,40 +39,41 @@ class ApiV2PoolsTest(ApiV2TestCase):
     def test_create_pool(self):
         # Prepare a Pool fixture
         fixture = self.get_pool_fixture(fixture=0)
-        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
-        fixture['nameservers'] = self.get_nameserver_fixture(fixture=0)
+        fixture['attributes'] = _attributes_to_api(fixture['attributes'])
+
         response = self.client.post_json(
-            '/pools', {'pool': fixture})
+            '/pools', fixture)
 
         # Check the headers are what we expect
         self.assertEqual(201, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
-        self.assertIn('pool', response.json)
-        self.assertIn('links', response.json['pool'])
-        self.assertIn('self', response.json['pool']['links'])
+        self.assertIn('links', response.json)
+        self.assertIn('self', response.json['links'])
 
         # Check the values returned are what we expect
-        self.assertIn('id', response.json['pool'])
-        self.assertIn('created_at', response.json['pool'])
-        self.assertIsNone(response.json['pool']['updated_at'])
-        self.assertEqual(response.json['pool']['name'], fixture['name'])
+        self.assertIn('id', response.json)
+        self.assertIn('created_at', response.json)
+        self.assertIsNone(response.json['updated_at'])
+        self.assertEqual(response.json['name'], fixture['name'])
         self.assertEqual(
-            response.json['pool']['description'], fixture['description'])
+            response.json['description'], fixture['description'])
         self.assertEqual(
-            response.json['pool']['attributes'], fixture['attributes'])
+            response.json['attributes'], fixture['attributes'])
         self.assertEqual(
-            response.json['pool']['nameservers'], fixture['nameservers'])
+            response.json['ns_records'], fixture['ns_records'])
 
     def test_create_pool_validation(self):
         # NOTE: The schemas should be tested separatly to the API. So we
         #       don't need to test every variation via the API itself.
         # Fetch a fixture
         fixture = self.get_pool_fixture(fixture=0)
+
         # Set an invalid scope
-        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=2)
-        fixture['nameservers'] = self.get_nameserver_fixture(fixture=0)
+        fixture['attributes'] = {
+            'scope': 'INVALID'
+        }
 
         body = {'pool': fixture}
         # Ensure it fails with a 400
@@ -73,14 +82,10 @@ class ApiV2PoolsTest(ApiV2TestCase):
 
         # Reset the correct attributes
         fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
-        body = {'pool': fixture, 'junk': 'Junk Field'}
-        # Ensure it fails with a 400
-        self._assert_exception(
-            'invalid_object', 400, self.client.post_json, '/pools', body)
 
         # Add a junk field to the body
         fixture['junk'] = 'Junk Field'
-        body = {'pool': fixture}
+        body = fixture
         # Ensure it fails with a 400
         self._assert_exception(
             'invalid_object', 400, self.client.post_json, '/pools', body)
@@ -88,9 +93,9 @@ class ApiV2PoolsTest(ApiV2TestCase):
     def test_create_pool_duplicate(self):
         # Prepare a Pool fixture
         fixture = self.get_pool_fixture(fixture=0)
-        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
-        fixture['nameservers'] = self.get_nameserver_fixture(fixture=0)
-        body = {'pool': fixture}
+        fixture['attributes'] = _attributes_to_api(fixture['attributes'])
+
+        body = fixture
         response = self.client.post_json('/pools', body)
 
         # Check that the create went through
@@ -139,36 +144,36 @@ class ApiV2PoolsTest(ApiV2TestCase):
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
-        self.assertIn('pool', response.json)
-        self.assertIn('links', response.json['pool'])
-        self.assertIn('self', response.json['pool']['links'])
+        self.assertIn('links', response.json)
+        self.assertIn('self', response.json['links'])
 
         # Check the values returned are what we expect
-        self.assertIn('id', response.json['pool'])
-        self.assertIn('created_at', response.json['pool'])
-        self.assertIsNone(response.json['pool']['updated_at'])
-        self.assertEqual(pool['name'], response.json['pool']['name'])
+        self.assertIn('id', response.json)
+        self.assertIn('created_at', response.json)
+        self.assertIsNone(response.json['updated_at'])
+        self.assertEqual(pool['name'], response.json['name'])
         self.assertEqual(pool['description'],
-                         response.json['pool']['description'])
+                         response.json['description'])
 
         self.assertEqual(len(pool['attributes']),
-                         len(response.json['pool']['attributes']))
+                         len(response.json['attributes']))
         for attribute in pool['attributes']:
             self.assertEqual(
                 attribute['value'],
-                response.json['pool']['attributes'][attribute['key']])
+                response.json['attributes'][attribute['key']])
 
-        self.assertEqual(len(pool['nameservers']),
-                         len(response.json['pool']['nameservers']))
-        self.assertEqual([r.value for r in pool['nameservers']],
-                         response.json['pool']['nameservers'])
+        self.assertEqual(len(pool['ns_records']),
+                         len(response.json['ns_records']))
+        self.assertEqual(
+            [n.hostname for n in pool['ns_records']],
+            [n['hostname'] for n in response.json['ns_records']])
 
     def test_update_pool(self):
         # Create a pool
         pool = self.create_pool()
 
         # Prepare an update body
-        body = {'pool': {'description': 'Tester'}}
+        body = {'description': 'Tester'}
 
         url = '/pools/%s' % pool['id']
         response = self.client.patch_json(url, body, status=200)
@@ -178,35 +183,38 @@ class ApiV2PoolsTest(ApiV2TestCase):
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
-        self.assertIn('pool', response.json)
-        self.assertIn('links', response.json['pool'])
-        self.assertIn('self', response.json['pool']['links'])
+        self.assertIn('links', response.json)
+        self.assertIn('self', response.json['links'])
 
         # Check the values returned are what we expect
-        self.assertIn('id', response.json['pool'])
-        self.assertIsNotNone(response.json['pool']['updated_at'])
-        self.assertEqual('Tester', response.json['pool']['description'])
+        self.assertIn('id', response.json)
+        self.assertIsNotNone(response.json['updated_at'])
+        self.assertEqual('Tester', response.json['description'])
 
         # Check the rest of the values are unchanged
-        self.assertEqual(pool['name'], response.json['pool']['name'])
+        self.assertEqual(pool['name'], response.json['name'])
         self.assertEqual(len(pool['attributes']),
-                         len(response.json['pool']['attributes']))
+                         len(response.json['attributes']))
         for attribute in pool['attributes']:
             self.assertEqual(
                 attribute['value'],
-                response.json['pool']['attributes'][attribute['key']])
+                response.json['attributes'][attribute['key']])
 
-        self.assertEqual(len(pool['nameservers']),
-                         len(response.json['pool']['nameservers']))
-        self.assertEqual([r.value for r in pool['nameservers']],
-                         response.json['pool']['nameservers'])
+        self.assertEqual(len(pool['ns_records']),
+                         len(response.json['ns_records']))
+        self.assertEqual(
+            [n.hostname for n in pool['ns_records']],
+            [n['hostname'] for n in response.json['ns_records']])
 
-    def test_update_pool_nameservers(self):
+    def test_update_pool_ns_records(self):
         # Create a pool
         pool = self.create_pool()
 
         # Prepare an update body
-        body = {'pool': {'nameservers': ['newns1.com.', 'newns2.com.']}}
+        body = {'ns_records': [
+            {'priority': 1, 'hostname': 'new-ns1.example.org.'},
+            {'priority': 2, 'hostname': 'new-ns2.example.org.'},
+        ]}
 
         url = '/pools/%s' % pool['id']
         response = self.client.patch_json(url, body, status=200)
@@ -216,34 +224,21 @@ class ApiV2PoolsTest(ApiV2TestCase):
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
-        self.assertIn('pool', response.json)
-        self.assertIn('links', response.json['pool'])
-        self.assertIn('self', response.json['pool']['links'])
-        self.assertEqual(2, len(response.json['pool']['nameservers']))
-        self.assertEqual(['newns1.com.', 'newns2.com.'],
-                         response.json['pool']['nameservers'])
+        self.assertIn('id', response.json)
+        self.assertIn('links', response.json)
 
         # Check the values returned are what we expect
-        self.assertIn('id', response.json['pool'])
-        self.assertIsNotNone(response.json['pool']['updated_at'])
-
-        # Check the rest of the values are unchanged
-        self.assertEqual(pool['name'], response.json['pool']['name'])
-        self.assertEqual(
-            pool['description'], response.json['pool']['description'])
-        self.assertEqual(len(pool['attributes']),
-                         len(response.json['pool']['attributes']))
-        for attribute in pool['attributes']:
-            self.assertEqual(
-                attribute['value'],
-                response.json['pool']['attributes'][attribute['key']])
+        self.assertEqual(2, len(response.json['ns_records']))
+        self.assertEqual(['new-ns1.example.org.', 'new-ns2.example.org.'],
+                         [n['hostname'] for n in
+                          response.json['ns_records']])
 
     def test_update_pool_attributes(self):
         # Create a pool
         pool = self.create_pool()
 
         # Prepare an update body
-        body = {'pool': {'attributes': {'scope': 'private'}}}
+        body = {"attributes": {"scope": "private"}}
 
         url = '/pools/%s' % pool['id']
         response = self.client.patch_json(url, body, status=200)
@@ -252,26 +247,10 @@ class ApiV2PoolsTest(ApiV2TestCase):
         self.assertEqual(200, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
-        # Check the body structure is what we expect
-        self.assertIn('pool', response.json)
-        self.assertIn('links', response.json['pool'])
-        self.assertIn('self', response.json['pool']['links'])
-
         # Check the values returned are what we expect
-        self.assertIn('id', response.json['pool'])
-        self.assertIsNotNone(response.json['pool']['updated_at'])
-        self.assertEqual(1, len(response.json['pool']['attributes']))
+        self.assertEqual(1, len(response.json['attributes']))
         self.assertEqual('private',
-                         response.json['pool']['attributes']['scope'])
-
-        # Check the rest of the values are unchanged
-        self.assertEqual(pool['name'], response.json['pool']['name'])
-        self.assertEqual(
-            pool['description'], response.json['pool']['description'])
-        self.assertEqual(len(pool['nameservers']),
-                         len(response.json['pool']['nameservers']))
-        self.assertEqual([r.value for r in pool['nameservers']],
-                         response.json['pool']['nameservers'])
+                         response.json['attributes']['scope'])
 
     def test_delete_pool(self):
         pool = self.create_pool()

@@ -13,17 +13,36 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from designate.objects.record import Record
+from designate.objects.record import RecordList
 
 
-class RRData_CNAME(Record):
+class CNAME(Record):
     """
     CNAME Resource Record Type
     Defined in: RFC1035
     """
     FIELDS = {
-        'cname': {}
+        'cname': {
+            'schema': {
+                'type': 'string',
+                'format': 'domainname',
+                'maxLength': 255,
+            },
+            'required': True
+        }
     }
+
+    def _to_string(self):
+        return self.cname
+
+    def _from_string(self, value):
+        self.cname = value
 
     # The record type is defined in the RFC. This will be used when the record
     # is sent by mini-dns.
     RECORD_TYPE = 5
+
+
+class CNAMEList(RecordList):
+
+    LIST_ITEM_TYPE = CNAME

@@ -40,20 +40,29 @@ function install_designate_backend {
         PDNS=pdns-server
     fi
 
-    install_package $PDNS pdns-backend-mysql
+    if is_service_enabled mysql; then
+        PDNS+=" pdns-backend-mysql"
+    elif is_service_enabled postgresql; then
+        PDNS+=" pdns-backend-pgsql"
+    else
+        die $LINENO "PowerDNS backend only supports MySQL / PostgreSQL"
+    fi
+
+    install_package $PDNS
     sudo rm -rf $POWERDNS_CFG_DIR/pdns.d
 }
 
 # configure_designate_backend - make configuration changes, including those to other services
 function configure_designate_backend {
-    iniset $DESIGNATE_CONF service:pool_manager backends powerdns
+    iniset $DESIGNATE_CONF pool_target:$DESIGNATE_TARGET_ID type powerdns
+    iniset $DESIGNATE_CONF pool_target:$DESIGNATE_TARGET_ID masters $DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT_MDNS
+    iniset $DESIGNATE_CONF pool_target:$DESIGNATE_TARGET_ID options "connection: `database_connection_url designate_pdns`"
 
-    iniset $DESIGNATE_CONF backend:powerdns server_ids $DESIGNATE_SERVER_ID
-    iniset $DESIGNATE_CONF backend:powerdns connection `database_connection_url designate_pdns`
-    iniset $DESIGNATE_CONF backend:powerdns masters "$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT_MDNS"
-
-    iniset $DESIGNATE_CONF backend:powerdns:$DESIGNATE_SERVER_ID host $DESIGNATE_SERVICE_HOST
-    iniset $DESIGNATE_CONF backend:powerdns:$DESIGNATE_SERVER_ID port $DESIGNATE_SERVICE_PORT_DNS
+    # DevStack Managed PDNS NameServer
+    local nameserver_id=`uuidgen`
+    iniset $DESIGNATE_CONF pool:$DESIGNATE_POOL_ID nameservers $nameserver_id
+    iniset $DESIGNATE_CONF pool_nameserver:$nameserver_id host $DESIGNATE_SERVICE_HOST
+    iniset $DESIGNATE_CONF pool_nameserver:$nameserver_id port $DESIGNATE_SERVICE_PORT_DNS
 
     sudo tee $POWERDNS_CFG_DIR/pdns.conf > /dev/null <<EOF
 # General Config
@@ -85,8 +94,20 @@ gmysql-password=$DATABASE_PASSWORD
 gmysql-dbname=designate_pdns
 gmysql-dnssec=yes
 EOF
+    elif is_service_enabled postgresql; then
+        sudo tee -a $POWERDNS_CFG_DIR/pdns.conf > /dev/null <<EOF
+# Launch gpgsql backend
+launch=gpgsql
+
+# gmysql parameters
+gpgsql-host=$DATABASE_HOST
+gpgsql-user=$DATABASE_USER
+gpgsql-password=$DATABASE_PASSWORD
+gpgsql-dbname=designate_pdns
+gpgsql-dnssec=yes
+EOF
     else
-        die $LINENO "PowerDNS backend only supports MySQL"
+        die $LINENO "PowerDNS backend only supports MySQL / PostgreSQL"
     fi
 
     restart_service pdns
@@ -94,11 +115,17 @@ EOF
 
 # init_designate_backend - initialize databases, etc.
 function init_designate_backend {
+    # Stop pdns so that the migration succeeds, if not you get a error
+    # that the schema is still in use.
+    if is_service_enabled postgresql; then
+        stop_designate_backend
+    fi
+
     # (Re)create designate_pdns database
     recreate_database designate_pdns utf8
 
     # Init and migrate designate_pdns database
-    designate-manage powerdns sync
+    designate-manage powerdns sync $DESIGNATE_TARGET_ID
 }
 
 # start_designate_backend - start any external services

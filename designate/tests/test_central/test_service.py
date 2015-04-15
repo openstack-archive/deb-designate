@@ -20,6 +20,7 @@ import random
 import mock
 import testtools
 from testtools.matchers import GreaterThan
+from oslo.config import cfg
 from oslo_log import log as logging
 from oslo_db import exception as db_exception
 from oslo_messaging.notify import notifier
@@ -149,40 +150,43 @@ class CentralServiceTest(CentralTestCase):
         context = self.get_context()
 
         # Create a domain (using the specified domain name)
-        self.create_domain(name='example.org.')
+        domain = self.create_domain(name='example.org.')
 
-        result = self.central_service._is_subdomain(context, 'org.')
+        result = self.central_service._is_subdomain(
+            context, 'org.', domain.pool_id)
         self.assertFalse(result)
 
-        result = self.central_service._is_subdomain(context,
-                                                    'www.example.net.')
+        result = self.central_service._is_subdomain(
+            context, 'www.example.net.', domain.pool_id)
         self.assertFalse(result)
 
-        result = self.central_service._is_subdomain(context, 'example.org.')
+        result = self.central_service._is_subdomain(
+            context, 'example.org.', domain.pool_id)
         self.assertFalse(result)
 
-        result = self.central_service._is_subdomain(context,
-                                                    'www.example.org.')
+        result = self.central_service._is_subdomain(
+            context, 'www.example.org.', domain.pool_id)
         self.assertTrue(result)
 
     def test_is_superdomain(self):
         context = self.get_context()
 
         # Create a domain (using the specified domain name)
-        self.create_domain(name='example.org.')
+        domain = self.create_domain(name='example.org.')
 
         LOG.debug("Testing 'org.'")
-        result = self.central_service._is_superdomain(context, 'org.')
+        result = self.central_service._is_superdomain(
+            context, 'org.', domain.pool_id)
         self.assertTrue(result)
 
         LOG.debug("Testing 'www.example.net.'")
-        result = self.central_service._is_superdomain(context,
-                                                      'www.example.net.')
+        result = self.central_service._is_superdomain(
+            context, 'www.example.net.', domain.pool_id)
         self.assertFalse(result)
 
         LOG.debug("Testing 'www.example.org.'")
-        result = self.central_service._is_superdomain(context,
-                                                      'www.example.org.')
+        result = self.central_service._is_superdomain(
+            context, 'www.example.org.', domain.pool_id)
         self.assertFalse(result)
 
     def test_is_valid_recordset_placement_subdomain(self):
@@ -211,7 +215,7 @@ class CentralServiceTest(CentralTestCase):
 
     def test_is_valid_ttl(self):
         self.policy({'use_low_ttl': '!'})
-        self.config(min_ttl="100",
+        self.config(min_ttl=100,
                     group='service:central')
         context = self.get_context()
 
@@ -408,9 +412,6 @@ class CentralServiceTest(CentralTestCase):
     # Domain Tests
     @mock.patch.object(notifier.Notifier, "info")
     def _test_create_domain(self, values, mock_notifier):
-        # Create a server
-        self.create_nameserver()
-
         # Reset the mock to avoid the calls from the create_nameserver() call
         mock_notifier.reset_mock()
 
@@ -426,8 +427,35 @@ class CentralServiceTest(CentralTestCase):
 
         self.assertEqual(mock_notifier.call_count, 1)
 
+        # Ensure the correct NS Records are in place
+        pool = self.central_service.get_pool(
+            self.admin_context, domain.pool_id)
+
+        ns_recordset = self.central_service.find_recordset(
+            self.admin_context,
+            criterion={'domain_id': domain.id, 'type': "NS"})
+
+        self.assertIsNotNone(ns_recordset.id)
+        self.assertEqual(ns_recordset.type, 'NS')
+        self.assertIsNotNone(ns_recordset.records)
+        self.assertEqual(set([n.hostname for n in pool.ns_records]),
+                         set([n.data for n in ns_recordset.records]))
+
         mock_notifier.assert_called_once_with(
             self.admin_context, 'dns.domain.create', domain)
+        return domain
+
+    def test_create_domain_duplicate_different_pools(self):
+        fixture = self.get_domain_fixture()
+
+        # Create first domain that's placed in default pool
+        self.create_domain(**fixture)
+
+        # Create a secondary pool
+        second_pool = self.create_pool()
+        fixture["pool_id"] = second_pool.id
+
+        self.create_domain(**fixture)
 
     def test_create_domain_over_tld(self):
         values = dict(
@@ -477,6 +505,20 @@ class CentralServiceTest(CentralTestCase):
         # Ensure all values have been set correctly
         self.assertIsNotNone(domain['id'])
         self.assertEqual(domain['parent_domain_id'], parent_domain['id'])
+
+    def test_create_subdomain_different_pools(self):
+        fixture = self.get_domain_fixture()
+
+        # Create first domain that's placed in default pool
+        self.create_domain(**fixture)
+
+        # Create a secondary pool
+        second_pool = self.create_pool()
+        fixture["pool_id"] = second_pool.id
+        fixture["name"] = "sub.%s" % fixture["name"]
+
+        subdomain = self.create_domain(**fixture)
+        self.assertIsNone(subdomain.parent_domain_id)
 
     def test_create_superdomain(self):
         # Prepare values for the domain and subdomain
@@ -567,9 +609,6 @@ class CentralServiceTest(CentralTestCase):
             email='info@blacklisted.com'
         )
 
-        # Create a server
-        self.create_nameserver()
-
         # Create a zone that is blacklisted
         domain = self.central_service.create_domain(
             self.admin_context, objects.Domain.from_dict(values))
@@ -603,9 +642,6 @@ class CentralServiceTest(CentralTestCase):
                 self.admin_context, objects.Domain.from_dict(values))
 
     def test_create_domain_invalid_tld_fail(self):
-        # Create a server
-        self.create_nameserver()
-
         # add a tld for com
         self.create_tld(fixture=0)
 
@@ -631,15 +667,12 @@ class CentralServiceTest(CentralTestCase):
 
     def test_create_domain_invalid_ttl_fail(self):
         self.policy({'use_low_ttl': '!'})
-        self.config(min_ttl="100",
+        self.config(min_ttl=100,
                     group='service:central')
         context = self.get_context()
 
         values = self.get_domain_fixture(fixture=1)
         values['ttl'] = 0
-
-        # Create a server
-        self.create_nameserver()
 
         with testtools.ExpectedException(exceptions.InvalidTTL):
                     self.central_service.create_domain(
@@ -647,13 +680,10 @@ class CentralServiceTest(CentralTestCase):
 
     def test_create_domain_no_min_ttl(self):
         self.policy({'use_low_ttl': '!'})
-        self.config(min_ttl="None",
+        self.config(min_ttl=None,
                     group='service:central')
         values = self.get_domain_fixture(fixture=1)
         values['ttl'] = -100
-
-        # Create a server
-        self.create_nameserver()
 
         # Create domain with random TTL
         domain = self.central_service.create_domain(
@@ -959,6 +989,23 @@ class CentralServiceTest(CentralTestCase):
         # Ensure the serial was incremented
         self.assertTrue(domain['serial'] > expected_domain['serial'])
 
+    def test_xfr_domain(self):
+        # Create a domain
+        fixture = self.get_domain_fixture('SECONDARY', 0)
+        fixture['email'] = cfg.CONF['service:central'].managed_resource_email
+        fixture['attributes'] = [{"key": "master", "value": "10.0.0.10"}]
+
+        # Create a zone
+        secondary = self.create_domain(**fixture)
+
+        self.central_service.xfr_domain(self.admin_context, secondary.id)
+
+    def test_xfr_domain_invalid_type(self):
+        domain = self.create_domain()
+
+        with testtools.ExpectedException(exceptions.BadRequest):
+            self.central_service.xfr_domain(self.admin_context, domain.id)
+
     # RecordSet Tests
     def test_create_recordset(self):
         domain = self.create_domain()
@@ -1075,7 +1122,7 @@ class CentralServiceTest(CentralTestCase):
 
     def test_create_invalid_recordset_ttl(self):
         self.policy({'use_low_ttl': '!'})
-        self.config(min_ttl="100",
+        self.config(min_ttl=100,
                     group='service:central')
         domain = self.create_domain()
 
@@ -1094,7 +1141,7 @@ class CentralServiceTest(CentralTestCase):
 
     def test_create_recordset_no_min_ttl(self):
         self.policy({'use_low_ttl': '!'})
-        self.config(min_ttl="None",
+        self.config(min_ttl=None,
                     group='service:central')
         domain = self.create_domain()
 
@@ -1886,8 +1933,6 @@ class CentralServiceTest(CentralTestCase):
             self.central_service.count_records(self.get_context())
 
     def test_get_floatingip_no_record(self):
-        self.create_nameserver()
-
         context = self.get_context(tenant='a')
 
         fip = self.network_api.fake.allocate_floatingip(context.tenant)
@@ -1901,8 +1946,6 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(None, fip_ptr['ptrdname'])
 
     def test_get_floatingip_with_record(self):
-        self.create_nameserver()
-
         context = self.get_context(tenant='a')
 
         fixture = self.get_ptr_fixture()
@@ -1929,8 +1972,6 @@ class CentralServiceTest(CentralTestCase):
                 context, fip['region'], fip['id'])
 
     def test_get_floatingip_deallocated_and_invalidate(self):
-        self.create_nameserver()
-
         context_a = self.get_context(tenant='a')
         elevated_a = context_a.elevated()
         elevated_a.all_tenants = True
@@ -2008,8 +2049,6 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(None, fips[0]['description'])
 
     def test_list_floatingips_with_record(self):
-        self.create_nameserver()
-
         context = self.get_context(tenant='a')
 
         fixture = self.get_ptr_fixture()
@@ -2029,8 +2068,6 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(fip_ptr['description'], fips[0]['description'])
 
     def test_list_floatingips_deallocated_and_invalidate(self):
-        self.create_nameserver()
-
         context_a = self.get_context(tenant='a')
         elevated_a = context_a.elevated()
         elevated_a.all_tenants = True
@@ -2060,7 +2097,7 @@ class CentralServiceTest(CentralTestCase):
         self.network_api.fake.deallocate_floatingip(fip['id'])
 
         fips = self.central_service.list_floatingips(context_a)
-        self.assertEqual([], fips)
+        assert(len(fips) == 0)
 
         # Ensure that the record is still in DB (No invalidation)
         self.central_service.find_record(elevated_a, criterion)
@@ -2086,8 +2123,6 @@ class CentralServiceTest(CentralTestCase):
             self.central_service.find_record(elevated_a, criterion)
 
     def test_set_floatingip(self):
-        self.create_nameserver()
-
         context = self.get_context(tenant='a')
 
         fixture = self.get_ptr_fixture()
@@ -2102,9 +2137,28 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(None, fip_ptr['description'])
         self.assertIsNotNone(fip_ptr['ttl'])
 
-    def test_set_floatingip_removes_old_record(self):
-        self.create_nameserver()
+    def test_set_floatingip_no_managed_resource_tenant_id(self):
+        context = self.get_context(tenant='a')
 
+        fixture = self.get_ptr_fixture()
+
+        fip = self.network_api.fake.allocate_floatingip(context.tenant)
+
+        self.central_service.update_floatingip(
+            context, fip['region'], fip['id'], fixture)
+
+        tenant_id = "00000000-0000-0000-0000-000000000000"
+
+        elevated_context = context.elevated()
+        elevated_context.all_tenants = True
+
+        # The domain created should have the default 0's uuid as owner
+        domain = self.central_service.find_domain(
+            elevated_context,
+            {"tenant_id": tenant_id})
+        self.assertEqual(tenant_id, domain.tenant_id)
+
+    def test_set_floatingip_removes_old_record(self):
         context_a = self.get_context(tenant='a')
         elevated_a = context_a.elevated()
         elevated_a.all_tenants = True
@@ -2176,8 +2230,6 @@ class CentralServiceTest(CentralTestCase):
                 context, fip['region'], fip['id'], fixture)
 
     def test_unset_floatingip(self):
-        self.create_nameserver()
-
         context = self.get_context(tenant='a')
 
         fixture = self.get_ptr_fixture()
@@ -2193,7 +2245,8 @@ class CentralServiceTest(CentralTestCase):
         self.assertIsNotNone(fip_ptr['ttl'])
 
         self.central_service.update_floatingip(
-            context, fip['region'], fip['id'], {'ptrdname': None})
+            context, fip['region'], fip['id'],
+            objects.FloatingIP().from_dict({'ptrdname': None}))
 
         self.central_service.get_floatingip(
             context, fip['region'], fip['id'])
@@ -2349,68 +2402,6 @@ class CentralServiceTest(CentralTestCase):
 
         self.assertEqual(int(soa_record_values[2]), updated_zone['serial'])
 
-    # NS Recordset tests
-    def test_create_ns(self):
-        # Anytime a zone is created, an NS recordset should be
-        # automatically be created, with a record for each server
-
-        # Create a nameserver
-        nameserver = self.create_nameserver(value='ns1.example.org.')
-
-        # Create a zone
-        zone = self.create_domain(name='example3.org.')
-
-        # Make sure an NS recordset was created
-        ns = self.central_service.find_recordset(self.admin_context,
-                                 criterion={'domain_id': zone['id'],
-                                            'type': "NS"})
-
-        # Ensure all values have been set correctly
-        self.assertIsNotNone(ns.id)
-        self.assertEqual('NS', ns.type)
-        self.assertIsNotNone(ns.records)
-        self.assertEqual(ns.records[0].data, nameserver.value)
-
-    def test_add_ns(self):
-        # Anytime a server is created, the NS recordset for each zone
-        # should be automatically updated to contain the new server
-
-        # Create a server
-        nameserver1 = self.create_nameserver(value='ns1.example.net.')
-
-        # Create a zone
-        zone = self.create_domain(name='example3.net.')
-        original_serial = zone.serial
-
-        # Make sure an NS recordset was created
-        ns_rs = self.central_service.find_recordset(
-            self.admin_context,
-            criterion={'domain_id': zone['id'], 'type': "NS"})
-
-        # Ensure all values have been set correctly
-        self.assertIsNotNone(ns_rs.id)
-        self.assertEqual('NS', ns_rs.type)
-        self.assertIsNotNone(ns_rs.records)
-        self.assertEqual(ns_rs.records[0].data, nameserver1.value)
-
-        # Create another server
-        nameserver2 = self.create_nameserver(value='ns2.example.net.')
-
-        # Get the NS recordset again
-        ns_rs = self.central_service.find_recordset(
-            self.admin_context,
-            criterion={'domain_id': zone['id'], 'type': "NS"})
-
-        # Get zone again to check serial number
-        updated_zone = self.central_service.get_domain(self.admin_context,
-                                                       zone.id)
-        new_serial = updated_zone.serial
-
-        # Ensure another record was added to the recordset
-        self.assertEqual(ns_rs.records[0].data, nameserver1.value)
-        self.assertEqual(ns_rs.records[1].data, nameserver2.value)
-        self.assertThat(new_serial, GreaterThan(original_serial))
-
     # Pool Tests
     def test_create_pool(self):
         # Get the values
@@ -2426,21 +2417,21 @@ class CentralServiceTest(CentralTestCase):
         self.assertIsNotNone(pool['tenant_id'])
         self.assertIsNone(pool['updated_at'])
         self.assertIsNotNone(pool['attributes'])
-        self.assertIsNotNone(pool['nameservers'])
+        self.assertIsNotNone(pool['ns_records'])
 
         self.assertEqual(pool['name'], values['name'])
 
-        # Compare the actual values of attributes and nameservers
+        # Compare the actual values of attributes and ns_records
         for k in range(0, len(values['attributes'])):
             self.assertDictContainsSubset(
                 values['attributes'][k],
                 pool['attributes'][k].to_primitive()['designate_object.data']
             )
 
-        for k in range(0, len(values['nameservers'])):
+        for k in range(0, len(values['ns_records'])):
             self.assertDictContainsSubset(
-                values['nameservers'][k],
-                pool['nameservers'][k].to_primitive()['designate_object.data'])
+                values['ns_records'][k],
+                pool['ns_records'][k].to_primitive()['designate_object.data'])
 
     def test_get_pool(self):
         # Create a server pool
@@ -2456,17 +2447,17 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(pool['tenant_id'], expected['tenant_id'])
         self.assertEqual(pool['name'], expected['name'])
 
-        # Compare the actual values of attributes and nameservers
+        # Compare the actual values of attributes and ns_records
         for k in range(0, len(expected['attributes'])):
             self.assertEqual(
                 pool['attributes'][k].to_primitive()['designate_object.data'],
                 expected['attributes'][k].to_primitive()
                 ['designate_object.data'])
 
-        for k in range(0, len(expected['nameservers'])):
+        for k in range(0, len(expected['ns_records'])):
             self.assertEqual(
-                pool['nameservers'][k].to_primitive()['designate_object.data'],
-                expected['nameservers'][k].to_primitive()
+                pool['ns_records'][k].to_primitive()['designate_object.data'],
+                expected['ns_records'][k].to_primitive()
                 ['designate_object.data'])
 
     def test_find_pools(self):
@@ -2485,18 +2476,18 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(len(pools), 2)
         self.assertEqual(pools[1]['name'], values['name'])
 
-        # Compare the actual values of attributes and nameservers
+        # Compare the actual values of attributes and ns_records
         expected_attributes = values['attributes'][0]
         actual_attributes = \
             pools[1]['attributes'][0].to_primitive()['designate_object.data']
         for k in expected_attributes:
             self.assertEqual(actual_attributes[k], expected_attributes[k])
 
-        expected_nameservers = values['nameservers'][0]
-        actual_nameservers = \
-            pools[1]['nameservers'][0].to_primitive()['designate_object.data']
-        for k in expected_nameservers:
-            self.assertEqual(actual_nameservers[k], expected_nameservers[k])
+        expected_ns_records = values['ns_records'][0]
+        actual_ns_records = \
+            pools[1]['ns_records'][0].to_primitive()['designate_object.data']
+        for k in expected_ns_records:
+            self.assertEqual(actual_ns_records[k], expected_ns_records[k])
 
     def test_find_pool(self):
         # Create a server pool
@@ -2508,60 +2499,91 @@ class CentralServiceTest(CentralTestCase):
 
         self.assertEqual(pool['name'], expected['name'])
 
-        # Compare the actual values of attributes and nameservers
+        # Compare the actual values of attributes and ns_records
         for k in range(0, len(expected['attributes'])):
             self.assertEqual(
                 pool['attributes'][k].to_primitive()['designate_object.data'],
                 expected['attributes'][k].to_primitive()
                 ['designate_object.data'])
 
-        for k in range(0, len(expected['nameservers'])):
+        for k in range(0, len(expected['ns_records'])):
             self.assertEqual(
-                pool['nameservers'][k].to_primitive()['designate_object.data'],
-                expected['nameservers'][k].to_primitive()
+                pool['ns_records'][k].to_primitive()['designate_object.data'],
+                expected['ns_records'][k].to_primitive()
                 ['designate_object.data'])
 
     def test_update_pool(self):
         # Create a server pool
         pool = self.create_pool(fixture=0)
 
-        # Update the pool
+        # Update and save the pool
         pool.description = 'New Comment'
-        attribute_values = self.get_pool_attribute_fixture(fixture=1)
-        pool_attributes = pool.attributes = objects.PoolAttributeList(
-            objects=[objects.PoolAttribute(key=r, value=attribute_values[r])
-                     for r in attribute_values])
+        self.central_service.update_pool(self.admin_context, pool)
 
-        nameserver_values = self.get_nameserver_fixture(fixture=1)
-        pool_nameservers = pool.nameservers = objects.NameServerList(
-            objects=[objects.NameServer(key='name_server', value=r)
-                     for r in nameserver_values])
-
-        # Update pool
-        pool = self.central_service.update_pool(self.admin_context, pool)
-
-        # GET the pool
+        # Fetch the pool
         pool = self.central_service.get_pool(self.admin_context, pool.id)
 
         # Verify that the pool was updated correctly
         self.assertEqual("New Comment", pool.description)
 
-        # Compare the actual values of attributes and nameservers
-        for k in range(0, len(pool_attributes)):
-            actual_attributes = \
-                pool['attributes'][0].to_primitive()['designate_object.data']
-            expected_attributes = \
-                pool_attributes[0].to_primitive()['designate_object.data']
-            self.assertDictContainsSubset(
-                expected_attributes, actual_attributes)
+    def test_update_pool_add_ns_record(self):
+        # Create a server pool and domain
+        pool = self.create_pool(fixture=0)
+        domain = self.create_domain(pool_id=pool.id)
 
-        for k in range(0, len(pool_nameservers)):
-            actual_nameservers = \
-                pool['nameservers'][k].to_primitive()['designate_object.data']
-            expected_nameservers = \
-                pool_nameservers[k].to_primitive()['designate_object.data']
-            self.assertDictContainsSubset(
-                expected_nameservers, actual_nameservers)
+        ns_record_count = len(pool.ns_records)
+        new_ns_record = objects.PoolNsRecord(
+            priority=10,
+            hostname='ns-new.example.org.')
+
+        # Update and save the pool
+        pool.ns_records.append(new_ns_record)
+        self.central_service.update_pool(self.admin_context, pool)
+
+        # Fetch the pool
+        pool = self.central_service.get_pool(self.admin_context, pool.id)
+
+        # Verify that the pool was updated correctly
+        self.assertEqual(ns_record_count + 1, len(pool.ns_records))
+        self.assertIn(new_ns_record.hostname,
+                      [n.hostname for n in pool.ns_records])
+
+        # Fetch the domains NS recordset
+        ns_recordset = self.central_service.find_recordset(
+            self.admin_context,
+            criterion={'domain_id': domain.id, 'type': "NS"})
+
+        # Verify that the doamins NS records ware updated correctly
+        self.assertEqual(set([n.hostname for n in pool.ns_records]),
+                         set([n.data for n in ns_recordset.records]))
+
+    def test_update_pool_remove_ns_record(self):
+        # Create a server pool and domain
+        pool = self.create_pool(fixture=0)
+        domain = self.create_domain(pool_id=pool.id)
+
+        ns_record_count = len(pool.ns_records)
+
+        # Update and save the pool
+        removed_ns_record = pool.ns_records.pop(-1)
+        self.central_service.update_pool(self.admin_context, pool)
+
+        # Fetch the pool
+        pool = self.central_service.get_pool(self.admin_context, pool.id)
+
+        # Verify that the pool was updated correctly
+        self.assertEqual(ns_record_count - 1, len(pool.ns_records))
+        self.assertNotIn(removed_ns_record.hostname,
+                         [n.hostname for n in pool.ns_records])
+
+        # Fetch the domains NS recordset
+        ns_recordset = self.central_service.find_recordset(
+            self.admin_context,
+            criterion={'domain_id': domain.id, 'type': "NS"})
+
+        # Verify that the doamins NS records ware updated correctly
+        self.assertEqual(set([n.hostname for n in pool.ns_records]),
+                         set([n.data for n in ns_recordset.records]))
 
     def test_delete_pool(self):
         # Create a server pool

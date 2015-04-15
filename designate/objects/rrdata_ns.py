@@ -13,17 +13,36 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 from designate.objects.record import Record
+from designate.objects.record import RecordList
 
 
-class RRData_NS(Record):
+class NS(Record):
     """
     NS Resource Record Type
     Defined in: RFC1035
     """
     FIELDS = {
-        'nsdname': {}
+        'nsdname': {
+            'schema': {
+                'type': 'string',
+                'format': 'domainname',
+                'maxLength': 255,
+            },
+            'required': True
+        }
     }
+
+    def _to_string(self):
+        return self.nsdname
+
+    def _from_string(self, value):
+        self.nsdname = value
 
     # The record type is defined in the RFC. This will be used when the record
     # is sent by mini-dns.
     RECORD_TYPE = 2
+
+
+class NSList(RecordList):
+
+    LIST_ITEM_TYPE = NS

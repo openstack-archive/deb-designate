@@ -140,6 +140,34 @@ class ApiV1RecordsTest(ApiV1Test):
         self.post('domains/%s/records' % self.domain['id'], data=fixture,
                   status_code=400)
 
+    def test_create_wildcard_record_after_named(self):
+        # We want to test that a wildcard record rs doesnt use the previous one
+        # https://bugs.launchpad.net/designate/+bug/1391426
+
+        name = "foo.%s" % self.domain.name
+        fixture = {
+            "name": name,
+            "type": "A",
+            "data": "10.0.0.1"
+        }
+
+        self.post('domains/%s/records' % self.domain['id'],
+                  data=fixture)
+
+        wildcard_name = '*.%s' % self.domain["name"]
+
+        fixture['name'] = wildcard_name
+        self.post('domains/%s/records' % self.domain['id'],
+                  data=fixture)
+
+        named_rs = self.central_service.find_recordset(
+            self.admin_context, {"name": name})
+        wildcard_rs = self.central_service.find_recordset(
+            self.admin_context, {"name": wildcard_name})
+
+        self.assertNotEqual(named_rs.name, wildcard_rs.name)
+        self.assertNotEqual(named_rs.id, wildcard_rs.id)
+
     def test_create_record_utf_description(self):
         fixture = self.get_record_fixture(self.recordset['type'])
         fixture.update({
@@ -594,3 +622,40 @@ class ApiV1RecordsTest(ApiV1Test):
 
         url = 'domains/%s/records/%s' % (domain.id, record.id)
         self.delete(url, status_code=404)
+
+    def test_create_record_deleting_domain(self):
+        recordset_fixture = self.get_recordset_fixture(
+            self.domain['name'])
+
+        fixture = self.get_record_fixture(recordset_fixture['type'])
+        fixture.update({
+            'name': recordset_fixture['name'],
+            'type': recordset_fixture['type'],
+        })
+
+        self.delete('/domains/%s' % self.domain['id'])
+        self.post('domains/%s/records' % self.domain['id'],
+                  data=fixture, status_code=400)
+
+    def test_update_record_deleting_domain(self):
+        # Create a record
+        record = self.create_record(self.domain, self.recordset)
+
+        # Fetch another fixture to use in the update
+        fixture = self.get_record_fixture(self.recordset['type'], fixture=1)
+
+        # Update the record
+        data = {'data': fixture['data']}
+        self.delete('/domains/%s' % self.domain['id'])
+        self.put('domains/%s/records/%s' % (self.domain['id'],
+                                            record['id']),
+                 data=data, status_code=400)
+
+    def test_delete_record_deleting_domain(self):
+        # Create a record
+        record = self.create_record(self.domain, self.recordset)
+
+        self.delete('/domains/%s' % self.domain['id'])
+        self.delete('domains/%s/records/%s' % (self.domain['id'],
+                                               record['id']),
+                    status_code=400)
