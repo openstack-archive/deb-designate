@@ -19,7 +19,13 @@ override_dh_auto_clean:
 	rm -f debian/*.init debian/*.upstart debian/*.service
 
 override_dh_install:
-	dh_install -O--buildsystem=python_distutils --fail-missing
+	python setup.py install --install-layout=deb --root $(CURDIR)/debian/tmp
+#	dh_install -O--buildsystem=python_distutils --fail-missing
+#usr/etc/designate/designate.conf.sample
+#usr/etc/designate/policy.json
+#usr/etc/designate/rootwrap.conf.sample
+#usr/etc/designate/api-paste.ini
+#usr/etc/designate/rootwrap.d/bind9.filters
 
 override_dh_auto_build:
 	dh_auto_build -O--buildsystem=python_distutils
