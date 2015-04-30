@@ -15,13 +15,14 @@
 # under the License.
 import eventlet
 
-eventlet.monkey_patch(os=False)
+eventlet.monkey_patch()
 
 import os
 import socket
 
 from oslo.config import cfg
 from oslo_log import log
+from oslo_concurrency import lockutils
 from oslo import messaging
 
 
@@ -67,3 +68,6 @@ log.set_defaults(default_log_levels=[
 
 # Set some Oslo RPC defaults
 messaging.set_transport_defaults('designate')
+
+# Set some Oslo Oslo Concurrency defaults
+lockutils.set_defaults(lock_path='$state_path')
