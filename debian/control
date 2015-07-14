@@ -70,7 +70,6 @@ Homepage: https://github.com/openstack/designate
 Package: python-designate
 Section: python
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: python-babel,
          python-dnspython,
          python-eventlet (>= 0.16.1),
@@ -124,7 +123,6 @@ Description: OpenStack DNS as a Service - Python libs
 
 Package: designate-common
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: adduser,
          dbconfig-common,
          python-designate (= ${binary:Version}),
@@ -142,7 +140,6 @@ Description: OpenStack DNS as a Service - common files
 
 Package: designate
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: designate-agent (= ${binary:Version}),
          designate-api (= ${binary:Version}),
          designate-central (= ${binary:Version}),
@@ -160,7 +157,6 @@ Description: OpenStack DNS as a Service - metapackage
 
 Package: designate-api
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: adduser,
          designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
@@ -177,7 +173,6 @@ Description: OpenStack DNS as a Service - API server
 
 Package: designate-central
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
@@ -193,7 +188,6 @@ Description: OpenStack DNS as a Service - central daemon
 
 Package: designate-agent
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
@@ -209,7 +203,6 @@ Description: OpenStack DNS as a Service - agent
 
 Package: designate-sink
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
          ${misc:Depends},
@@ -223,10 +216,39 @@ Description: OpenStack DNS as a Service - sink
  .
  This package provides the sink service.
 
+Package: designate-mdns
+Architecture: all
+Depends: designate-common (= ${binary:Version}),
+         python-designate (= ${binary:Version}),
+         ${misc:Depends},
+         ${python:Depends},
+Description: OpenStack DNS as a Service - mdns
+ Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
+ REST API for domain & record management. It is Integrated with Keystone for
+ authentication, and provides a framework in place to integrate with Nova and
+ Neutron notifications (for auto-generated records). Designate supports
+ PowerDNS and Bind9 out of the box.
+ .
+ This package provides the mdns service.
+
+Package: designate-pool-manager
+Architecture: all
+Depends: designate-common (= ${binary:Version}),
+         python-designate (= ${binary:Version}),
+         ${misc:Depends},
+         ${python:Depends},
+Description: OpenStack DNS as a Service - pool manager
+ Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
+ REST API for domain & record management. It is Integrated with Keystone for
+ authentication, and provides a framework in place to integrate with Nova and
+ Neutron notifications (for auto-generated records). Designate supports
+ PowerDNS and Bind9 out of the box.
+ .
+ This package provides the pool manager service.
+
 Package: designate-doc
 Section: doc
 Architecture: all
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: ${misc:Depends}, ${sphinxdoc:Depends}
 Description: OpenStack DNS as a Service - doc
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
