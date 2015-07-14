@@ -1,6 +1,7 @@
 designate (2015.1.0-2) unstable; urgency=medium
 
   * Added -mdns and -pool-manager services through new .deb which were missing.
+    Thanks to Graham Hayes <graham@hayes.ie> for the report (Closes: #792034)
   * Removed all individual debian/*.logrotate files, using only a single
     designate-common.logrotate file now.
 
