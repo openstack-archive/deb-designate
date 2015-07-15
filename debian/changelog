@@ -4,6 +4,7 @@ designate (2015.1.0-2) unstable; urgency=medium
     Thanks to Graham Hayes <graham@hayes.ie> for the report (Closes: #792034)
   * Removed all individual debian/*.logrotate files, using only a single
     designate-common.logrotate file now.
+  * Added do-not-use-namespace-oslo.concurrency.patch.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 14 Jul 2015 19:25:17 +0200
 

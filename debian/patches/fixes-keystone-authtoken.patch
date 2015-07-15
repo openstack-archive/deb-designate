@@ -7,7 +7,7 @@ Index: designate/etc/designate/designate.conf.sample
 ===================================================================
 --- designate.orig/etc/designate/designate.conf.sample
 +++ designate/etc/designate/designate.conf.sample
-@@ -108,12 +108,12 @@ debug = False
+@@ -114,12 +114,12 @@ debug = False
  # Keystone Middleware
  #-----------------------
  [keystone_authtoken]
