@@ -24,6 +24,13 @@ from designate.objects.domain_attribute import DomainAttributeList
 class Domain(base.DictObjectMixin, base.SoftDeleteObjectMixin,
              base.PersistentObjectMixin, base.DesignateObject):
     FIELDS = {
+        'shard': {
+            'schema': {
+                'type': 'integer',
+                'minimum': 0,
+                'maximum': 4095
+            }
+        },
         'tenant_id': {
             'schema': {
                 'type': 'string',
@@ -52,7 +59,7 @@ class Domain(base.DictObjectMixin, base.SoftDeleteObjectMixin,
         'ttl': {
             'schema': {
                 'type': ['integer', 'null'],
-                'minimum': 0,
+                'minimum': 1,
                 'maximum': 2147483647
             },
         },

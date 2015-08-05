@@ -25,13 +25,14 @@ import time
 
 import six
 import eventlet.wsgi
-from oslo import messaging
-from oslo.config import cfg
+import eventlet.debug
+import oslo_messaging as messaging
+from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_log import loggers
+from oslo_service import service
+from oslo_service import sslutils
 
-from designate.openstack.common import service
-from designate.openstack.common import sslutils
 from designate.i18n import _
 from designate.i18n import _LE
 from designate.i18n import _LI
@@ -104,7 +105,7 @@ class RPCService(object):
     def __init__(self, *args, **kwargs):
         super(RPCService, self).__init__(*args, **kwargs)
 
-        LOG.debug(_("Creating RPC Server on topic '%s'") % self._rpc_topic)
+        LOG.debug("Creating RPC Server on topic '%s'" % self._rpc_topic)
         self._rpc_server = rpc.get_server(
             messaging.Target(topic=self._rpc_topic, server=self._host),
             self._rpc_endpoints)
@@ -120,7 +121,7 @@ class RPCService(object):
     def start(self):
         super(RPCService, self).start()
 
-        LOG.debug(_("Starting RPC server on topic '%s'") % self._rpc_topic)
+        LOG.debug("Starting RPC server on topic '%s'" % self._rpc_topic)
         self._rpc_server.start()
 
         # TODO(kiall): This probably belongs somewhere else, maybe the base
@@ -132,6 +133,8 @@ class RPCService(object):
                 e.start()
 
     def stop(self):
+        LOG.debug("Stopping RPC server on topic '%s'" % self._rpc_topic)
+
         for e in self._rpc_endpoints:
             if e != self and hasattr(e, 'stop'):
                 e.stop()
@@ -193,8 +196,8 @@ class WSGIService(object):
                 sock = eventlet.listen(bind_addr,
                                        backlog=cfg.CONF.backlog,
                                        family=family)
-                if sslutils.is_enabled():
-                    sock = sslutils.wrap(sock)
+                if sslutils.is_enabled(CONF):
+                    sock = sslutils.wrap(CONF, sock)
 
             except socket.error as err:
                 if err.args[0] != errno.EADDRINUSE:
@@ -219,6 +222,9 @@ class WSGIService(object):
 
     def _wsgi_handle(self, application, socket):
         logger = logging.getLogger('eventlet.wsgi')
+        # Adjust wsgi MAX_HEADER_LINE to accept large tokens.
+        eventlet.wsgi.MAX_HEADER_LINE = self._service_config.max_header_line
+
         eventlet.wsgi.server(socket,
                              application,
                              custom_pool=self.tg.pool,
@@ -230,6 +236,13 @@ class DNSService(object):
     """
     DNS Service mixin used by all Designate DNS Services
     """
+    def __init__(self, *args, **kwargs):
+        super(DNSService, self).__init__(*args, **kwargs)
+
+        # Eventet will complain loudly about our use of multiple greentheads
+        # reading/writing to the UDP socket at once. Disable this warning.
+        eventlet.debug.hub_prevent_multiple_readers(False)
+
     @abc.abstractproperty
     def _dns_application(self):
         pass
@@ -383,12 +396,12 @@ def serve(server, workers=None):
     if _launcher:
         raise RuntimeError(_('serve() can only be called once'))
 
-    _launcher = service.launch(server, workers=workers)
+    _launcher = service.launch(CONF, server, workers=workers)
 
 
 def wait():
     try:
         _launcher.wait()
     except KeyboardInterrupt:
-        _launcher.stop()
+        LOG.debug('Caught KeyboardInterrupt, shutting down now')
     rpc.cleanup()

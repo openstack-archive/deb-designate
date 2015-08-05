@@ -17,9 +17,9 @@ import pprint
 import time
 
 import requests
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
-from oslo.serialization import jsonutils as json
+from oslo_serialization import jsonutils as json
 from oslo_utils import importutils
 
 from designate import exceptions
@@ -225,7 +225,7 @@ class IPABackend(base.Backend):
         args = {'idnssoamname': servers[0]['name']}
         if self.force:
             args['force'] = True
-        for dkey, ipakey in domain2ipa.iteritems():
+        for dkey, ipakey in list(domain2ipa.items()):
             if dkey in domain:
                 args[ipakey] = domain[dkey]
         ipareq['params'] = [params, args]
@@ -245,7 +245,7 @@ class IPABackend(base.Backend):
         ipareq = {'method': 'dnszone_mod', 'id': 0}
         params = [domain['name']]
         args = {}
-        for dkey, ipakey in domain2ipa.iteritems():
+        for dkey, ipakey in list(domain2ipa.items()):
             if dkey in domain:
                 args[ipakey] = domain[dkey]
         ipareq['params'] = [params, args]

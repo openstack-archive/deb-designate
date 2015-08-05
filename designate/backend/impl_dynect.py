@@ -17,7 +17,7 @@ import json
 import time
 
 from eventlet import Timeout
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import requests
 from requests.adapters import HTTPAdapter
@@ -302,6 +302,8 @@ class DynECTBackend(base.Backend):
     Support for DynECT as a secondary DNS.
     """
     __plugin_name__ = 'dynect'
+
+    __backend_status__ = 'release-compatible'
 
     @classmethod
     def get_cfg_opts(cls):

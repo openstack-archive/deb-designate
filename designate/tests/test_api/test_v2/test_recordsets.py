@@ -13,8 +13,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import six
 from mock import patch
-from oslo import messaging
+import oslo_messaging as messaging
 from oslo_log import log as logging
 
 from designate import exceptions
@@ -107,7 +108,23 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self._assert_exception(
             'invalid_object', 400, self.client.post_json, url, body)
 
-    def test_create_recordset_with_invalid_type(self):
+    def test_create_recordset_with_name_too_long(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        fixture['name'] = 'x' * 255 + ".%s" % self.domain['name']
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_with_name_missing(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        del fixture['name']
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_type_is_missing(self):
         # Prepare a RecordSet fixture
         body = self.get_recordset_fixture(
             self.domain['name'],
@@ -127,6 +144,54 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         url = '/zones/%s/recordsets' % self.domain['id']
 
         # Ensure it fails with a 400
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_with_invalid_type(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        fixture['type'] = "ABC"
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_description_too_long(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        fixture['description'] = "x" * 161
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_with_negative_ttl(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        fixture['ttl'] = -1
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_with_zero_ttl(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        fixture['ttl'] = 0
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_with_ttl_greater_than_max(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        fixture['ttl'] = 2147483648
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, url, body)
+
+    def test_create_recordset_with_invalid_ttl(self):
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        fixture['ttl'] = ">?!?"
+        body = fixture
+        url = '/zones/%s/recordsets' % self.domain['id']
         self._assert_exception(
             'invalid_object', 400, self.client.post_json, url, body)
 
@@ -224,7 +289,7 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
                                            'type': 'NS'})
         data = [self.create_recordset(self.domain,
                 name='x-%s.%s' % (i, self.domain['name']))
-                for i in xrange(0, 10)]
+                for i in range(0, 10)]
         data.insert(0, ns)
         data.insert(0, soa)
 
@@ -236,17 +301,19 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         # Add recordsets for testing
         fixtures = [
             self.get_recordset_fixture(
-                self.domain['name'], 'A', fixture=0, values={'records': [
-                    '192.0.2.1',
-                    '192.0.2.2',
-                ]}
+                self.domain['name'], 'A', fixture=0, values={
+                    'records': ['192.0.2.1', '192.0.2.2'],
+                    'description': 'Tester1',
+                    'ttl': 3600
+                }
             ),
             self.get_recordset_fixture(
-                self.domain['name'], 'A', fixture=1, values={'records': [
-                    '192.0.2.1',
-                    '192.0.2.3'
-                ]}
-            ),
+                self.domain['name'], 'A', fixture=1, values={
+                    'records': ['192.0.2.1'],
+                    'description': 'Tester2',
+                    'ttl': 4000
+                }
+            )
         ]
 
         for fixture in fixtures:
@@ -255,15 +322,32 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
                 fixture)
 
         get_urls = [
+            # Filter by Name
+            '/zones/%s/recordsets?name=%s' % (
+                self.domain['id'], fixtures[0]['name']),
+            '/zones/%s/recordsets?data=192.0.2.1&name=%s' % (
+                self.domain['id'], fixtures[1]['name']),
+
+            # Filter by Type
+            '/zones/%s/recordsets?type=A' % self.domain['id'],
+            '/zones/%s/recordsets?type=A&name=%s' % (
+                self.domain['id'], fixtures[0]['name']),
+
+            # Filter by TTL
+            '/zones/%s/recordsets?ttl=3600' % self.domain['id'],
+
+            # Filter by Data
             '/zones/%s/recordsets?data=192.0.2.1' % self.domain['id'],
             '/zones/%s/recordsets?data=192.0.2.2' % self.domain['id'],
-            '/zones/%s/recordsets?data=192.0.2.1&name=%s' % (
-                self.domain['id'], fixtures[0]['name'])
+
+            # Filter by Description
+            '/zones/%s/recordsets?description=Tester1' % self.domain['id']
         ]
 
-        correct_results = [2, 1, 1]
+        correct_results = [1, 1, 2, 1, 1, 2, 1, 1]
 
-        for get_url, correct_result in zip(get_urls, correct_results):
+        for get_url, correct_result in \
+                six.moves.zip(get_urls, correct_results):
 
             response = self.client.get(get_url)
 
@@ -559,6 +643,46 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         self._assert_exception('recordset_not_found', 404,
                                self.client.put_json, url, body)
 
+    def test_update_recordset_invalid_ttl(self):
+        recordset = self.create_recordset(self.domain)
+        body = {'ttl': '>?!@'}
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+        self._assert_exception('invalid_object', 400,
+                               self.client.put_json, url, body)
+
+    def test_update_recordset_zero_ttl(self):
+        recordset = self.create_recordset(self.domain)
+        body = {'ttl': 0}
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+        self._assert_exception('invalid_object', 400,
+                               self.client.put_json, url, body)
+
+    def test_update_recordset_negative_ttl(self):
+        recordset = self.create_recordset(self.domain)
+        body = {'ttl': -1}
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+        self._assert_exception('invalid_object', 400,
+                               self.client.put_json, url, body)
+
+    def test_update_recordset_ttl_greater_than_max(self):
+        recordset = self.create_recordset(self.domain)
+        body = {'ttl': 2174483648}
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+        self._assert_exception('invalid_object', 400,
+                               self.client.put_json, url, body)
+
+    def test_update_recordset_description_too_long(self):
+        recordset = self.create_recordset(self.domain)
+        body = {'description': 'x' * 161}
+        url = '/zones/%s/recordsets/%s' % (recordset['domain_id'],
+                                           recordset['id'])
+        self._assert_exception('invalid_object', 400,
+                               self.client.put_json, url, body)
+
     def test_delete_recordset(self):
         recordset = self.create_recordset(self.domain)
 
@@ -645,6 +769,42 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
         # Make sure total_count picked up the change
         self.assertEqual(3, response.json['metadata']['total_count'])
 
+    def test_total_count_filtered_by_data(self):
+        # Closes bug 1447325
+        url = '/zones/%s/recordsets' % self.domain['id']
+
+        # Create a recordset
+        fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
+        response = self.client.post_json(
+            '/zones/%s/recordsets' % self.domain['id'], fixture)
+
+        response = self.client.get(url)
+
+        # Make sure total_count picked up the change
+        self.assertEqual(3, response.json['metadata']['total_count'])
+
+        url = '/zones/%s/recordsets?data=nyan' % self.domain['id']
+        response = self.client.get(url)
+        self.assertEqual(0, response.json['metadata']['total_count'])
+
+        url = '/zones/%s/recordsets?data=ns1.example.org.' % self.domain['id']
+        response = self.client.get(url)
+        self.assertEqual(1, response.json['metadata']['total_count'])
+
+        # Test paging
+        new_domain = self.create_domain(name='example.net.')
+        recordset = self.create_recordset(new_domain, 'A')
+        self.create_record(new_domain, recordset, data='nyan')
+
+        recordset = self.create_recordset(new_domain, 'CNAME')
+        self.create_record(new_domain, recordset, data='nyan')
+
+        # Even with paging enabled, total_count is still the total number of
+        # recordsets matching the "data" filter
+        url = '/zones/%s/recordsets?limit=1&data=nyan' % new_domain.id
+        response = self.client.get(url)
+        self.assertEqual(2, response.json['metadata']['total_count'])
+
     def test_total_count_pagination(self):
         # Create two recordsets
         fixture = self.get_recordset_fixture(self.domain['name'], fixture=0)
@@ -718,7 +878,7 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
                                            'type': 'SOA'})
         data = [self.create_recordset(secondary,
                 name='x-%s.%s' % (i, secondary['name']))
-                for i in xrange(0, 10)]
+                for i in range(0, 10)]
         data.insert(0, soa)
 
         self._assert_paging(data, url, key='recordsets')
@@ -794,3 +954,8 @@ class ApiV2RecordSetsTest(ApiV2TestCase):
 
         self.client.delete('/zones/%s' % self.domain['id'], status=202)
         self._assert_exception('bad_request', 400, self.client.delete, url)
+
+    def test_invalid_recordset_filter(self):
+        invalid_url = '/zones/%s/recordsets?action=NONE' % self.domain['id']
+        self._assert_exception(
+            'bad_request', 400, self.client.get, invalid_url)

@@ -15,10 +15,11 @@
 # under the License.
 import sys
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
-from designate.openstack.common import service
+from designate import hookpoints
+from designate import service
 from designate import utils
 from designate.api import service as api_service
 
@@ -33,6 +34,8 @@ def main():
     logging.setup(CONF, 'designate')
     utils.setup_gmr(log_dir=cfg.CONF.log_dir)
 
+    hookpoints.log_hook_setup()
+
     server = api_service.Service(threads=CONF['service:api'].threads)
-    launcher = service.launch(server, CONF['service:api'].workers)
-    launcher.wait()
+    service.serve(server, workers=CONF['service:api'].workers)
+    service.wait()

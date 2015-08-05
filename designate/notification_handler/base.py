@@ -16,7 +16,7 @@
 # under the License.
 import abc
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate import exceptions
@@ -29,23 +29,6 @@ from designate.plugin import ExtensionPlugin
 
 
 LOG = logging.getLogger(__name__)
-
-
-def get_ip_data(addr_dict):
-    ip = addr_dict['address']
-    version = addr_dict['version']
-
-    data = {
-        'ip_version': version
-    }
-
-    # TODO(endre): Add v6 support
-    if version == 4:
-        data['ip_address'] = ip.replace('.', '-')
-        ip_data = ip.split(".")
-        for i in [0, 1, 2, 3]:
-            data["octet%s" % i] = ip_data[i]
-    return data
 
 
 class NotificationHandler(ExtensionPlugin):
@@ -83,13 +66,10 @@ class NotificationHandler(ExtensionPlugin):
 
     def _find_or_create_recordset(self, context, domain_id, name, type,
                                   ttl=None):
+        name = name.encode('idna').decode('utf-8')
+
         try:
-            recordset = self.central_api.find_recordset(context, {
-                'domain_id': domain_id,
-                'name': name,
-                'type': type,
-            })
-        except exceptions.RecordSetNotFound:
+            # Attempt to create an empty recordset
             values = {
                 'name': name,
                 'type': type,
@@ -98,16 +78,35 @@ class NotificationHandler(ExtensionPlugin):
             recordset = self.central_api.create_recordset(
                 context, domain_id, RecordSet(**values))
 
+        except exceptions.DuplicateRecordSet:
+            # Fetch the existing recordset
+            recordset = self.central_api.find_recordset(context, {
+                'domain_id': domain_id,
+                'name': name,
+                'type': type,
+            })
+
         return recordset
 
 
 class BaseAddressHandler(NotificationHandler):
-    default_format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
+    def _get_ip_data(self, addr_dict):
+        ip = addr_dict['address']
+        version = addr_dict['version']
 
-    def _get_format(self):
-        return cfg.CONF[self.name].get('format') or self.default_format
+        data = {
+            'ip_version': version,
+        }
 
-    def _create(self, addresses, extra, managed=True,
+        # TODO(endre): Add v6 support
+        if version == 4:
+            data['ip_address'] = ip.replace('.', '-')
+            ip_data = ip.split(".")
+            for i in [0, 1, 2, 3]:
+                data["octet%s" % i] = ip_data[i]
+        return data
+
+    def _create(self, addresses, extra, domain_id, managed=True,
                 resource_type=None, resource_id=None):
         """
         Create a a record from addresses
@@ -124,8 +123,8 @@ class BaseAddressHandler(NotificationHandler):
                 'Deprecation notice: Unmanaged designate-sink records are '
                 'being deprecated please update the call '
                 'to remove managed=False'))
-        LOG.debug('Using DomainID: %s' % cfg.CONF[self.name].domain_id)
-        domain = self.get_domain(cfg.CONF[self.name].domain_id)
+        LOG.debug('Using DomainID: %s' % domain_id)
+        domain = self.get_domain(domain_id)
         LOG.debug('Domain: %r' % domain)
 
         data = extra.copy()
@@ -138,36 +137,37 @@ class BaseAddressHandler(NotificationHandler):
 
         for addr in addresses:
             event_data = data.copy()
-            event_data.update(get_ip_data(addr))
+            event_data.update(self._get_ip_data(addr))
 
-            recordset_values = {
-                'domain_id': domain['id'],
-                'name': self._get_format() % event_data,
-                'type': 'A' if addr['version'] == 4 else 'AAAA'}
+            for fmt in cfg.CONF[self.name].get('format'):
+                recordset_values = {
+                    'domain_id': domain['id'],
+                    'name': fmt % event_data,
+                    'type': 'A' if addr['version'] == 4 else 'AAAA'}
 
-            recordset = self._find_or_create_recordset(
-                context, **recordset_values)
+                recordset = self._find_or_create_recordset(
+                    context, **recordset_values)
 
-            record_values = {
-                'data': addr['address']}
+                record_values = {
+                    'data': addr['address']}
 
-            if managed:
-                record_values.update({
-                    'managed': managed,
-                    'managed_plugin_name': self.get_plugin_name(),
-                    'managed_plugin_type': self.get_plugin_type(),
-                    'managed_resource_type': resource_type,
-                    'managed_resource_id': resource_id})
+                if managed:
+                    record_values.update({
+                        'managed': managed,
+                        'managed_plugin_name': self.get_plugin_name(),
+                        'managed_plugin_type': self.get_plugin_type(),
+                        'managed_resource_type': resource_type,
+                        'managed_resource_id': resource_id})
 
-            LOG.debug('Creating record in %s / %s with values %r' %
-                      (domain['id'], recordset['id'], record_values))
-            self.central_api.create_record(context,
-                                           domain['id'],
-                                           recordset['id'],
-                                           Record(**record_values))
+                LOG.debug('Creating record in %s / %s with values %r' %
+                          (domain['id'], recordset['id'], record_values))
+                self.central_api.create_record(context,
+                                               domain['id'],
+                                               recordset['id'],
+                                               Record(**record_values))
 
-    def _delete(self, managed=True, resource_id=None, resource_type='instance',
-                criterion=None):
+    def _delete(self, domain_id, managed=True, resource_id=None,
+                resource_type='instance', criterion=None):
         """
         Handle a generic delete of a fixed ip within a domain
 
@@ -184,7 +184,7 @@ class BaseAddressHandler(NotificationHandler):
         context.all_tenants = True
         context.edit_managed_records = True
 
-        criterion.update({'domain_id': cfg.CONF[self.name].domain_id})
+        criterion.update({'domain_id': domain_id})
 
         if managed:
             criterion.update({
@@ -201,6 +201,6 @@ class BaseAddressHandler(NotificationHandler):
             LOG.debug('Deleting record %s' % record['id'])
 
             self.central_api.delete_record(context,
-                                           cfg.CONF[self.name].domain_id,
+                                           domain_id,
                                            record['recordset_id'],
                                            record['id'])

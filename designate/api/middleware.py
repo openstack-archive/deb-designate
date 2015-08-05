@@ -15,12 +15,12 @@
 # under the License.
 import flask
 import webob.dec
-from oslo.config import cfg
-from oslo import messaging
+from oslo_config import cfg
+import oslo_messaging as messaging
 from oslo_log import log as logging
 from oslo_middleware import base
 from oslo_middleware import request_id
-from oslo.serialization import jsonutils as json
+from oslo_serialization import jsonutils as json
 from oslo_utils import strutils
 
 from designate import exceptions
@@ -126,6 +126,10 @@ class KeystoneContextMiddleware(ContextMiddleware):
             # If the key is valid, Keystone does not include this header at all
             pass
 
+        tenant_id = headers.get('X-Tenant-ID')
+        if tenant_id is None:
+            return flask.Response(status=401)
+
         if headers.get('X-Service-Catalog'):
             catalog = json.loads(headers.get('X-Service-Catalog'))
         else:
@@ -137,7 +141,7 @@ class KeystoneContextMiddleware(ContextMiddleware):
             request,
             auth_token=headers.get('X-Auth-Token'),
             user=headers.get('X-User-ID'),
-            tenant=headers.get('X-Tenant-ID'),
+            tenant=tenant_id,
             roles=roles,
             service_catalog=catalog)
 

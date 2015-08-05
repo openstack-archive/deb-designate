@@ -55,11 +55,15 @@ These headers work for all APIs
     - Allows admins (or users with the right role) to modify managed records (records created by designate-sink / reverse floating ip API)
 * X-Auth-All-Projects
     - Allows admins (or users with the right role) to view and edit zones / recordsets for all tenants
+* X-Auth-Sudo-Tenant-ID / X-Auth-Sudo-Project-ID
+    - Allows admins (or users with the right role) to impersonate another tenant specified by this header
 
 API Versions
 ============
 
 The API has 2 versions - V1 and V2.
+
+.. note:: V1 has been deprecated since the Kilo release.
 
 V1 API
 ------
@@ -86,7 +90,6 @@ V2 API
        rest/v2/recordsets
        rest/v2/tlds
        rest/v2/blacklists
-       rest/v2/quotas
        rest/v2/pools
 
 Admin API
@@ -96,4 +99,5 @@ Admin API
        :glob:
 
        rest/admin/quotas
+       rest/admin/zones
 

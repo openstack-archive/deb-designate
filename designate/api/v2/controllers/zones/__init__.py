@@ -14,7 +14,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import pecan
-from oslo.config import cfg
+from oslo_config import cfg
 
 from designate import exceptions
 from designate import utils
@@ -62,7 +62,7 @@ class ZonesController(rest.RestController):
             params, self.SORT_KEYS)
 
         # Extract any filter params.
-        accepted_filters = ('name', 'email', 'status', )
+        accepted_filters = ('name', 'email', 'status', 'description', 'ttl', )
 
         criterion = self._apply_filter_params(
             params, accepted_filters, {})

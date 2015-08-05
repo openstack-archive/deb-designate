@@ -17,13 +17,14 @@ import copy
 import functools
 import os
 import inspect
+import time
 
 from testtools import testcase
 from oslotest import base
 from oslo_log import log as logging
-from oslo.config import cfg
-from oslo.config import fixture as cfg_fixture
-from oslo.messaging import conffixture as messaging_fixture
+from oslo_config import cfg
+from oslo_config import fixture as cfg_fixture
+from oslo_messaging import conffixture as messaging_fixture
 
 from designate import policy
 from designate import utils
@@ -50,6 +51,8 @@ cfg.CONF.import_opt('connection',
                     'designate.pool_manager.cache.impl_sqlalchemy',
                     group='pool_manager_cache:sqlalchemy')
 default_pool_id = cfg.CONF['service:central'].default_pool_id
+
+_TRUE_VALUES = ('true', '1', 'yes', 'y')
 
 
 class TestCase(base.BaseTestCase):
@@ -237,6 +240,23 @@ class TestCase(base.BaseTestCase):
         "target_tenant_id": "target_tenant_id"
     }]
 
+    zone_task_fixtures = [{
+        'status': 'PENDING',
+        'domain_id': None,
+        'message': None,
+        'task_type': 'IMPORT'
+    }, {
+        'status': 'ERROR',
+        'domain_id': None,
+        'message': None,
+        'task_type': 'IMPORT'
+    }, {
+        'status': 'COMPLETE',
+        'domain_id': '6ca6baef-3305-4ad0-a52b-a82df5752b62',
+        'message': None,
+        'task_type': 'IMPORT'
+    }]
+
     def setUp(self):
         super(TestCase, self).setUp()
 
@@ -271,7 +291,7 @@ class TestCase(base.BaseTestCase):
             fixtures.DatabaseFixture.get_fixture(
                 REPOSITORY, manage_database.INIT_VERSION))
 
-        if os.getenv('DESIGNATE_SQL_DEBUG', True):
+        if os.getenv('DESIGNATE_SQL_DEBUG', "True").lower() in _TRUE_VALUES:
             connection_debug = 50
         else:
             connection_debug = 0
@@ -317,7 +337,7 @@ class TestCase(base.BaseTestCase):
         db_fixture = self.useFixture(
             fixtures.DatabaseFixture.get_fixture(repository))
 
-        if os.getenv('DESIGNATE_SQL_DEBUG', True):
+        if os.getenv('DESIGNATE_SQL_DEBUG', "True").lower() in _TRUE_VALUES:
             connection_debug = 50
         else:
             connection_debug = 0
@@ -342,7 +362,7 @@ class TestCase(base.BaseTestCase):
     def config(self, **kwargs):
         group = kwargs.pop('group', None)
 
-        for k, v in kwargs.iteritems():
+        for k, v in kwargs.items():
             cfg.CONF.set_override(k, v, group)
 
     def policy(self, rules, default_rule='allow', overwrite=True):
@@ -503,6 +523,13 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
+    def get_zone_task_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.zone_task_fixtures[fixture])
+        _values.update(values)
+        return _values
+
     def create_tld(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
@@ -645,6 +672,44 @@ class TestCase(base.BaseTestCase):
 
         return self.central_service.create_zone_transfer_accept(
             context, objects.ZoneTransferAccept.from_dict(values))
+
+    def create_zone_task(self, **kwargs):
+        context = kwargs.pop('context', self.admin_context)
+        fixture = kwargs.pop('fixture', 0)
+
+        zone_task = self.get_zone_task_fixture(fixture=fixture,
+                                               values=kwargs)
+
+        return self.storage.create_zone_task(
+            context, objects.ZoneTask.from_dict(zone_task))
+
+    def wait_for_import(self, zone_import_id, errorok=False):
+        """
+           Zone imports spawn a thread to parse the zone file and
+           insert the data. This waits for this process before continuing
+        """
+        attempts = 0
+        while attempts < 20:
+            # Give the import a half second to complete
+            time.sleep(.5)
+
+            # Retrieve it, and ensure it's the same
+            zone_import = self.central_service.get_zone_import(
+                    self.admin_context, zone_import_id)
+
+            # If the import is done, we're done
+            if zone_import.status == 'COMPLETE':
+                break
+
+            # If errors are allowed, just make sure that something completed
+            if errorok:
+                if zone_import.status != 'PENDING':
+                    break
+
+            attempts += 1
+
+        if not errorok:
+            self.assertEqual(zone_import.status, 'COMPLETE')
 
     def _ensure_interface(self, interface, implementation):
         for name in interface.__abstractmethods__:

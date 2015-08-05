@@ -5,6 +5,13 @@ Resource record entries are used to generate records within a zone
 
 TODO: More detail.
 
+.. note:: V1 API has been deprecated since the Kilo release.
+
+.. note:: The "description" field on Records cannot be accessed from the V2
+    API. Likewise, the "description" field on Record Sets cannot be accessed
+    from the V1 API.
+
+
 
 Create Record
 -------------
@@ -321,7 +328,7 @@ Create Record
       {
         "name": "_sip._tcp.example.com.",
         "type": "SRV",
-        "data": "0 5060 sip.example.com."
+        "data": "0 5060 sip.example.com.",
         "priority": 30
       }
 
@@ -581,7 +588,7 @@ Create Record
         "domain_id": "89acac79-38e7-497d-807c-a011e1310438",
         "ttl": null,
         "priority" : null,
-        "data": "2 1 6c3c958af43d953f91f40e0d84157f4fe7b4a898"
+        "data": "2 1 6c3c958af43d953f91f40e0d84157f4fe7b4a898",
         "description": null
       }
 
@@ -765,7 +772,7 @@ List Records in a Domain
       {
         "records": [
           {
-            "id": "2e32e609-3a4f-45ba-bdef-e50eacd345ad"
+            "id": "2e32e609-3a4f-45ba-bdef-e50eacd345ad",
             "name": "www.example.com.",
             "type": "A",
             "ttl": 3600,
@@ -776,10 +783,10 @@ List Records in a Domain
             "tenant_id": null,
             "priority": null,
             "description": null,
-            "version": 1,
+            "version": 1
           },
           {
-            "id": "8e9ecf3e-fb92-4a3a-a8ae-7596f167bea3"
+            "id": "8e9ecf3e-fb92-4a3a-a8ae-7596f167bea3",
             "name": "host1.example.com.",
             "type": "A",
             "ttl": 3600,
@@ -790,10 +797,10 @@ List Records in a Domain
             "tenant_id": null,
             "priority": null,
             "description": null,
-            "version": 1,
+            "version": 1
           },
           {
-            "id": "4ad19089-3e62-40f8-9482-17cc8ccb92cb"
+            "id": "4ad19089-3e62-40f8-9482-17cc8ccb92cb",
             "name": "web.example.com.",
             "type": "CNAME",
             "ttl": 3600,
@@ -804,7 +811,7 @@ List Records in a Domain
             "tenant_id": null,
             "priority": null,
             "description": null,
-            "version": 1,
+            "version": 1
           }
         ]
       }

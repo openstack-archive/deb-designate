@@ -23,7 +23,7 @@ import uuid
 import six
 import pkg_resources
 from jinja2 import Template
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_concurrency import processutils
 from oslo_log import log as logging
 from oslo_utils import timeutils
@@ -106,6 +106,9 @@ def register_plugin_opts():
     # Avoid circular dependency imports
     from designate import plugin
 
+    plugin.Plugin.register_cfg_opts('designate.zone_manager_tasks')
+    plugin.Plugin.register_extra_cfg_opts('designate.zone_manager_tasks')
+
     # Register Backend Plugin Config Options
     plugin.Plugin.register_cfg_opts('designate.backend')
     plugin.Plugin.register_extra_cfg_opts('designate.backend')
@@ -131,13 +134,14 @@ def resource_string(*args):
 def load_schema(version, name):
     schema_string = resource_string('schemas', version, '%s.json' % name)
 
-    return json.loads(schema_string)
+    return json.loads(schema_string.decode('utf-8'))
 
 
 def load_template(template_name):
     template_string = resource_string('templates', template_name)
 
-    return Template(template_string, keep_trailing_newline=True)
+    return Template(template_string.decode('utf-8'),
+                    keep_trailing_newline=True)
 
 
 def render_template(template, **template_context):
@@ -213,7 +217,8 @@ def get_columns(data):
     def _seen(col):
         columns.add(str(col))
 
-    map(lambda item: map(_seen, item.keys()), data)
+    six.moves.map(lambda item: six.moves.map(_seen,
+        list(six.iterkeys(item))), data)
     return list(columns)
 
 
@@ -271,7 +276,7 @@ def deep_dict_merge(a, b):
 
     result = copy.deepcopy(a)
 
-    for k, v in b.iteritems():
+    for k, v in b.items():
         if k in result and isinstance(result[k], dict):
                 result[k] = deep_dict_merge(result[k], v)
         else:

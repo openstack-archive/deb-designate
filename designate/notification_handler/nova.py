@@ -13,7 +13,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate.notification_handler.base import BaseAddressHandler
@@ -30,7 +30,8 @@ cfg.CONF.register_opts([
     cfg.ListOpt('notification-topics', default=['notifications']),
     cfg.StrOpt('control-exchange', default='nova'),
     cfg.StrOpt('domain-id', default=None),
-    cfg.StrOpt('format', default=None)
+    cfg.MultiStrOpt('format', default=[
+                    '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'])
 ], group='handler:nova_fixed')
 
 
@@ -51,14 +52,23 @@ class NovaFixedHandler(BaseAddressHandler):
             'compute.instance.delete.start',
         ]
 
+    def _get_ip_data(self, addr_dict):
+        data = super(NovaFixedHandler, self)._get_ip_data(addr_dict)
+        data['label'] = addr_dict['label']
+        return data
+
     def process_notification(self, context, event_type, payload):
         LOG.debug('NovaFixedHandler received notification - %s' % event_type)
 
+        domain_id = cfg.CONF[self.name].domain_id
         if event_type == 'compute.instance.create.end':
-            self._create(payload['fixed_ips'], payload,
+            self._create(addresses=payload['fixed_ips'],
+                         extra=payload,
+                         domain_id=domain_id,
                          resource_id=payload['instance_id'],
                          resource_type='instance')
 
         elif event_type == 'compute.instance.delete.start':
-            self._delete(resource_id=payload['instance_id'],
+            self._delete(domain_id=domain_id,
+                         resource_id=payload['instance_id'],
                          resource_type='instance')

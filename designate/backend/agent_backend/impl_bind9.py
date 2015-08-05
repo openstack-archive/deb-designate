@@ -17,8 +17,8 @@ import os
 
 import dns
 import dns.resolver
-from oslo.config import cfg
-from oslo.concurrency import lockutils
+from oslo_concurrency import lockutils
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate.backend.agent_backend import base
@@ -32,6 +32,8 @@ CFG_GROUP = 'backend:agent:bind9'
 
 class Bind9Backend(base.AgentBackend):
     __plugin_name__ = 'bind9'
+
+    __backend_status__ = 'untested'
 
     @classmethod
     def get_cfg_opts(cls):

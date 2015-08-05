@@ -13,7 +13,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
+import collections
 import functools
+import time
 import types
 
 
@@ -31,9 +33,9 @@ def parameterized_class(cls):
     Mark your test cases with @parameterized.
     """
     test_functions = {
-        k: v for k, v in vars(cls).iteritems() if k.startswith('test')
+        k: v for k, v in vars(cls).items() if k.startswith('test')
     }
-    for name, f in test_functions.iteritems():
+    for name, f in test_functions.items():
         if not hasattr(f, '_test_data'):
             continue
 
@@ -41,7 +43,7 @@ def parameterized_class(cls):
         delattr(cls, name)
 
         # add a new test function to the class for each entry in f._test_data
-        for tag, args in f._test_data.iteritems():
+        for tag, args in f._test_data.items():
             new_name = "{0}_{1}".format(f.__name__, tag)
             if hasattr(cls, new_name):
                 raise Exception(
@@ -81,3 +83,30 @@ def parameterized(data):
         f._test_data = data
         return f
     return wrapped
+
+
+def wait_for_condition(condition, interval=1, timeout=40):
+    end_time = time.time() + timeout
+    while time.time() < end_time:
+        if condition():
+            return
+        time.sleep(interval)
+    raise Exception("Timed out after {0} seconds".format(timeout))
+
+
+def memoized(func):
+    """A decorator to cache function's return value"""
+    cache = {}
+
+    @functools.wraps(func)
+    def wrapper(*args):
+        if not isinstance(args, collections.Hashable):
+            # args is not cacheable. just call the function.
+            return func(*args)
+        if args in cache:
+            return cache[args]
+        else:
+            value = func(*args)
+            cache[args] = value
+            return value
+    return wrapper

@@ -15,9 +15,10 @@
 # under the License.
 import sys
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
+from designate import hookpoints
 from designate import service
 from designate import utils
 from designate.central import service as central
@@ -32,6 +33,8 @@ def main():
     utils.read_config('designate', sys.argv)
     logging.setup(CONF, 'designate')
     utils.setup_gmr(log_dir=cfg.CONF.log_dir)
+
+    hookpoints.log_hook_setup()
 
     server = central.Service(threads=CONF['service:central'].threads)
     service.serve(server, workers=CONF['service:central'].workers)

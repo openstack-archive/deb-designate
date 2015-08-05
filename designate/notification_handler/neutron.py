@@ -13,7 +13,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate.notification_handler.base import BaseAddressHandler
@@ -30,7 +30,8 @@ cfg.CONF.register_opts([
     cfg.ListOpt('notification-topics', default=['notifications']),
     cfg.StrOpt('control-exchange', default='neutron'),
     cfg.StrOpt('domain-id', default=None),
-    cfg.StrOpt('format', default=None)
+    cfg.MultiStrOpt('format', default=[
+                    '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'])
 ], group='handler:neutron_floatingip')
 
 
@@ -55,17 +56,23 @@ class NeutronFloatingHandler(BaseAddressHandler):
         LOG.debug('%s received notification - %s' %
                   (self.get_canonical_name(), event_type))
 
+        domain_id = cfg.CONF[self.name].domain_id
         if event_type.startswith('floatingip.delete'):
-            self._delete(resource_id=payload['floatingip_id'],
+            self._delete(domain_id=domain_id,
+                         resource_id=payload['floatingip_id'],
                          resource_type='floatingip')
         elif event_type.startswith('floatingip.update'):
             if payload['floatingip']['fixed_ip_address']:
                 address = {
                     'version': 4,
-                    'address': payload['floatingip']['floating_ip_address']}
-                self._create([address], payload['floatingip'],
+                    'address': payload['floatingip']['floating_ip_address']
+                }
+                self._create(addresses=[address],
+                             extra=payload['floatingip'],
+                             domain_id=domain_id,
                              resource_id=payload['floatingip']['id'],
                              resource_type='floatingip')
             elif not payload['floatingip']['fixed_ip_address']:
-                self._delete(resource_id=payload['floatingip']['id'],
+                self._delete(domain_id=domain_id,
+                             resource_id=payload['floatingip']['id'],
                              resource_type='floatingip')

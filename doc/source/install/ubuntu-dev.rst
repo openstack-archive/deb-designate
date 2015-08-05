@@ -48,6 +48,7 @@ Installing Designate
 
 ::
 
+   $ apt-get update
    $ apt-get install python-pip python-virtualenv git
    $ apt-get build-dep python-lxml
 
@@ -75,6 +76,9 @@ Installing Designate
 
 
 4. Install Designate and its dependencies
+
+.. note::
+   If you run into the error: Installed distribution pbr 1.1.1 conflicts with requirement pbr>=0.6,!=0.7,<1.0, try doing pip install pbr==0.11.0
 
 ::
 
@@ -177,7 +181,7 @@ By default, the MySQL root password for Designate is "password". You can:
 
 * Change the root password to "password"
 * If you want your own password, edit the designate.conf file and change any instance of
-   "mysql://root:password@127.0.0.1/designate" to "mysql://root:YOUR_PASSWORD@127.0.0.1/designate"
+   "mysql+pymysql://root:password@127.0.0.1/designate?charset=utf8" to "mysql+pymysql://root:YOUR_PASSWORD@127.0.0.1/designate?charset=utf8"
 
 You can change your MySQL password anytime with the following command::
 
@@ -201,7 +205,7 @@ Install additional packages
 ::
 
     $ apt-get install libmysqlclient-dev
-    $ pip install mysql-python
+    $ pip install pymysql
 
 
 Installing BIND9

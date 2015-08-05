@@ -12,7 +12,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate.tests.test_api.test_v2 import ApiV2TestCase
@@ -90,6 +90,46 @@ class ApiV2PoolsTest(ApiV2TestCase):
         self._assert_exception(
             'invalid_object', 400, self.client.post_json, '/pools', body)
 
+    def test_create_pool_name_missing(self):
+        fixture = self.get_pool_fixture(fixture=0)
+        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
+        del fixture['name']
+        body = fixture
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, '/pools', body)
+
+    def test_create_pool_name_too_long(self):
+        fixture = self.get_pool_fixture(fixture=0)
+        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
+        fixture['name'] = 'x' * 51
+        body = fixture
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, '/pools', body)
+
+    def test_create_pool_description_too_long(self):
+        fixture = self.get_pool_fixture(fixture=0)
+        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
+        fixture['description'] = 'x' * 161
+        body = fixture
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, '/pools', body)
+
+    def test_create_pool_provisioner_too_long(self):
+        fixture = self.get_pool_fixture(fixture=0)
+        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
+        fixture['provisioner'] = 'x' * 161
+        body = fixture
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, '/pools', body)
+
+    def test_create_pool_tenant_id_too_long(self):
+        fixture = self.get_pool_fixture(fixture=0)
+        fixture['attributes'] = self.get_pool_attribute_fixture(fixture=0)
+        fixture['tenant_id'] = 'x' * 37
+        body = fixture
+        self._assert_exception(
+            'invalid_object', 400, self.client.post_json, '/pools', body)
+
     def test_create_pool_duplicate(self):
         # Prepare a Pool fixture
         fixture = self.get_pool_fixture(fixture=0)
@@ -125,7 +165,8 @@ class ApiV2PoolsTest(ApiV2TestCase):
                                                      pool_id)
 
         # Add the default pool into the list
-        data = [self.create_pool(name='x-%s' % i) for i in xrange(0, 10)]
+        data = [self.create_pool(name='x-%s' % i) for i in
+                range(0, 10)]
         data.insert(0, default_pool)
 
         # Test the paging of the list
@@ -176,10 +217,10 @@ class ApiV2PoolsTest(ApiV2TestCase):
         body = {'description': 'Tester'}
 
         url = '/pools/%s' % pool['id']
-        response = self.client.patch_json(url, body, status=200)
+        response = self.client.patch_json(url, body, status=202)
 
         # Check the headers are what we expect
-        self.assertEqual(200, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
@@ -217,10 +258,10 @@ class ApiV2PoolsTest(ApiV2TestCase):
         ]}
 
         url = '/pools/%s' % pool['id']
-        response = self.client.patch_json(url, body, status=200)
+        response = self.client.patch_json(url, body, status=202)
 
         # Check the headers are what we expect
-        self.assertEqual(200, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the body structure is what we expect
@@ -241,16 +282,40 @@ class ApiV2PoolsTest(ApiV2TestCase):
         body = {"attributes": {"scope": "private"}}
 
         url = '/pools/%s' % pool['id']
-        response = self.client.patch_json(url, body, status=200)
+        response = self.client.patch_json(url, body, status=202)
 
         # Check the headers are what we expect
-        self.assertEqual(200, response.status_int)
+        self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
 
         # Check the values returned are what we expect
         self.assertEqual(1, len(response.json['attributes']))
         self.assertEqual('private',
                          response.json['attributes']['scope'])
+
+    def test_update_pool_name_too_long(self):
+        pool = self.create_pool()
+        body = {"attributes": {"scope": "private"}}
+        body['name'] = 'x' * 51
+        url = '/pools/%s' % pool['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.patch_json, url, body)
+
+    def test_update_pool_description_too_long(self):
+        pool = self.create_pool()
+        body = {"attributes": {"scope": "private"}}
+        body['description'] = 'x' * 161
+        url = '/pools/%s' % pool['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.patch_json, url, body)
+
+    def test_update_pool_provisioner_too_long(self):
+        pool = self.create_pool()
+        body = {"attributes": {"scope": "private"}}
+        body['provisioner'] = 'x' * 161
+        url = '/pools/%s' % pool['id']
+        self._assert_exception(
+            'invalid_object', 400, self.client.patch_json, url, body)
 
     def test_delete_pool(self):
         pool = self.create_pool()

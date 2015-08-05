@@ -13,7 +13,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-from oslo.config import cfg
+from oslo_config import cfg
 
 CONF = cfg.CONF
 
@@ -34,13 +34,13 @@ OPTS = [
                     'for a domain change to be considered active'),
     cfg.IntOpt('poll-timeout', default=30,
                help='The time to wait for a response from a server'),
-    cfg.IntOpt('poll-retry-interval', default=2,
+    cfg.IntOpt('poll-retry-interval', default=15,
                help='The time between retrying to send a request and '
                     'waiting for a response from a server'),
-    cfg.IntOpt('poll-max-retries', default=3,
+    cfg.IntOpt('poll-max-retries', default=10,
                help='The maximum number of times to retry sending a request '
                     'and wait for a response from a server'),
-    cfg.IntOpt('poll-delay', default=1,
+    cfg.IntOpt('poll-delay', default=5,
                help='The time to wait before sending the first request '
                     'to a server'),
     cfg.BoolOpt('enable-recovery-timer', default=True,
@@ -54,7 +54,7 @@ OPTS = [
     cfg.IntOpt('periodic-sync-seconds', default=21600,
                help='Zones Updated within last N seconds will be syncd. Use '
                     'None to sync all zones.'),
-    cfg.StrOpt('cache-driver', default='sqlalchemy',
+    cfg.StrOpt('cache-driver', default='memcache',
                help='The cache driver to use'),
 ]
 
@@ -88,7 +88,7 @@ def register_dynamic_pool_options():
     pool_target_opts = [
         cfg.StrOpt('type'),
         cfg.ListOpt('masters', default=[]),
-        cfg.DictOpt('options', default={}),
+        cfg.DictOpt('options', default={}, secret=True),
     ]
 
     for pool_target_id in pool_target_ids:

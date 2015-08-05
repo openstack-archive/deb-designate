@@ -2,7 +2,7 @@
 # Install and start **Designate** service
 
 # To enable Designate services, add the following to localrc
-# enable_service designate,designate-central,designate-api,designate-pool-manager,designate-mdns,designate-agent,designate-sink
+# enable_service designate,designate-central,designate-api,designate-pool-manager,designate-zone-manager,designate-mdns,designate-agent,designate-sink
 
 # stack.sh
 # ---------
@@ -25,13 +25,15 @@ DESIGNATE_PLUGINS=$TOP_DIR/lib/designate_plugins
 # Set up default repos
 DESIGNATE_REPO=${DESIGNATE_REPO:-${GIT_BASE}/openstack/designate.git}
 DESIGNATE_BRANCH=${DESIGNATE_BRANCH:-master}
-DESIGNATECLIENT_REPO=${DESIGNATECLIENT_REPO:-${GIT_BASE}/openstack/python-designateclient.git}
-DESIGNATECLIENT_BRANCH=${DESIGNATECLIENT_BRANCH:-master}
+DESIGNATEDASHBOARD_REPO=${DESIGNATEDASHBOARD_REPO:-${GIT_BASE}/openstack/designate-dashboard.git}
+DESIGNATEDASHBOARD_BRANCH=${DESIGNATEDASHBOARD_BRANCH:-master}
 
 # Set up default paths
+GITDIR["python-designateclient"]=$DEST/python-designateclient
+
 DESIGNATE_BIN_DIR=$(get_python_exec_prefix)
 DESIGNATE_DIR=$DEST/designate
-DESIGNATECLIENT_DIR=$DEST/python-designateclient
+DESIGNATEDASHBOARD_DIR=$DEST/designate-dashboard
 DESIGNATE_CONF_DIR=/etc/designate
 DESIGNATE_STATE_PATH=${DESIGNATE_STATE_PATH:=$DATA_DIR/designate}
 DESIGNATE_CONF=$DESIGNATE_CONF_DIR/designate.conf
@@ -42,7 +44,7 @@ DESIGNATE_APIPASTE_CONF=$DESIGNATE_CONF_DIR/api-paste.ini
 
 # Set up default options
 DESIGNATE_BACKEND_DRIVER=${DESIGNATE_BACKEND_DRIVER:=powerdns}
-DESIGNATE_POOL_MANAGER_CACHE_DRIVER=${DESIGNATE_POOL_MANAGER_CACHE_DRIVER:-noop}
+DESIGNATE_POOL_MANAGER_CACHE_DRIVER=${DESIGNATE_POOL_MANAGER_CACHE_DRIVER:-memcache}
 DESIGNATE_POOL_ID=${DESIGNATE_POOL_ID:-794ccc2c-d751-44fe-b57f-8894c9f5c842}
 DESIGNATE_TARGET_ID=${DESIGNATE_TARGET_ID:-f26e0b32-736f-4f0a-831b-039a415c481e}
 DESIGNATE_DEFAULT_NS_RECORD=${DESIGNATE_DEFAULT_NS_RECORD:-ns1.devstack.org.}
@@ -50,6 +52,7 @@ DESIGNATE_NOTIFICATION_DRIVER=${DESIGNATE_NOTIFICATION_DRIVER:-}
 DESIGNATE_NOTIFICATION_TOPICS=${DESIGNATE_NOTIFICATION_TOPICS:-notifications}
 DESIGNATE_PERIODIC_RECOVERY_INTERVAL=${DESIGNATE_PERIODIC_RECOVERY_INTERVAL:-120}
 DESIGNATE_PERIODIC_SYNC_INTERVAL=${DESIGNATE_PERIODIC_SYNC_INTERVAL:-1800}
+DESIGNATE_COORDINATION_URL=${DESIGNATE_COORDINATION_URL:-}
 
 # Public IP/Port Settings
 DESIGNATE_SERVICE_PROTOCOL=${DESIGNATE_SERVICE_PROTOCOL:-$SERVICE_PROTOCOL}
@@ -117,6 +120,11 @@ function configure_designate {
     iniset $DESIGNATE_CONF DEFAULT state_path $DESIGNATE_STATE_PATH
     iniset $DESIGNATE_CONF DEFAULT root-helper sudo designate-rootwrap $DESIGNATE_ROOTWRAP_CONF
     iniset $DESIGNATE_CONF storage:sqlalchemy connection `database_connection_url designate`
+
+    # Coordination Configuration
+    if [[ -n "$DESIGNATE_COORDINATION_URL" ]]; then
+        iniset $DESIGNATE_CONF coordination backend_url $DESIGNATE_COORDINATION_URL
+    fi
 
     # Install the policy file for the API server
     cp $DESIGNATE_DIR/etc/designate/policy.json $DESIGNATE_CONF_DIR/policy.json
@@ -204,18 +212,12 @@ function configure_designate {
 # ------------------------------------------------------------------
 # service              designate  admin        # if enabled
 function create_designate_accounts {
-    local service_tenant=$(openstack project list | awk "/ $SERVICE_TENANT_NAME / { print \$2 }")
-    local admin_role=$(openstack role list | awk "/ admin / { print \$2 }")
-
-    if [[ "$ENABLED_SERVICES" =~ "designate-api" ]]; then
-        local designate_user=$(get_or_create_user "designate" \
-            "$SERVICE_PASSWORD" $service_tenant)
-        get_or_add_user_project_role $admin_role $designate_user $service_tenant
+    if is_service_enabled designate-api; then
+        create_service_user "designate"
 
         if [[ "$KEYSTONE_CATALOG_BACKEND" = 'sql' ]]; then
-            local designate_service=$(get_or_create_service "designate" \
-                "dns" "Designate DNS Service")
-            get_or_create_endpoint $designate_service \
+            get_or_create_service "designate" "dns" "Designate DNS Service"
+            get_or_create_endpoint "dns" \
                 "$REGION_NAME" \
                 "$DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/" \
                 "$DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/" \
@@ -277,15 +279,20 @@ function install_designate {
 
 # install_designateclient - Collect source and prepare
 function install_designateclient {
-    git_clone $DESIGNATECLIENT_REPO $DESIGNATECLIENT_DIR $DESIGNATECLIENT_BRANCH
-    setup_develop $DESIGNATECLIENT_DIR
+    if use_library_from_git "python-designateclient"; then
+        git_clone_by_name "python-designateclient"
+        setup_dev_lib "python-designateclient"
+    else
+        pip_install_gr "python-designateclient"
+    fi
 }
 
 # install_designatedashboard - Collect source and prepare
 function install_designatedashboard {
-    ln -fs $DESIGNATE_DIR/contrib/designate-dashboard/designatedashboard/enabled/_70_dns_add_group.py $HORIZON_DIR/openstack_dashboard/local/enabled/70_dns_add_group.py
-    ln -fs $DESIGNATE_DIR/contrib/designate-dashboard/designatedashboard/enabled/_71_dns_project.py $HORIZON_DIR/openstack_dashboard/local/enabled/71_dns_project.py
-    setup_develop $DESIGNATE_DIR/contrib/designate-dashboard
+    git_clone $DESIGNATEDASHBOARD_REPO $DESIGNATEDASHBOARD_DIR $DESIGNATEDASHBOARD_BRANCH
+    setup_develop $DESIGNATEDASHBOARD_DIR
+    ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_70_dns_add_group.py $HORIZON_DIR/openstack_dashboard/local/enabled/70_dns_add_group.py
+    ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_71_dns_project.py $HORIZON_DIR/openstack_dashboard/local/enabled/71_dns_project.py
 }
 
 # start_designate - Start running processes, including screen
@@ -295,6 +302,7 @@ function start_designate {
     run_process designate-central "$DESIGNATE_BIN_DIR/designate-central --config-file $DESIGNATE_CONF"
     run_process designate-api "$DESIGNATE_BIN_DIR/designate-api --config-file $DESIGNATE_CONF"
     run_process designate-pool-manager "$DESIGNATE_BIN_DIR/designate-pool-manager --config-file $DESIGNATE_CONF"
+    run_process designate-zone-manager "$DESIGNATE_BIN_DIR/designate-zone-manager --config-file $DESIGNATE_CONF"
     run_process designate-mdns "$DESIGNATE_BIN_DIR/designate-mdns --config-file $DESIGNATE_CONF"
     run_process designate-agent "$DESIGNATE_BIN_DIR/designate-agent --config-file $DESIGNATE_CONF"
     run_process designate-sink "$DESIGNATE_BIN_DIR/designate-sink --config-file $DESIGNATE_CONF"
@@ -315,6 +323,7 @@ function stop_designate {
     stop_process designate-central
     stop_process designate-api
     stop_process designate-pool-manager
+    stop_process designate-zone-manager
     stop_process designate-mdns
     stop_process designate-agent
     stop_process designate-sink

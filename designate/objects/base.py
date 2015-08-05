@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 import copy
-import urlparse
 
 import six
+from six.moves.urllib import parse
 import jsonschema
 from oslo_log import log as logging
 
@@ -53,7 +53,7 @@ def make_class_properties(cls):
     # Store the results
     cls.FIELDS = fields
 
-    for field in cls.FIELDS.keys():
+    for field in six.iterkeys(cls.FIELDS):
         def getter(self, name=field):
             self._obj_check_relation(name)
             return getattr(self, get_attrname(name), None)
@@ -64,7 +64,8 @@ def make_class_properties(cls):
                 self._obj_changes.add(name)
 
             if (self.obj_attr_is_set(name) and value != getattr(self, name)
-                    and name not in self._obj_original_values.keys()):
+                    and name not in list(six.iterkeys(
+                        self._obj_original_values))):
                 self._obj_original_values[name] = getattr(self, name)
 
             return setattr(self, get_attrname(name), value)
@@ -78,7 +79,7 @@ def _schema_ref_resolver(uri):
 
     Sample URI: obj://ObjectName#/subpathA/subpathB
     """
-    obj_name = urlparse.urlsplit(uri).netloc
+    obj_name = parse.urlsplit(uri).netloc
     obj = DesignateObject.obj_cls_from_name(obj_name)
 
     return obj.obj_get_schema()
@@ -227,7 +228,7 @@ class DesignateObject(object):
         self._obj_original_values = dict()
 
         for name, value in kwargs.items():
-            if name in self.FIELDS.keys():
+            if name in list(six.iterkeys(self.FIELDS)):
                 setattr(self, name, value)
             else:
                 raise TypeError("__init__() got an unexpected keyword "
@@ -243,7 +244,7 @@ class DesignateObject(object):
         """
         data = {}
 
-        for field in self.FIELDS.keys():
+        for field in six.iterkeys(self.FIELDS):
             if self.obj_attr_is_set(field):
                 if isinstance(getattr(self, field), DesignateObject):
                     data[field] = getattr(self, field).to_primitive()
@@ -261,20 +262,21 @@ class DesignateObject(object):
         """Convert the object to a simple dictionary."""
         data = {}
 
-        for field in self.FIELDS.keys():
+        for field in six.iterkeys(self.FIELDS):
             if self.obj_attr_is_set(field):
-                if isinstance(getattr(self, field), ListObjectMixin):
-                    data[field] = getattr(self, field).to_list()
-                elif isinstance(getattr(self, field), DesignateObject):
-                    data[field] = getattr(self, field).to_dict()
+                val = getattr(self, field)
+                if isinstance(val, ListObjectMixin):
+                    data[field] = val.to_list()
+                elif isinstance(val, DesignateObject):
+                    data[field] = val.to_dict()
                 else:
-                    data[field] = getattr(self, field)
+                    data[field] = val
 
         return data
 
     def update(self, values):
         """Update a object's fields with the supplied key/value pairs"""
-        for k, v in values.iteritems():
+        for k, v in values.items():
             setattr(self, k, v)
 
     @property
@@ -306,6 +308,13 @@ class DesignateObject(object):
             errors.append(ValidationError.from_js_error(error))
 
         if len(errors) > 0:
+            LOG.debug(
+                "Error Validating '%(name)s' object with values: "
+                "%(values)r", {
+                    'name': self.obj_name(),
+                    'values': values,
+                }
+            )
             raise exceptions.InvalidObject(
                 "Provided object does not match "
                 "schema", errors=errors, object=self)
@@ -343,7 +352,7 @@ class DesignateObject(object):
 
     def obj_get_original_value(self, field):
         """Returns the original value of a field."""
-        if field in self._obj_original_values.keys():
+        if field in list(six.iterkeys(self._obj_original_values)):
             return self._obj_original_values[field]
         elif self.obj_attr_is_set(field):
             return getattr(self, field)
@@ -352,7 +361,7 @@ class DesignateObject(object):
 
     def __setattr__(self, name, value):
         """Enforces all object attributes are private or well defined"""
-        if name[0:5] == '_obj_' or name in self.FIELDS.keys() \
+        if name[0:5] == '_obj_' or name in list(six.iterkeys(self.FIELDS)) \
                 or name == 'FIELDS':
             super(DesignateObject, self).__setattr__(name, value)
 
@@ -375,7 +384,7 @@ class DesignateObject(object):
 
         c_obj = self.__class__()
 
-        for field in self.FIELDS.keys():
+        for field in six.iterkeys(self.FIELDS):
             if self.obj_attr_is_set(field):
                 c_field = copy.deepcopy(getattr(self, field), memodict)
                 setattr(c_obj, field, c_field)
@@ -408,10 +417,10 @@ class DictObjectMixin(object):
         setattr(self, key, value)
 
     def __contains__(self, item):
-        return item in self.FIELDS.keys()
+        return item in list(six.iterkeys(self.FIELDS))
 
     def get(self, key, default=NotSpecifiedSentinel):
-        if key not in self.FIELDS.keys():
+        if key not in list(six.iterkeys(self.FIELDS)):
             raise AttributeError("'%s' object has no attribute '%s'" % (
                                  self.__class__, key))
 
@@ -420,17 +429,15 @@ class DictObjectMixin(object):
         else:
             return getattr(self, key)
 
-    def iteritems(self):
-        for field in self.FIELDS.keys():
+    def items(self):
+        for field in six.iterkeys(self.FIELDS):
             if self.obj_attr_is_set(field):
                 yield field, getattr(self, field)
 
     def __iter__(self):
-        for field in self.FIELDS.keys():
+        for field in six.iterkeys(self.FIELDS):
             if self.obj_attr_is_set(field):
                 yield field, getattr(self, field)
-
-    items = lambda self: list(self.iteritems())
 
 
 class ListObjectMixin(object):
@@ -493,7 +500,7 @@ class ListObjectMixin(object):
     def to_primitive(self):
         data = {}
 
-        for field in self.FIELDS.keys():
+        for field in six.iterkeys(self.FIELDS):
             if self.obj_attr_is_set(field):
                 if field == 'objects':
                     data[field] = [o.to_primitive() for o in self.objects]
@@ -562,8 +569,8 @@ class ListObjectMixin(object):
         """List count of value occurrences"""
         return self.objects.count(value)
 
-    def sort(self, cmp=None, key=None, reverse=False):
-        self.objects.sort(cmp=cmp, key=key, reverse=reverse)
+    def sort(self, key=None, reverse=False):
+        self.objects.sort(key=key, reverse=reverse)
 
     def obj_what_changed(self):
         changes = set(self._obj_changes)

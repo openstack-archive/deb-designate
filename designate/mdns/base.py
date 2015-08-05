@@ -13,8 +13,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-from oslo import messaging
-from oslo.config import cfg
+import oslo_messaging as messaging
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate.pool_manager import rpcapi as pool_mngr_api

@@ -16,7 +16,8 @@
 from inspect import ismethod
 from inspect import getargspec
 
-from oslo.serialization import jsonutils
+import six
+from oslo_serialization import jsonutils
 import pecan.core
 
 from designate import exceptions
@@ -39,7 +40,7 @@ class Request(pecan.core.Request):
             try:
                 return jsonutils.load(self.body_file)
             except ValueError as valueError:
-                raise exceptions.InvalidJson(valueError.message)
+                raise exceptions.InvalidJson(six.text_type(valueError))
         else:
             raise exceptions.UnsupportedContentType(
                 'Content-type must be application/json')

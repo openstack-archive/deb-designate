@@ -13,17 +13,22 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import os
+
+# Eventlet's GreenDNS Patching will prevent the resolution of names in
+# the /etc/hosts file, causing problems for for installs.
+os.environ['EVENTLET_NO_GREENDNS'] = 'yes'
+
 import eventlet
 
 eventlet.monkey_patch()
 
-import os
 import socket
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log
 from oslo_concurrency import lockutils
-from oslo import messaging
+import oslo_messaging as messaging
 
 
 cfg.CONF.register_opts([
@@ -57,14 +62,18 @@ cfg.CONF.register_opts([
 log.set_defaults(default_log_levels=[
     'amqplib=WARN',
     'amqp=WARN',
-    'sqlalchemy=WARN',
     'boto=WARN',
-    'suds=INFO',
-    'keystone=INFO',
     'eventlet.wsgi.server=WARN',
-    'stevedore=WARN',
+    'iso8601=WARN',
+    'kazoo.client=WARN',
+    'keystone=INFO',
     'keystonemiddleware.auth_token=INFO',
-    'oslo.messaging=WARN'])
+    'oslo_messaging=WARN',
+    'oslo_service.loopingcall=WARN',
+    'sqlalchemy=WARN',
+    'stevedore=WARN',
+    'suds=INFO',
+])
 
 # Set some Oslo RPC defaults
 messaging.set_transport_defaults('designate')

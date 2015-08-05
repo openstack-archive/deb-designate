@@ -17,13 +17,14 @@ import random
 import socket
 import base64
 
+import six
 import dns
 import dns.exception
 import dns.zone
 import eventlet
 from dns import rdatatype
 from oslo_log import log as logging
-from oslo.config import cfg
+from oslo_config import cfg
 
 from designate import context
 from designate import exceptions
@@ -122,6 +123,14 @@ class SerializationMiddleware(DNSMiddleware):
 
             response = self._build_error_response()
 
+        except Exception:
+            LOG.exception(_LE("Unknown exception deserializing packet "
+                          "from %(host)s %(port)d") %
+                          {'host': request['addr'][0],
+                           'port': request['addr'][1]})
+
+            response = self._build_error_response()
+
         else:
             # Hand the Deserialized packet onto the Application
             for response in self.application(message):
@@ -209,7 +218,7 @@ def from_dnspython_zone(dnspython_zone):
 def dnspyrecords_to_recordsetlist(dnspython_records):
     rrsets = objects.RecordList()
 
-    for rname in dnspython_records.keys():
+    for rname in six.iterkeys(dnspython_records):
         for rdataset in dnspython_records[rname]:
             rrset = dnspythonrecord_to_recordset(rname, rdataset)
 
@@ -229,7 +238,7 @@ def dnspythonrecord_to_recordset(rname, rdataset):
         'type': record_type
     }
 
-    if rdataset.ttl != 0L:
+    if rdataset.ttl != 0:
         values['ttl'] = rdataset.ttl
 
     rrset = objects.RecordSet(**values)
@@ -247,8 +256,14 @@ def bind_tcp(host, port, tcp_backlog):
              {'host': host, 'port': port})
     sock_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+
+    # NOTE: Linux supports socket.SO_REUSEPORT only in 3.9 and later releases.
+    try:
+        sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    except Exception:
+        pass
+
     sock_tcp.setblocking(True)
     sock_tcp.bind((host, port))
     sock_tcp.listen(tcp_backlog)
@@ -262,7 +277,13 @@ def bind_udp(host, port):
              {'host': host, 'port': port})
     sock_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+
+    # NOTE: Linux supports socket.SO_REUSEPORT only in 3.9 and later releases.
+    try:
+        sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    except Exception:
+        pass
+
     sock_udp.setblocking(True)
     sock_udp.bind((host, port))
 
@@ -277,7 +298,7 @@ def expand_servers(servers):
     """
     data = []
     for srv in servers:
-        if isinstance(srv, basestring):
+        if isinstance(srv, six.string_types):
             host, port = utils.split_host_port(srv, 53)
         srv = {"ip": host, "port": port}
         data.append(srv)
@@ -290,20 +311,22 @@ def do_axfr(zone_name, servers, timeout=None, source=None):
     Performs an AXFR for a given zone name
     """
     random.shuffle(servers)
-    timeout = timeout or 10
+    timeout = timeout or cfg.CONF["service:mdns"].xfr_timeout
 
     xfr = None
+
     for srv in servers:
-        timeout = eventlet.Timeout(timeout)
+        to = eventlet.Timeout(timeout)
         log_info = {'name': zone_name, 'host': srv}
         try:
             LOG.info(_LI("Doing AXFR for %(name)s from %(host)s") % log_info)
+
             xfr = dns.query.xfr(srv['ip'], zone_name, relativize=False,
                                 timeout=1, port=srv['port'], source=source)
             raw_zone = dns.zone.from_xfr(xfr, relativize=False)
             break
         except eventlet.Timeout as t:
-            if t == timeout:
+            if t == to:
                 msg = _LE("AXFR timed out for %(name)s from %(host)s")
                 LOG.error(msg % log_info)
                 continue
@@ -320,7 +343,7 @@ def do_axfr(zone_name, servers, timeout=None, source=None):
                       "Trying next server.")
             LOG.exception(msg % log_info)
         finally:
-            timeout.cancel()
+            to.cancel()
         continue
     else:
         msg = _LE("XFR failed for %(name)s. No servers in %(servers)s was "

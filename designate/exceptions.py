@@ -13,6 +13,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import six
 
 
 class Base(Exception):
@@ -27,7 +28,7 @@ class Base(Exception):
 
         super(Base, self).__init__(*args, **kwargs)
 
-        if len(args) > 0 and isinstance(args[0], basestring):
+        if len(args) > 0 and isinstance(args[0], six.string_types):
             self.error_message = args[0]
 
 
@@ -164,6 +165,7 @@ class UnsupportedContentType(BadRequest):
 class InvalidDomainName(Base):
     error_code = 400
     error_type = 'invalid_domain_name'
+    expected = True
 
 
 class InvalidRecordSetName(Base):
@@ -195,6 +197,14 @@ class Forbidden(Base):
     error_code = 403
     error_type = 'forbidden'
     expected = True
+
+
+class IllegalChildDomain(Forbidden):
+    error_type = 'illegal_child'
+
+
+class IllegalParentDomain(Forbidden):
+    error_type = 'illegal_parent'
 
 
 class IncorrectZoneTransferKey(Forbidden):
@@ -257,6 +267,10 @@ class DuplicateDomainAttribute(Duplicate):
 
 class DuplicatePoolNsRecord(Duplicate):
     error_type = 'duplicate_pool_ns_record'
+
+
+class DuplicateZoneTask(Duplicate):
+    error_type = 'duplicate_zone_task'
 
 
 class MethodNotAllowed(Base):
@@ -341,6 +355,10 @@ class ZoneTransferRequestNotFound(NotFound):
 
 class ZoneTransferAcceptNotFound(NotFound):
     error_type = 'zone_transfer_accept_not_found'
+
+
+class ZoneTaskNotFound(NotFound):
+    error_type = 'zone_task_not_found'
 
 
 class LastServerDeleteNotAllowed(BadRequest):

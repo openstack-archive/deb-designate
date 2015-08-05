@@ -22,7 +22,7 @@ import dns.flags
 import dns.rcode
 import dns.message
 import dns.opcode
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate.i18n import _LI
@@ -41,6 +41,8 @@ CONF = cfg.CONF
 
 class AgentPoolBackend(base.Backend):
     __plugin_name__ = 'agent'
+
+    __backend_status__ = 'untested'
 
     def __init__(self, target):
         super(AgentPoolBackend, self).__init__(target)
@@ -67,7 +69,7 @@ class AgentPoolBackend(base.Backend):
         values = {
             'host': self.host,
             'port': self.port,
-            'pool_id': '794ccc2c-d751-44fe-b57f-8894c9f5c842'
+            'pool_id': CONF['service:central'].default_pool_id
         }
         nameserver = objects.PoolNameserver(**values)
 

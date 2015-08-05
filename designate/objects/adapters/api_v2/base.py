@@ -11,10 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-import urllib
-
+from six.moves.urllib import parse
 from oslo_log import log as logging
-from oslo.config import cfg
+from oslo_config import cfg
 
 from designate.objects.adapters import base
 from designate.objects import base as obj_base
@@ -47,7 +46,8 @@ class APIv2Adapter(base.DesignateAdapter):
         # Check if we should include metadata
         if isinstance(list_object, obj_base.PagedListObjectMixin):
             metadata = {}
-            metadata['total_count'] = list_object.total_count
+            if list_object.total_count is not None:
+                metadata['total_count'] = list_object.total_count
             r_list['metadata'] = metadata
 
         return r_list
@@ -122,7 +122,7 @@ class APIv2Adapter(base.DesignateAdapter):
         href = "%s%s?%s" % (
             cls.BASE_URI,
             cls._get_path(request),
-            urllib.urlencode(params))
+            parse.urlencode(params))
 
         return href.rstrip('?')
 

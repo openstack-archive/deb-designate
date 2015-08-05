@@ -15,6 +15,7 @@
 # under the License.
 import uuid
 
+import six
 from oslo_log import log as logging
 
 from designate.network_api.base import NetworkAPI
@@ -22,7 +23,8 @@ from designate.network_api.base import NetworkAPI
 
 LOG = logging.getLogger(__name__)
 
-POOL = dict([(str(uuid.uuid4()), '192.168.2.%s' % i) for i in xrange(0, 254)])
+POOL = dict([(str(uuid.uuid4()), '192.168.2.%s' % i) for i in
+             range(0, 254)])
 ALLOCATIONS = {}
 
 
@@ -40,7 +42,7 @@ def allocate_floatingip(tenant_id, floatingip_id=None):
     """
     ALLOCATIONS.setdefault(tenant_id, {})
 
-    id_ = floatingip_id or POOL.keys()[0]
+    id_ = floatingip_id or list(six.iterkeys(POOL))[0]
 
     ALLOCATIONS[tenant_id][id_] = POOL.pop(id_)
     values = _format_floatingip(id_, ALLOCATIONS[tenant_id][id_])
@@ -53,7 +55,7 @@ def deallocate_floatingip(id_):
     Deallocate a floatingip
     """
     LOG.debug('De-allocating %s' % id_)
-    for tenant_id, allocated in ALLOCATIONS.items():
+    for tenant_id, allocated in list(ALLOCATIONS.items()):
         if id_ in allocated:
             POOL[id_] = allocated.pop(id_)
             break
@@ -63,8 +65,8 @@ def deallocate_floatingip(id_):
 
 def reset_floatingips():
     LOG.debug('Resetting any allocations.')
-    for tenant_id, allocated in ALLOCATIONS.items():
-        for key, value in allocated.items():
+    for tenant_id, allocated in list(ALLOCATIONS.items()):
+        for key, value in list(allocated.items()):
             POOL[key] = allocated.pop(key)
 
 
@@ -74,10 +76,10 @@ class FakeNetworkAPI(NetworkAPI):
     def list_floatingips(self, context, region=None):
         if context.is_admin:
             data = []
-            for tenant_id, allocated in ALLOCATIONS.items():
-                data.extend(allocated.items())
+            for tenant_id, allocated in list(ALLOCATIONS.items()):
+                data.extend(list(allocated.items()))
         else:
-            data = ALLOCATIONS.get(context.tenant, {}).items()
+            data = list(ALLOCATIONS.get(context.tenant, {}).items())
 
         formatted = [_format_floatingip(k, v) for k, v in data]
         LOG.debug('Returning %i FloatingIPs: %s' %

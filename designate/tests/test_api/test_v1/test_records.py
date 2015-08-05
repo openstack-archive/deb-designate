@@ -15,7 +15,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from mock import patch
-from oslo import messaging
+import oslo_messaging as messaging
 from oslo_log import log as logging
 
 from designate.central import service as central_service
@@ -96,7 +96,7 @@ class ApiV1RecordsTest(ApiV1Test):
 
         # Get the record 2 to ensure recordset did not get deleted
         rec_2_get_response = self.get('domains/%s/records/%s' %
-                                     (self.domain['id'], record_2.json['id']))
+                                      (self.domain['id'], record_2.json['id']))
 
         self.assertIn('id', rec_2_get_response.json)
         self.assertIn('name', rec_2_get_response.json)
@@ -196,6 +196,50 @@ class ApiV1RecordsTest(ApiV1Test):
         self.post('domains/%s/records' % self.domain['id'], data=fixture,
                   status_code=400)
 
+    def test_create_record_name_too_long(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({'type': self.recordset['type']})
+        fixture['name'] = 'w' * 255 + ".%s" % self.domain.name
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_name_is_missing(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({'type': self.recordset['type']})
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_type_is_missing(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture['name'] = "www.%s" % self.domain.name
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_invalid_type(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({'type': "ABC", 'name': self.recordset['name']})
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_data_is_missing(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({'type': self.recordset['type'],
+                        'name': self.recordset['name']})
+        del fixture['data']
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_ttl_greater_than_max(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({
+            'name': self.recordset['name'],
+            'type': self.recordset['type'],
+        })
+
+        fixture['ttl'] = 2174483648
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
     def test_create_record_negative_ttl(self):
         fixture = self.get_record_fixture(self.recordset['type'])
         fixture.update({
@@ -205,6 +249,20 @@ class ApiV1RecordsTest(ApiV1Test):
 
         # Set the TTL to a negative value
         fixture['ttl'] = -1
+
+        # Create a record, Ensuring it Fails with a 400
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_zero_ttl(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({
+            'name': self.recordset['name'],
+            'type': self.recordset['type'],
+        })
+
+        # Set the TTL to a value zero
+        fixture['ttl'] = 0
 
         # Create a record, Ensuring it Fails with a 400
         self.post('domains/%s/records' % self.domain['id'], data=fixture,
@@ -221,6 +279,36 @@ class ApiV1RecordsTest(ApiV1Test):
         fixture['ttl'] = "$?!."
 
         # Create a record, Ensuring it Fails with a 400
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_invalid_priority(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({
+            'name': self.recordset['name'],
+            'type': self.recordset['type'],
+        })
+        fixture['priority'] = "$?!."
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_negative_priority(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({
+            'name': self.recordset['name'],
+            'type': self.recordset['type'],
+        })
+        fixture['priority'] = -1
+        self.post('domains/%s/records' % self.domain['id'], data=fixture,
+                  status_code=400)
+
+    def test_create_record_priority_greater_than_max(self):
+        fixture = self.get_record_fixture(self.recordset['type'])
+        fixture.update({
+            'name': self.recordset['name'],
+            'type': self.recordset['type'],
+        })
+        fixture['priority'] = 65536
         self.post('domains/%s/records' % self.domain['id'], data=fixture,
                   status_code=400)
 
@@ -466,12 +554,69 @@ class ApiV1RecordsTest(ApiV1Test):
         self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
                  data=data, status_code=400)
 
+    def test_update_record_ttl_greater_than_max(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'ttl': 2174483648}
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_zero_ttl(self):
+        # Create a record
+        record = self.create_record(self.domain, self.recordset)
+
+        data = {'ttl': 0}
+
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
     def test_update_record_invalid_ttl(self):
         # Create a record
         record = self.create_record(self.domain, self.recordset)
 
         data = {'ttl': "$?>%"}
 
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_description_too_long(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'description': 'x' * 165}
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_negative_priority(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'priority': -1}
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_invalid_priority(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'priority': "?!:>"}
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_priority_greater_than_max(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'priority': 65536}
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_name_too_long(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'name': 'w' * 256 + ".%s" % self.domain.name}
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_invalid_type(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'type': 'ABC'}
+        self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
+                 data=data, status_code=400)
+
+    def test_update_record_data_too_long(self):
+        record = self.create_record(self.domain, self.recordset)
+        data = {'data': '1' * 255 + '.2.3.4'}
         self.put('domains/%s/records/%s' % (self.domain['id'], record['id']),
                  data=data, status_code=400)
 

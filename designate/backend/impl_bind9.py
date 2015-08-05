@@ -15,6 +15,7 @@
 # under the License.
 import random
 
+import six
 from oslo_log import log as logging
 
 from designate import exceptions
@@ -28,6 +29,8 @@ DEFAULT_MASTER_PORT = 5354
 
 class Bind9Backend(base.Backend):
     __plugin_name__ = 'bind9'
+
+    __backend_status__ = 'integrated'
 
     def __init__(self, target):
         super(Bind9Backend, self).__init__(target)
@@ -59,7 +62,7 @@ class Bind9Backend(base.Backend):
             self._execute_rndc(rndc_op)
         except exceptions.Backend as e:
             # If create fails because the domain exists, don't reraise
-            if "already exists" not in str(e.message):
+            if "already exists" not in six.text_type(e):
                 raise
 
     def delete_domain(self, context, domain):
@@ -73,7 +76,7 @@ class Bind9Backend(base.Backend):
             self._execute_rndc(rndc_op)
         except exceptions.Backend as e:
             # If domain is already deleted, don't reraise
-            if "not found" not in str(e.message):
+            if "not found" not in six.text_type(e):
                 raise
 
     def _rndc_base(self):

@@ -19,10 +19,11 @@ import os
 import sys
 
 import eventlet
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 from stevedore.extension import ExtensionManager
 
+from designate import hookpoints
 from designate import utils
 from designate.i18n import _
 
@@ -84,7 +85,7 @@ def get_arg_string(args):
             # This is long optional arg
             arg = args[2:]
         else:
-            arg = args[3:]
+            arg = args[1:]
     else:
         arg = args
 
@@ -120,6 +121,9 @@ def main():
         sys.exit(2)
 
     utils.setup_gmr(log_dir=cfg.CONF.log_dir)
+
+    hookpoints.log_hook_setup()
+
     fn = CONF.category.action_fn
 
     fn_args = fetch_func_args(fn)

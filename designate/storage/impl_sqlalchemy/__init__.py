@@ -16,7 +16,7 @@
 import time
 import hashlib
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_db import options
 from sqlalchemy import select, distinct, func
@@ -434,43 +434,43 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
     # RecordSet Methods
     def _find_recordsets(self, context, criterion, one=False, marker=None,
                          limit=None, sort_key=None, sort_dir=None):
-        query = None
 
         # Check to see if the criterion can use the reverse_name column
         criterion = self._rname_check(criterion)
 
         if criterion is not None \
                 and not criterion.get('domains_deleted', True):
-            # Ensure that we return only active recordsets
+            # remove 'domains_deleted' from the criterion, as _apply_criterion
+            # assumes each key in criterion to be a column name.
+            del criterion['domains_deleted']
+
+        if one:
             rjoin = tables.recordsets.join(
                 tables.domains,
                 tables.recordsets.c.domain_id == tables.domains.c.id)
             query = select([tables.recordsets]).select_from(rjoin).\
                 where(tables.domains.c.deleted == '0')
 
-            # remove 'domains_deleted' from the criterion, as _apply_criterion
-            # assumes each key in criterion to be a column name.
-            del criterion['domains_deleted']
-        recordsets = self._find(
-            context, tables.recordsets, objects.RecordSet,
-            objects.RecordSetList, exceptions.RecordSetNotFound, criterion,
-            one, marker, limit, sort_key, sort_dir, query)
+            recordsets = self._find(
+                context, tables.recordsets, objects.RecordSet,
+                objects.RecordSetList, exceptions.RecordSetNotFound, criterion,
+                one, marker, limit, sort_key, sort_dir, query)
 
-        if not one:
-            recordsets.total_count = self.count_recordsets(context, criterion)
+            recordsets.records = self._find_records(
+                context, {'recordset_id': recordsets.id})
 
-        # Load Relations
-        def _load_relations(recordset):
-            recordset.records = self._find_records(
-                context, {'recordset_id': recordset.id})
+            recordsets.obj_reset_changes(['records'])
 
-            recordset.obj_reset_changes(['recordset'])
-
-        if one:
-            _load_relations(recordsets)
         else:
-            for recordset in recordsets:
-                _load_relations(recordset)
+            recordsets = self._find_recordsets_with_records(
+                context, tables.recordsets, objects.RecordSet,
+                objects.RecordSetList, exceptions.RecordSetNotFound, criterion,
+                load_relations=True, relation_table=tables.records,
+                relation_cls=objects.Record,
+                relation_list_cls=objects.RecordList, limit=limit,
+                marker=marker, sort_key=sort_key, sort_dir=sort_dir)
+
+            recordsets.total_count = self.count_recordsets(context, criterion)
 
         return recordsets
 
@@ -624,7 +624,8 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         Calculates the hash of the record, used to ensure record uniqueness.
         """
         md5 = hashlib.md5()
-        md5.update("%s:%s" % (record.recordset_id, record.data))
+        md5.update(("%s:%s" % (record.recordset_id,
+                               record.data)).encode('utf-8'))
 
         return md5.hexdigest()
 
@@ -1121,6 +1122,43 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             tables.zone_transfer_accepts,
             zone_transfer_accept,
             exceptions.ZoneTransferAcceptNotFound)
+
+    # Zone Task Methods
+    def _find_zone_tasks(self, context, criterion, one=False, marker=None,
+                   limit=None, sort_key=None, sort_dir=None):
+        return self._find(
+            context, tables.zone_tasks, objects.ZoneTask,
+            objects.ZoneTaskList, exceptions.ZoneTaskNotFound, criterion,
+            one, marker, limit, sort_key, sort_dir)
+
+    def create_zone_task(self, context, zone_task):
+        return self._create(
+            tables.zone_tasks, zone_task, exceptions.DuplicateZoneTask)
+
+    def get_zone_task(self, context, zone_task_id):
+        return self._find_zone_tasks(context, {'id': zone_task_id},
+                                     one=True)
+
+    def find_zone_tasks(self, context, criterion=None, marker=None,
+                  limit=None, sort_key=None, sort_dir=None):
+        return self._find_zone_tasks(context, criterion, marker=marker,
+                               limit=limit, sort_key=sort_key,
+                               sort_dir=sort_dir)
+
+    def find_zone_task(self, context, criterion):
+        return self._find_zone_tasks(context, criterion, one=True)
+
+    def update_zone_task(self, context, zone_task):
+        return self._update(
+            context, tables.zone_tasks, zone_task,
+            exceptions.DuplicateZoneTask, exceptions.ZoneTaskNotFound)
+
+    def delete_zone_task(self, context, zone_task_id):
+        # Fetch the existing zone_task, we'll need to return it.
+        zone_task = self._find_zone_tasks(context, {'id': zone_task_id},
+                                one=True)
+        return self._delete(context, tables.zone_tasks, zone_task,
+                    exceptions.ZoneTaskNotFound)
 
     # diagnostics
     def ping(self, context):

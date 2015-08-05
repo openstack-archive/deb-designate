@@ -14,8 +14,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 from mock import patch
-from oslo.config import cfg
-from oslo import messaging
+from oslo_config import cfg
+import oslo_messaging as messaging
 from oslo_log import log as logging
 
 from designate import exceptions
@@ -36,9 +36,7 @@ class ApiV2ZonesTest(ApiV2TestCase):
     def test_create_zone(self):
         # Create a zone
         fixture = self.get_domain_fixture(fixture=0)
-
         response = self.client.post_json('/zones/', fixture)
-
         # Check the headers are what we expect
         self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
@@ -96,6 +94,93 @@ class ApiV2ZonesTest(ApiV2TestCase):
         # Ensure it fails with a 400
         body = fixture
 
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_email_too_long(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        fixture.update({'email': 'a' * 255 + '@abc.com'})
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_invalid_email(self):
+        invalid_emails = [
+            'org',
+            'example.org',
+            'bla.example.org',
+            'org.',
+            'example.org.',
+            'bla.example.org.',
+        ]
+        fixture = self.get_domain_fixture(fixture=0)
+        for email in invalid_emails:
+            fixture.update({'email': email})
+            body = fixture
+            self._assert_exception('invalid_object', 400,
+                                   self.client.post_json,
+                                   '/zones', body)
+
+    def test_create_zone_email_missing(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        del fixture['email']
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_ttl_less_than_zero(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        fixture['ttl'] = -1
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_ttl_is_zero(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        fixture['ttl'] = 0
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_ttl_is_greater_than_max(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        fixture['ttl'] = 2174483648
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_ttl_is_invalid(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        fixture['ttl'] = "!@?>"
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_ttl_is_not_required_field(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        body = fixture
+        response = self.client.post_json('/zones', body)
+        self.assertEqual(202, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+
+    def test_create_zone_description_too_long(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        fixture['description'] = "a" * 161
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_name_is_missing(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        del fixture['name']
+        body = fixture
+        self._assert_exception('invalid_object', 400, self.client.post_json,
+                               '/zones', body)
+
+    def test_create_zone_name_too_long(self):
+        fixture = self.get_domain_fixture(fixture=0)
+        fixture['name'] = 'x' * 255 + ".com"
+        body = fixture
         self._assert_exception('invalid_object', 400, self.client.post_json,
                                '/zones', body)
 
@@ -461,6 +546,37 @@ class ApiV2ZonesTest(ApiV2TestCase):
         self.assertEqual(masters, response.json['masters'])
         self.assertEqual(1, response.json['serial'])
 
+    def test_xfr_request(self):
+        # Create a zone
+        fixture = self.get_domain_fixture('SECONDARY', 0)
+        fixture['email'] = cfg.CONF['service:central'].managed_resource_email
+        fixture['attributes'] = [{"key": "master", "value": "10.0.0.10"}]
+
+        # Create a zone
+        zone = self.create_domain(**fixture)
+
+        response = self.client.post_json(
+            '/zones/%s/tasks/xfr' % zone['id'],
+            None, status=202)
+
+        # Check the headers are what we expect
+        self.assertEqual(202, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+
+    def test_invalid_xfr_request(self):
+        # Create a zone
+
+        # Create a zone
+        zone = self.create_domain()
+
+        response = self.client.post_json(
+            '/zones/%s/tasks/xfr' % zone['id'],
+            None, status=400)
+
+        # Check the headers are what we expect
+        self.assertEqual(400, response.status_int)
+        self.assertEqual('application/json', response.content_type)
+
     def test_update_secondary_email_invalid_object(self):
         # Create a zone
         fixture = self.get_domain_fixture('SECONDARY', 0)
@@ -537,3 +653,57 @@ class ApiV2ZonesTest(ApiV2TestCase):
         self.assertEqual(1, len(response.json['nameservers']))
         self.assertIn('hostname', response.json['nameservers'][0])
         self.assertIn('priority', response.json['nameservers'][0])
+
+    def test_get_zones_filter(self):
+        # Add zones for testing
+        fixtures = [
+            self.get_domain_fixture(
+                'PRIMARY', fixture=0, values={
+                    'ttl': 3600,
+                    'description': 'test1'
+                }
+            ),
+            self.get_domain_fixture(
+                'PRIMARY', fixture=1, values={
+                    'ttl': 4000,
+                    'description': 'test2'
+                }
+            )
+        ]
+
+        for fixture in fixtures:
+            response = self.client.post_json('/zones/', fixture)
+
+        get_urls = [
+            # Filter by Name
+            '/zones?name=%s' % fixtures[0]['name'],
+
+            # Filter by Email
+            '/zones?email=example*',
+            '/zones?email=%s' % fixtures[1]['email'],
+
+            # Filter by TTL
+            '/zones?ttl=3600',
+
+            # Filter by Description
+            '/zones?description=test1',
+            '/zones?description=test*'
+        ]
+
+        correct_results = [1, 2, 1, 1, 1, 2]
+
+        for get_url, correct_result in zip(get_urls, correct_results):
+
+            response = self.client.get(get_url)
+
+            # Check the headers are what we expect
+            self.assertEqual(200, response.status_int)
+            self.assertEqual('application/json', response.content_type)
+
+            # Check that the correct number of zones match
+            self.assertEqual(correct_result, len(response.json['zones']))
+
+    def test_invalid_zones_filter(self):
+        invalid_url = '/zones?type=PRIMARY'
+        self._assert_exception(
+            'bad_request', 400, self.client.get, invalid_url)

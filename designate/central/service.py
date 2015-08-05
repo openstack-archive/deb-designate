@@ -24,8 +24,12 @@ import string
 import random
 import time
 
-from oslo.config import cfg
-from oslo import messaging
+import six
+from eventlet import tpool
+from dns import zone as dnszone
+from dns import exception as dnsexception
+from oslo_config import cfg
+import oslo_messaging as messaging
 from oslo_log import log as logging
 from oslo_utils import excutils
 from oslo_concurrency import lockutils
@@ -36,6 +40,7 @@ from designate.i18n import _LC
 from designate.i18n import _LW
 from designate import context as dcontext
 from designate import exceptions
+from designate import dnsutils
 from designate import network_api
 from designate import objects
 from designate import policy
@@ -247,7 +252,7 @@ def notification(notification_type):
 
 
 class Service(service.RPCService, service.Service):
-    RPC_API_VERSION = '5.1'
+    RPC_API_VERSION = '5.2'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
@@ -590,18 +595,27 @@ class Service(service.RPCService, service.Service):
         self.quota.limit_check(context, tenant_id, domains=count)
 
     def _enforce_recordset_quota(self, context, domain):
-        # TODO(kiall): Enforce RRSet Quotas
-        pass
+        # Ensure the recordsets per domain quota is OK
+        criterion = {'domain_id': domain.id}
+        count = self.storage.count_recordsets(context, criterion)
+
+        self.quota.limit_check(
+            context, domain.tenant_id, domain_recordsets=count)
 
     def _enforce_record_quota(self, context, domain, recordset):
         # Ensure the records per domain quota is OK
-        criterion = {'domain_id': domain['id']}
+        criterion = {'domain_id': domain.id}
         count = self.storage.count_records(context, criterion)
 
-        self.quota.limit_check(context, domain['tenant_id'],
+        self.quota.limit_check(context, domain.tenant_id,
                                domain_records=count)
 
-        # TODO(kiall): Enforce Records per RRSet Quotas
+        # Ensure the records per recordset quota is OK
+        criterion = {'recordset_id': recordset.id}
+        count = self.storage.count_records(context, criterion)
+
+        self.quota.limit_check(context, domain.tenant_id,
+                               recordset_records=count)
 
     # Misc Methods
     def get_absolute_limits(self, context):
@@ -683,14 +697,14 @@ class Service(service.RPCService, service.Service):
     @notification('dns.tld.delete')
     @transaction
     def delete_tld(self, context, tld_id):
-        # Known issue - self.check_for_tld is not reset here.  So if the last
-        # TLD happens to be deleted, then we would incorrectly do the TLD
-        # validations.
-        # This decision was influenced by weighing the (ultra low) probability
-        # of hitting this issue vs doing the checks for every delete.
         policy.check('delete_tld', context, {'tld_id': tld_id})
 
         tld = self.storage.delete_tld(context, tld_id)
+
+        # We need to ensure that if there's no more TLD's we'll not break
+        # domain creation.
+        if not self.storage.find_tlds(context, limit=1):
+            self.check_for_tlds = False
 
         return tld
 
@@ -800,8 +814,9 @@ class Service(service.RPCService, service.Service):
                 # Record the Parent Domain ID
                 domain.parent_domain_id = parent_domain.id
             else:
-                raise exceptions.Forbidden('Unable to create subdomain in '
-                                           'another tenants domain')
+                raise exceptions.IllegalChildDomain('Unable to create'
+                                                    'subdomain in another '
+                                                    'tenants domain')
 
         # Handle super-domains appropriately
         subdomains = self._is_superdomain(context, domain.name, domain.pool_id)
@@ -809,10 +824,10 @@ class Service(service.RPCService, service.Service):
             LOG.debug("Domain '{0}' is a superdomain.".format(domain.name))
             for subdomain in subdomains:
                 if subdomain.tenant_id != domain.tenant_id:
-                    raise exceptions.Forbidden('Unable to create domain '
-                                               'because another tenant '
-                                               'owns a subdomain of '
-                                               'the domain')
+                    raise exceptions.IllegalParentDomain('Unable to create '
+                                                     'domain because another '
+                                                     'tenant owns a subdomain '
+                                                     'of the domain')
         # If this succeeds, subdomain parent IDs will be updated
         # after domain is created
 
@@ -865,6 +880,9 @@ class Service(service.RPCService, service.Service):
 
         if domain.obj_attr_is_set('recordsets'):
             for rrset in domain.recordsets:
+                # This allows eventlet to yield, as this looping operation
+                # can be very long-lived.
+                time.sleep(0)
                 self._create_recordset_in_storage(
                     context, domain, rrset, increment_serial=False)
 
@@ -1707,7 +1725,7 @@ class Service(service.RPCService, service.Service):
         elevated_context.all_tenants = True
         elevated_context.edit_managed_records = True
 
-        if records > 0:
+        if len(records) > 0:
             for r in records:
                 msg = 'Deleting record %s for FIP %s'
                 LOG.debug(msg, r['id'], r['managed_resource_id'])
@@ -1962,7 +1980,7 @@ class Service(service.RPCService, service.Service):
         if 'ptrdname' in values.obj_what_changed() and\
                 values['ptrdname'] is None:
             self._unset_floatingip_reverse(context, region, floatingip_id)
-        elif isinstance(values['ptrdname'], basestring):
+        elif isinstance(values['ptrdname'], six.string_types):
             return self._set_floatingip_reverse(
                 context, region, floatingip_id, values)
 
@@ -2452,3 +2470,127 @@ class Service(service.RPCService, service.Service):
         return self.storage.delete_zone_transfer_accept(
             context,
             zone_transfer_accept_id)
+
+    # Zone Import Methods
+    @notification('dns.zone_import.create')
+    def create_zone_import(self, context, request_body):
+        target = {'tenant_id': context.tenant}
+        policy.check('create_zone_import', context, target)
+
+        values = {
+            'status': 'PENDING',
+            'message': None,
+            'domain_id': None,
+            'tenant_id': context.tenant,
+            'task_type': 'IMPORT'
+        }
+        zone_import = objects.ZoneTask(**values)
+
+        created_zone_import = self.storage.create_zone_task(context,
+                                                            zone_import)
+
+        self.tg.add_thread(self._import_zone, context, created_zone_import,
+                    request_body)
+
+        return created_zone_import
+
+    def _import_zone(self, context, zone_import, request_body):
+
+        def _import(self, context, zone_import, request_body):
+            # Dnspython needs a str instead of a unicode object
+            if six.PY2:
+                request_body = str(request_body)
+            domain = None
+            try:
+                dnspython_zone = dnszone.from_text(
+                    request_body,
+                    # Don't relativize, or we end up with '@' record names.
+                    relativize=False,
+                    # Dont check origin, we allow missing NS records
+                    # (missing SOA records are taken care of in _create_zone).
+                    check_origin=False)
+                domain = dnsutils.from_dnspython_zone(dnspython_zone)
+                domain.type = 'PRIMARY'
+
+                for rrset in list(domain.recordsets):
+                    if rrset.type in ('NS', 'SOA'):
+                        domain.recordsets.remove(rrset)
+
+            except dnszone.UnknownOrigin:
+                zone_import.message = ('The $ORIGIN statement is required and'
+                                      ' must be the first statement in the'
+                                      ' zonefile.')
+                zone_import.status = 'ERROR'
+            except dnsexception.SyntaxError:
+                zone_import.message = 'Malformed zonefile.'
+                zone_import.status = 'ERROR'
+            except exceptions.BadRequest:
+                zone_import.message = 'An SOA record is required.'
+                zone_import.status = 'ERROR'
+            except Exception:
+                zone_import.message = 'An undefined error occured.'
+                zone_import.status = 'ERROR'
+
+            return domain, zone_import
+
+        # Execute the import in a real Python thread
+        domain, zone_import = tpool.execute(_import, self, context,
+            zone_import, request_body)
+
+        # If the zone import was valid, create the domain
+        if zone_import.status != 'ERROR':
+            try:
+                zone = self.create_domain(context, domain)
+                zone_import.status = 'COMPLETE'
+                zone_import.domain_id = zone.id
+                zone_import.message = '%(name)s imported' % {'name':
+                                                             zone.name}
+            except exceptions.DuplicateDomain:
+                zone_import.status = 'ERROR'
+                zone_import.message = 'Duplicate zone.'
+            except exceptions.InvalidTTL as e:
+                zone_import.status = 'ERROR'
+                zone_import.message = e.message
+            except Exception:
+                zone_import.message = 'An undefined error occured.'
+                zone_import.status = 'ERROR'
+
+        self.update_zone_import(context, zone_import)
+
+    def find_zone_imports(self, context, criterion=None, marker=None,
+                  limit=None, sort_key=None, sort_dir=None):
+        target = {'tenant_id': context.tenant}
+        policy.check('find_zone_imports', context, target)
+
+        criterion = {
+            'task_type': 'IMPORT'
+        }
+        return self.storage.find_zone_tasks(context, criterion, marker,
+                                      limit, sort_key, sort_dir)
+
+    def get_zone_import(self, context, zone_import_id):
+        target = {'tenant_id': context.tenant}
+        policy.check('get_zone_import', context, target)
+        return self.storage.get_zone_task(context, zone_import_id)
+
+    @notification('dns.zone_import.update')
+    def update_zone_import(self, context, zone_import):
+        target = {
+            'tenant_id': zone_import.tenant_id,
+        }
+        policy.check('update_zone_import', context, target)
+
+        return self.storage.update_zone_task(context, zone_import)
+
+    @notification('dns.zone_import.delete')
+    @transaction
+    def delete_zone_import(self, context, zone_import_id):
+        target = {
+            'zone_import_id': zone_import_id,
+            'tenant_id': context.tenant
+        }
+        policy.check('delete_zone_import', context, target)
+
+        zone_import = self.storage.delete_zone_task(context, zone_import_id)
+
+        return zone_import

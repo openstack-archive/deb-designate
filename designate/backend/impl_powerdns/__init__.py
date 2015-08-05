@@ -16,6 +16,7 @@
 import copy
 import threading
 
+import six
 from oslo_config import cfg
 from oslo_db import options
 from oslo_log import log as logging
@@ -37,6 +38,8 @@ def _map_col(keys, col):
 
 class PowerDNSBackend(base.Backend):
     __plugin_name__ = 'powerdns'
+
+    __backend_status__ = 'integrated'
 
     @classmethod
     def get_cfg_opts(cls):
@@ -120,7 +123,7 @@ class PowerDNSBackend(base.Backend):
 
             def _parse_master(master):
                 return '%s:%d' % (master.host, master.port)
-            masters = map(_parse_master, self.masters)
+            masters = six.moves.map(_parse_master, self.masters)
 
             domain_values = {
                 'designate_id': domain['id'],

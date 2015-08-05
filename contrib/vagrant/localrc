@@ -21,7 +21,7 @@ ENABLED_SERVICES=rabbit,mysql,key
 # Designate Devstack Config
 # =========================
 # Enable core Designate services
-ENABLED_SERVICES+=,designate,designate-central,designate-api,designate-pool-manager,designate-mdns
+ENABLED_SERVICES+=,designate,designate-central,designate-api,designate-pool-manager,designate-zone-manager,designate-mdns
 
 # Optional Designate services
 #ENABLED_SERVICES+=,designate-agent
@@ -33,7 +33,7 @@ ENABLED_SERVICES+=,designate,designate-central,designate-api,designate-pool-mana
 
 # Pool Manager Cache Driver (e.g. noop, memcache, sqlalchemy. See
 #                            designate.backend section of setup.cfg)
-#DESIGNATE_POOL_MANAGER_CACHE_DRIVER=noop
+#DESIGNATE_POOL_MANAGER_CACHE_DRIVER=memcache
 
 # mDNS Service DNS Port Number
 #DESIGNATE_SERVICE_PORT_MDNS=5354
@@ -64,6 +64,9 @@ ENABLED_SERVICES+=,designate,designate-central,designate-api,designate-pool-mana
 
 # Set Notification topics
 #DESIGNATE_NOTIFICATION_TOPICS=notifications
+
+# Set coordination service URL (e.g. kazoo://localhost/)
+#DESIGNATE_COORDINATION_URL=
 
 
 # Other Devstack Config

@@ -16,8 +16,10 @@ limitations under the License.
 
 import random
 
-from functionaltests.api.v2.models.zone_model import ZoneModel
+from functionaltests.api.v2.models.blacklist_model import BlacklistModel
+from functionaltests.api.v2.models.pool_model import PoolModel
 from functionaltests.api.v2.models.recordset_model import RecordsetModel
+from functionaltests.api.v2.models.zone_model import ZoneModel
 
 
 def random_ip():
@@ -106,3 +108,66 @@ def random_mx_recordset(zone_name, pref=None, host=None, **kwargs):
         host = random_string(prefix='mail', suffix='.' + zone_name)
     data = "{0} {1}".format(pref, host)
     return random_recordset_data('MX', zone_name, records=[data], **kwargs)
+
+
+def random_blacklist_data():
+    data = {
+        "pattern": random_string()
+    }
+    return BlacklistModel.from_dict(data)
+
+
+def random_pool_data():
+    ns_zone = random_zone_data().name
+    data = {
+        "name": random_string(),
+    }
+    ns_records = []
+    for i in range(0, 2):
+        ns_records.append("ns%s.%s" % (i, ns_zone))
+    data["ns_records"] = []
+
+    return PoolModel.from_dict(data)
+
+
+def random_zonefile_data(name=None, ttl=None):
+    """Generate random zone data, with optional overrides
+
+    :return: A ZoneModel
+    """
+    zone_base = ('$ORIGIN &\n& # IN SOA ns.& nsadmin.& # # # # #\n'
+                 '& # IN NS ns.&\n& # IN MX 10 mail.&\nns.& 360 IN A 1.0.0.1')
+    if name is None:
+        name = random_string(prefix='testdomain', suffix='.com.')
+    if ttl is None:
+        ttl = str(random.randint(1200, 8400))
+
+    return zone_base.replace('&', name).replace('#', ttl)
+
+
+def random_spf_recordset(zone_name, data=None):
+    data = data or "v=spf1 +all"
+    return random_recordset_data('SPF', zone_name, records=[data])
+
+
+def random_srv_recordset(zone_name, data=None):
+    data = data or "10 0 8080 %s.%s" % (random_string(), zone_name)
+    return random_recordset_data('SRV', zone_name,
+                                 name="_sip._tcp.%s" % zone_name,
+                                 records=[data])
+
+
+def random_sshfp_recordset(zone_name, algorithm_number=None,
+                           fingerprint_type=None, fingerprint=None):
+    algorithm_number = algorithm_number or 2
+    fingerprint_type = fingerprint_type or 1
+    fingerprint = fingerprint or \
+        "123456789abcdef67890123456789abcdef67890"
+
+    data = "%s %s %s" % (algorithm_number, fingerprint_type, fingerprint)
+    return random_recordset_data('SSHFP', zone_name, records=[data])
+
+
+def random_txt_recordset(zone_name, data=None):
+    data = data or "v=spf1 +all"
+    return random_recordset_data('TXT', zone_name, records=[data])

@@ -52,11 +52,11 @@ class AgentRequestHandlerTest(AgentTestCase):
         # ;ANSWER
         # ;AUTHORITY
         # ;ADDITIONAL
-        expected_response = ("1a72a4000001000000000000076578616d706c650363"
-                            "6f6d0000060001")
+        expected_response = (b"1a72a4000001000000000000076578616d706c6503"
+                            b"636f6d0000060001")
         request = dns.message.from_wire(binascii.a2b_hex(payload))
         request.environ = {'addr': ["0.0.0.0", 1234]}
-        response = self.handler(request).next().to_wire()
+        response = next(self.handler(request)).to_wire()
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
     def test_receive_notify_bad_notifier(self):
@@ -73,12 +73,12 @@ class AgentRequestHandlerTest(AgentTestCase):
         # ;ANSWER
         # ;AUTHORITY
         # ;ADDITIONAL
-        expected_response = ("2435a0050001000000000000076578616d706c6503636f6d"
-                            "0000060001")
+        expected_response = (b"2435a0050001000000000000076578616d706c6503636f"
+                            b"6d0000060001")
         request = dns.message.from_wire(binascii.a2b_hex(payload))
         # Bad 'requester'
         request.environ = {'addr': ["6.6.6.6", 1234]}
-        response = self.handler(request).next().to_wire()
+        response = next(self.handler(request)).to_wire()
 
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
@@ -100,15 +100,15 @@ class AgentRequestHandlerTest(AgentTestCase):
         # ;ANSWER
         # ;AUTHORITY
         # ;ADDITIONAL
-        expected_response = ("735df4000001000000000000076578616d706c6503636f6d"
-                             "00ff02ff00")
+        expected_response = (b"735df4000001000000000000076578616d706c6503636f"
+                             b"6d00ff02ff00")
         request = dns.message.from_wire(binascii.a2b_hex(payload))
         request.environ = {'addr': ["0.0.0.0", 1234]}
         with mock.patch.object(
             designate.backend.agent_backend.impl_fake.FakeBackend,
                 'find_domain_serial', return_value=None):
 
-            response = self.handler(request).next().to_wire()
+            response = next(self.handler(request)).to_wire()
             self.assertEqual(expected_response, binascii.b2a_hex(response))
 
     def test_receive_create_bad_notifier(self):
@@ -125,12 +125,12 @@ class AgentRequestHandlerTest(AgentTestCase):
         # ;ANSWER
         # ;AUTHORITY
         # ;ADDITIONAL
-        expected_response = ("8dfdf0050001000000000000076578616d706c6503636f6d"
-                             "00ff02ff00")
+        expected_response = (b"8dfdf0050001000000000000076578616d706c6503636f"
+                             b"6d00ff02ff00")
         request = dns.message.from_wire(binascii.a2b_hex(payload))
         # Bad 'requester'
         request.environ = {'addr': ["6.6.6.6", 1234]}
-        response = self.handler(request).next().to_wire()
+        response = next(self.handler(request)).to_wire()
 
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
@@ -150,11 +150,11 @@ class AgentRequestHandlerTest(AgentTestCase):
         # ;ANSWER
         # ;AUTHORITY
         # ;ADDITIONAL
-        expected_response = ("3b99f4000001000000000000076578616d706c6503636f6d"
-                             "00ff03ff00")
+        expected_response = (b"3b99f4000001000000000000076578616d706c6503636f"
+                             b"6d00ff03ff00")
         request = dns.message.from_wire(binascii.a2b_hex(payload))
         request.environ = {'addr': ["0.0.0.0", 1234]}
-        response = self.handler(request).next().to_wire()
+        response = next(self.handler(request)).to_wire()
 
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
@@ -173,12 +173,12 @@ class AgentRequestHandlerTest(AgentTestCase):
         # ;ANSWER
         # ;AUTHORITY
         # ;ADDITIONAL
-        expected_response = ("e6daf0050001000000000000076578616d706c6503636f6d"
-                             "00ff03ff00")
+        expected_response = (b"e6daf0050001000000000000076578616d706c6503636f"
+                             b"6d00ff03ff00")
         request = dns.message.from_wire(binascii.a2b_hex(payload))
         # Bad 'requester'
         request.environ = {'addr': ["6.6.6.6", 1234]}
-        response = self.handler(request).next().to_wire()
+        response = next(self.handler(request)).to_wire()
 
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
@@ -199,13 +199,13 @@ class AgentRequestHandlerTest(AgentTestCase):
         # ;ANSWER
         # ;AUTHORITY
         # ;ADDITIONAL
-        expected_response = ("735df4000001000000000000076578616d706c6503636f6d"
-                             "00ff02ff00")
+        expected_response = (b"735df4000001000000000000076578616d706c6503636f"
+                             b"6d00ff02ff00")
         request = dns.message.from_wire(binascii.a2b_hex(payload))
         request.environ = {'addr': ["0.0.0.0", 1234]}
         with mock.patch.object(
             designate.backend.agent_backend.impl_fake.FakeBackend,
                 'find_domain_serial', return_value=None):
-            response = self.handler(request).next().to_wire()
+            response = next(self.handler(request)).to_wire()
             doaxfr.assert_called_with('example.com.', [], source="1.2.3.4")
             self.assertEqual(expected_response, binascii.b2a_hex(response))

@@ -15,7 +15,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 import mock
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_messaging.notify import notifier
 
 from designate.tests.test_api import ApiTestCase
@@ -72,6 +72,23 @@ class KeystoneContextMiddlewareTest(ApiTestCase):
             'X-Tenant-ID': 'TenantID',
             'X-Roles': 'admin,Member',
             'X-Identity-Status': 'Invalid'
+        }
+
+        # Process the request
+        response = app(request)
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_process_unscoped_token(self):
+        app = middleware.KeystoneContextMiddleware({})
+
+        request = FakeRequest()
+
+        request.headers = {
+            'X-Auth-Token': 'AuthToken',
+            'X-User-ID': 'UserID',
+            'X-Tenant-ID': None,
+            'X-Roles': 'admin,Member',
         }
 
         # Process the request
