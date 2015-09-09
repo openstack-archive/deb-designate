@@ -27,8 +27,8 @@ cfg.CONF.register_group(cfg.OptGroup(
 ))
 
 cfg.CONF.register_opts([
-    cfg.StrOpt('designate_endpoint_override',
-               help="Endpoint to use to bypass Keystone auth"),
+    cfg.StrOpt('designate_override_url',
+               help="Use this instead of the endpoint in the service catalog"),
 
     cfg.StrOpt('uri', help="The Keystone v2 endpoint"),
     cfg.StrOpt('uri_v3', help="The Keystone v3 endpoint"),
@@ -58,6 +58,11 @@ cfg.CONF.register_opts([
     cfg.StrOpt('admin_tenant_id', default='admin-project'),
     cfg.BoolOpt('use_noauth', default=False),
 ], group='noauth')
+
+
+cfg.CONF.register_opts([
+    cfg.ListOpt('nameservers', default=["127.0.0.1:53"])
+], group="designate")
 
 
 def find_config_file():

@@ -55,6 +55,11 @@ default_pool_id = cfg.CONF['service:central'].default_pool_id
 _TRUE_VALUES = ('true', '1', 'yes', 'y')
 
 
+class TestTimeoutError(Exception):
+    # Used in wait_for_condition
+    pass
+
+
 class TestCase(base.BaseTestCase):
     quota_fixtures = [{
         'resource': 'domains',
@@ -240,7 +245,7 @@ class TestCase(base.BaseTestCase):
         "target_tenant_id": "target_tenant_id"
     }]
 
-    zone_task_fixtures = [{
+    zone_import_fixtures = [{
         'status': 'PENDING',
         'domain_id': None,
         'message': None,
@@ -428,11 +433,11 @@ class TestCase(base.BaseTestCase):
 
     def get_domain_fixture(self, domain_type=None, fixture=0, values=None):
         domain_type = domain_type or 'PRIMARY'
-        values = values or {}
 
         _values = copy.copy(self.domain_fixtures[domain_type][fixture])
+        if values:
+            _values.update(values)
 
-        _values.update(values)
         return _values
 
     def get_recordset_fixture(self, domain_name, type='A', fixture=0,
@@ -523,10 +528,10 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
-    def get_zone_task_fixture(self, fixture=0, values=None):
+    def get_zone_import_fixture(self, fixture=0, values=None):
         values = values or {}
 
-        _values = copy.copy(self.zone_task_fixtures[fixture])
+        _values = copy.copy(self.zone_import_fixtures[fixture])
         _values.update(values)
         return _values
 
@@ -673,15 +678,15 @@ class TestCase(base.BaseTestCase):
         return self.central_service.create_zone_transfer_accept(
             context, objects.ZoneTransferAccept.from_dict(values))
 
-    def create_zone_task(self, **kwargs):
+    def create_zone_import(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
 
-        zone_task = self.get_zone_task_fixture(fixture=fixture,
+        zone_import = self.get_zone_import_fixture(fixture=fixture,
                                                values=kwargs)
 
-        return self.storage.create_zone_task(
-            context, objects.ZoneTask.from_dict(zone_task))
+        return self.storage.create_zone_import(
+            context, objects.ZoneImport.from_dict(zone_import))
 
     def wait_for_import(self, zone_import_id, errorok=False):
         """
@@ -695,7 +700,7 @@ class TestCase(base.BaseTestCase):
 
             # Retrieve it, and ensure it's the same
             zone_import = self.central_service.get_zone_import(
-                    self.admin_context, zone_import_id)
+                self.admin_context, zone_import_id)
 
             # If the import is done, we're done
             if zone_import.status == 'COMPLETE':
@@ -719,6 +724,26 @@ class TestCase(base.BaseTestCase):
             self.assertEqual(
                 in_arginfo, im_arginfo,
                 "Method Signature for '%s' mismatched" % name)
+
+    def wait_for_condition(self, condition, interval=0.3, timeout=2):
+        """Wait for a condition to be true or raise an exception after
+        `timeout` seconds.
+        Poll every `interval` seconds.  `condition` can be a callable.
+        (Caution: some mocks behave both as values and callables.)
+        """
+        t_max = time.time() + timeout
+        while time.time() < t_max:
+            if callable(condition):
+                result = condition()
+            else:
+                result = condition
+
+            if result:
+                return result
+
+            time.sleep(interval)
+
+        raise TestTimeoutError
 
 
 def _skip_decorator(func):

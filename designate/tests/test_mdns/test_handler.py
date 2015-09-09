@@ -121,13 +121,16 @@ class MdnsRequestHandlerTest(MdnsTestCase):
 
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
-    def _get_secondary_domain(self, values=None, attributes=None):
+    def _get_secondary_domain(self, values=None, attributes=None,
+                              masters=None):
         attributes = attributes or []
+        masters = masters or [{"host": "10.0.0.1", "port": 53}]
         fixture = self.get_domain_fixture("SECONDARY", values=values)
         fixture['email'] = cfg.CONF['service:central'].managed_resource_email
 
         domain = objects.Domain(**fixture)
-        domain.attributes = objects.DomainAttributeList()
+        domain.attributes = objects.DomainAttributeList().from_list(attributes)
+        domain.masters = objects.DomainMasterList().from_list(masters)
         return domain
 
     def _get_soa_answer(self, serial):
@@ -145,8 +148,6 @@ class MdnsRequestHandlerTest(MdnsTestCase):
 
         master = "10.0.0.1"
         domain = self._get_secondary_domain({"serial": 123})
-        domain.attributes.append(objects.DomainAttribute(
-            **{"key": "master", "value": master}))
 
         # expected response is an error code NOERROR.  The other fields are
         # id 50048
@@ -176,7 +177,8 @@ class MdnsRequestHandlerTest(MdnsTestCase):
             response = next(self.handler(request)).to_wire()
 
         self.mock_tg.add_thread.assert_called_with(
-            self.handler.domain_sync, self.context, domain, [master])
+            self.handler.domain_sync, self.context, domain,
+            [domain.masters[0]])
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
     @mock.patch.object(dns.resolver.Resolver, 'query')
@@ -186,8 +188,6 @@ class MdnsRequestHandlerTest(MdnsTestCase):
 
         master = "10.0.0.1"
         domain = self._get_secondary_domain({"serial": 123})
-        domain.attributes.append(objects.DomainAttribute(
-            **{"key": "master", "value": master}))
 
         # expected response is an error code NOERROR.  The other fields are
         # id 50048
@@ -226,10 +226,8 @@ class MdnsRequestHandlerTest(MdnsTestCase):
         # Have a domain with different master then the one where the notify
         # comes from causing it to be "ignored" as in not transferred and
         # logged
-        master = "10.0.0.1"
+
         domain = self._get_secondary_domain({"serial": 123})
-        domain.attributes.append(objects.DomainAttribute(
-            **{"key": "master", "value": master}))
 
         # expected response is an error code REFUSED.  The other fields are
         # id 50048
@@ -601,21 +599,21 @@ class MdnsRequestHandlerTest(MdnsTestCase):
 
         expected_response = [
             # Initial SOA
-            ("49c384000001000100000000076578616d706c6503636f6d0000fc0001c00c00"
-             "06000100000e10002f036e7331076578616d706c65036f726700076578616d70"
-             "6c65c00c551c063900000e10000002580001518000000e10"),
+            (b"49c384000001000100000000076578616d706c6503636f6d0000fc0001c00c0"
+             b"006000100000e10002f036e7331076578616d706c65036f726700076578616d"
+             b"706c65c00c551c063900000e10000002580001518000000e10"),
 
             # First NS record
-            ("49c384000001000100000000076578616d706c6503636f6d0000fc0001c00c00"
-             "02000100000e1000413f61616161616161616161616161616161616161616161"
-             "6161616161616161616161616161616161616161616161616161616161616161"
-             "61616161616161616100"),
+            (b"49c384000001000100000000076578616d706c6503636f6d0000fc0001c00c0"
+             b"002000100000e1000413f616161616161616161616161616161616161616161"
+             b"616161616161616161616161616161616161616161616161616161616161616"
+             b"16161616161616161616100"),
 
             # Second NS Record and SOA trailer
-            ("49c384000001000200000000076578616d706c6503636f6d0000fc0001c00c00"
-             "02000100000e10000c0a6262626262626262626200c00c0006000100000e1000"
-             "2f036e7331076578616d706c65036f726700076578616d706c65c00c551c0639"
-             "00000e10000002580001518000000e10"),
+            (b"49c384000001000200000000076578616d706c6503636f6d0000fc0001c00c0"
+             b"002000100000e10000c0a6262626262626262626200c00c0006000100000e10"
+             b"002f036e7331076578616d706c65036f726700076578616d706c65c00c551c0"
+             b"63900000e10000002580001518000000e10"),
         ]
 
         # Set the max-message-size to 128
@@ -688,9 +686,9 @@ class MdnsRequestHandlerTest(MdnsTestCase):
 
         expected_response = [
             # Initial SOA
-            ("49c384000001000100000000076578616d706c6503636f6d0000fc0001c00c00"
-             "06000100000e10002f036e7331076578616d706c65036f726700076578616d70"
-             "6c65c00c551c063900000e10000002580001518000000e10"),
+            (b"49c384000001000100000000076578616d706c6503636f6d0000fc0001c00c0"
+             b"006000100000e10002f036e7331076578616d706c65036f726700076578616d"
+             b"706c65c00c551c063900000e10000002580001518000000e10"),
 
             # SRVFAIL
             (""),

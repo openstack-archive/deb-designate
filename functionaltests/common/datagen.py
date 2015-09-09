@@ -13,11 +13,15 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-
+import uuid
 import random
 
 from functionaltests.api.v2.models.blacklist_model import BlacklistModel
 from functionaltests.api.v2.models.pool_model import PoolModel
+from functionaltests.api.v2.models.transfer_requests_model import \
+    TransferRequestsModel
+from functionaltests.api.v2.models.transfer_accepts_model import \
+    TransferAcceptsModel
 from functionaltests.api.v2.models.recordset_model import RecordsetModel
 from functionaltests.api.v2.models.zone_model import ZoneModel
 
@@ -31,6 +35,10 @@ def random_ipv6():
         return "".join(random.choice("1234567890abcdef") for _ in range(n))
     result = ":".join(hexes(4) for _ in range(8))
     return result.replace("0000", "0")
+
+
+def random_uuid():
+    return uuid.uuid4()
 
 
 def random_string(prefix='rand', n=8, suffix=''):
@@ -62,6 +70,37 @@ def random_zone_data(name=None, email=None, ttl=None, description=None):
         'email': email,
         'ttl': random.randint(1200, 8400),
         'description': description})
+
+
+def random_transfer_request_data(description=None, target_project_id=None):
+    """Generate random zone data, with optional overrides
+
+    :return: A TransferRequestModel
+    """
+
+    data = {}
+
+    if description is None:
+        data['description'] = random_string(prefix='Description ')
+
+    if target_project_id:
+        data['target_project_id'] = target_project_id
+
+    return TransferRequestsModel.from_dict(data)
+
+
+def random_transfer_accept_data(key=None, zone_transfer_request_id=None):
+    """Generate random zone data, with optional overrides
+
+    :return: A TransferRequestModel
+    """
+    if key is None:
+        key = random_string()
+    if zone_transfer_request_id is None:
+        zone_transfer_request_id = random_uuid()
+    return TransferAcceptsModel.from_dict({
+        'key': key,
+        'zone_transfer_request_id': zone_transfer_request_id})
 
 
 def random_recordset_data(record_type, zone_name, name=None, records=None,
@@ -122,10 +161,12 @@ def random_pool_data():
     data = {
         "name": random_string(),
     }
-    ns_records = []
+    records = []
     for i in range(0, 2):
-        ns_records.append("ns%s.%s" % (i, ns_zone))
-    data["ns_records"] = []
+        records.append("ns%s.%s" % (i, ns_zone))
+    ns_records = [{"hostname": x, "priority": random.randint(1, 999)}
+                  for x in records]
+    data["ns_records"] = ns_records
 
     return PoolModel.from_dict(data)
 
@@ -145,9 +186,9 @@ def random_zonefile_data(name=None, ttl=None):
     return zone_base.replace('&', name).replace('#', ttl)
 
 
-def random_spf_recordset(zone_name, data=None):
+def random_spf_recordset(zone_name, data=None, **kwargs):
     data = data or "v=spf1 +all"
-    return random_recordset_data('SPF', zone_name, records=[data])
+    return random_recordset_data('SPF', zone_name, records=[data], **kwargs)
 
 
 def random_srv_recordset(zone_name, data=None):
@@ -158,16 +199,17 @@ def random_srv_recordset(zone_name, data=None):
 
 
 def random_sshfp_recordset(zone_name, algorithm_number=None,
-                           fingerprint_type=None, fingerprint=None):
+                           fingerprint_type=None, fingerprint=None,
+                           **kwargs):
     algorithm_number = algorithm_number or 2
     fingerprint_type = fingerprint_type or 1
     fingerprint = fingerprint or \
         "123456789abcdef67890123456789abcdef67890"
 
     data = "%s %s %s" % (algorithm_number, fingerprint_type, fingerprint)
-    return random_recordset_data('SSHFP', zone_name, records=[data])
+    return random_recordset_data('SSHFP', zone_name, records=[data], **kwargs)
 
 
-def random_txt_recordset(zone_name, data=None):
+def random_txt_recordset(zone_name, data=None, **kwargs):
     data = data or "v=spf1 +all"
-    return random_recordset_data('TXT', zone_name, records=[data])
+    return random_recordset_data('TXT', zone_name, records=[data], **kwargs)

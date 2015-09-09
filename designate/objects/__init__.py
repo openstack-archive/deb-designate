@@ -21,6 +21,7 @@ from designate.objects.base import PagedListObjectMixin  # noqa
 from designate.objects.blacklist import Blacklist, BlacklistList  # noqa
 from designate.objects.domain import Domain, DomainList  # noqa
 from designate.objects.domain_attribute import DomainAttribute, DomainAttributeList  # noqa
+from designate.objects.domain_master import DomainMaster, DomainMasterList  # noqa
 from designate.objects.floating_ip import FloatingIP, FloatingIPList  # noqa
 from designate.objects.pool_manager_status import PoolManagerStatus, PoolManagerStatusList  # noqa
 from designate.objects.pool import Pool, PoolList  # noqa
@@ -42,7 +43,8 @@ from designate.objects.validation_error import ValidationError  # noqa
 from designate.objects.validation_error import ValidationErrorList  # noqa
 from designate.objects.zone_transfer_request import ZoneTransferRequest, ZoneTransferRequestList  # noqa
 from designate.objects.zone_transfer_accept import ZoneTransferAccept, ZoneTransferAcceptList  # noqa
-from designate.objects.zone_task import ZoneTask, ZoneTaskList  # noqa
+from designate.objects.zone_import import ZoneImport, ZoneImportList  # noqa
+from designate.objects.zone_export import ZoneExport, ZoneExportList  # noqa
 
 #  Record Types
 

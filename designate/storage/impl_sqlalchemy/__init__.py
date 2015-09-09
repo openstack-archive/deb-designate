@@ -232,9 +232,17 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
 
         def _load_relations(domain):
             if domain.type == 'SECONDARY':
-                domain.attributes = self._find_domain_attributes(
+                domain.masters = self._find_domain_masters(
                     context, {'domain_id': domain.id})
-                domain.obj_reset_changes(['attributes'])
+            else:
+                # This avoids an extra DB call per primary zone. This will
+                # always have 0 results for a PRIMARY zone.
+                domain.masters = objects.DomainMasterList()
+
+            domain.attributes = self._find_domain_masters(
+                context, {'domain_id': domain.id})
+
+            domain.obj_reset_changes(['masters', 'attributes'])
 
         if one:
             _load_relations(domains)
@@ -252,7 +260,7 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         # Don't handle recordsets for now
         domain = self._create(
             tables.domains, domain, exceptions.DuplicateDomain,
-            ['attributes', 'recordsets'],
+            ['attributes', 'recordsets', 'masters'],
             extra_values=extra_values)
 
         if domain.obj_attr_is_set('attributes'):
@@ -260,7 +268,12 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
                 self.create_domain_attribute(context, domain.id, attrib)
         else:
             domain.attributes = objects.DomainAttributeList()
-        domain.obj_reset_changes('attributes')
+        if domain.obj_attr_is_set('masters'):
+            for master in domain.masters:
+                self.create_domain_master(context, domain.id, master)
+        else:
+            domain.masters = objects.DomainMasterList()
+        domain.obj_reset_changes(['masters', 'attributes'])
 
         return domain
 
@@ -288,7 +301,7 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         updated_domain = self._update(
             context, tables.domains, domain, exceptions.DuplicateDomain,
             exceptions.DomainNotFound,
-            ['attributes', 'recordsets'])
+            ['attributes', 'recordsets', 'masters'])
 
         if domain.obj_attr_is_set('attributes'):
             # Gather the Attribute ID's we have
@@ -329,6 +342,46 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             for attr in create:
                 attr.domain_id = domain.id
                 self.create_domain_attribute(context, domain.id, attr)
+
+        if domain.obj_attr_is_set('masters'):
+            # Gather the Attribute ID's we have
+            have = set([r.id for r in self._find_domain_masters(
+                context, {'domain_id': domain.id})])
+
+            # Prep some lists of changes
+            keep = set([])
+            create = []
+            update = []
+
+            # Determine what to change
+            for i in domain.masters:
+                keep.add(i.id)
+                try:
+                    i.obj_get_original_value('id')
+                except KeyError:
+                    create.append(i)
+                else:
+                    update.append(i)
+
+            # NOTE: Since we're dealing with mutable objects, the return value
+            #       of create/update/delete attribute is not needed.
+            #       The original item will be mutated in place on the input
+            #       "domain.attributes" list.
+
+            # Delete Attributes
+            for i_id in have - keep:
+                attr = self._find_domain_masters(
+                    context, {'id': i_id}, one=True)
+                self.delete_domain_master(context, attr.id)
+
+            # Update Attributes
+            for i in update:
+                self.update_domain_master(context, i)
+
+            # Create Attributes
+            for attr in create:
+                attr.domain_id = domain.id
+                self.create_domain_master(context, domain.id, attr)
 
         if domain.obj_attr_is_set('recordsets'):
             existing = self.find_recordsets(context, {'domain_id': domain.id})
@@ -431,6 +484,71 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
 
         return deleted_domain_attribute
 
+    # Domain master methods
+    def _find_domain_masters(self, context, criterion, one=False,
+                             marker=None, limit=None, sort_key=None,
+                             sort_dir=None):
+
+        criterion['key'] = 'master'
+
+        attribs = self._find(context, tables.domain_attributes,
+                             objects.DomainAttribute,
+                             objects.DomainAttributeList,
+                             exceptions.DomainMasterNotFound,
+                             criterion, one,
+                             marker, limit, sort_key, sort_dir)
+
+        masters = objects.DomainMasterList()
+
+        for attrib in attribs:
+            masters.append(objects.DomainMaster().from_data(attrib.value))
+
+        return masters
+
+    def create_domain_master(self, context, domain_id, domain_master):
+
+        domain_attribute = objects.DomainAttribute()
+        domain_attribute.domain_id = domain_id
+        domain_attribute.key = 'master'
+        domain_attribute.value = domain_master.to_data()
+
+        return self._create(tables.domain_attributes, domain_attribute,
+                            exceptions.DuplicateDomainAttribute)
+
+    def get_domain_masters(self, context, domain_attribute_id):
+        return self._find_domain_masters(
+            context, {'id': domain_attribute_id}, one=True)
+
+    def find_domain_masters(self, context, criterion=None, marker=None,
+                   limit=None, sort_key=None, sort_dir=None):
+        return self._find_domain_masters(context, criterion, marker=marker,
+                                         limit=limit, sort_key=sort_key,
+                                         sort_dir=sort_dir)
+
+    def find_domain_master(self, context, criterion):
+        return self._find_domain_master(context, criterion, one=True)
+
+    def update_domain_master(self, context, domain_master):
+
+        domain_attribute = objects.DomainAttribute()
+        domain_attribute.domain_id = domain_master.domain_id
+        domain_attribute.key = 'master'
+        domain_attribute.value = domain_master.to_data()
+
+        return self._update(context, tables.domain_attributes,
+                            domain_attribute,
+                            exceptions.DuplicateDomainAttribute,
+                            exceptions.DomainAttributeNotFound)
+
+    def delete_domain_master(self, context, domain_master_id):
+        domain_attribute = self._find_domain_attributes(
+            context, {'id': domain_master_id}, one=True)
+        deleted_domain_attribute = self._delete(
+            context, tables.domain_attributes, domain_attribute,
+            exceptions.DomainAttributeNotFound)
+
+        return deleted_domain_attribute
+
     # RecordSet Methods
     def _find_recordsets(self, context, criterion, one=False, marker=None,
                          limit=None, sort_key=None, sort_dir=None):
@@ -522,6 +640,24 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
         recordset.obj_reset_changes(['records'])
 
         return recordset
+
+    def find_recordsets_export(self, context, criterion=None):
+        query = None
+
+        rjoin = tables.records.join(
+            tables.recordsets,
+            tables.records.c.recordset_id == tables.recordsets.c.id)
+
+        query = select([tables.recordsets.c.name, tables.recordsets.c.ttl,
+                        tables.recordsets.c.type, tables.records.c.data]).\
+            select_from(rjoin)
+
+        query = query.order_by(tables.recordsets.c.created_at)
+
+        raw_rows = self._select_raw(
+            context, tables.recordsets, criterion, query)
+
+        return raw_rows
 
     def get_recordset(self, context, recordset_id):
         return self._find_recordsets(context, {'id': recordset_id}, one=True)
@@ -1123,42 +1259,85 @@ class SQLAlchemyStorage(sqlalchemy_base.SQLAlchemy, storage_base.Storage):
             zone_transfer_accept,
             exceptions.ZoneTransferAcceptNotFound)
 
-    # Zone Task Methods
-    def _find_zone_tasks(self, context, criterion, one=False, marker=None,
+    # Zone Import Methods
+    def _find_zone_imports(self, context, criterion, one=False, marker=None,
                    limit=None, sort_key=None, sort_dir=None):
+        if not criterion:
+            criterion = {}
+        criterion['task_type'] = 'IMPORT'
         return self._find(
-            context, tables.zone_tasks, objects.ZoneTask,
-            objects.ZoneTaskList, exceptions.ZoneTaskNotFound, criterion,
+            context, tables.zone_tasks, objects.ZoneImport,
+            objects.ZoneImportList, exceptions.ZoneImportNotFound, criterion,
             one, marker, limit, sort_key, sort_dir)
 
-    def create_zone_task(self, context, zone_task):
+    def create_zone_import(self, context, zone_import):
         return self._create(
-            tables.zone_tasks, zone_task, exceptions.DuplicateZoneTask)
+            tables.zone_tasks, zone_import, exceptions.DuplicateZoneImport)
 
-    def get_zone_task(self, context, zone_task_id):
-        return self._find_zone_tasks(context, {'id': zone_task_id},
+    def get_zone_import(self, context, zone_import_id):
+        return self._find_zone_imports(context, {'id': zone_import_id},
                                      one=True)
 
-    def find_zone_tasks(self, context, criterion=None, marker=None,
+    def find_zone_imports(self, context, criterion=None, marker=None,
                   limit=None, sort_key=None, sort_dir=None):
-        return self._find_zone_tasks(context, criterion, marker=marker,
+        return self._find_zone_imports(context, criterion, marker=marker,
                                limit=limit, sort_key=sort_key,
                                sort_dir=sort_dir)
 
-    def find_zone_task(self, context, criterion):
-        return self._find_zone_tasks(context, criterion, one=True)
+    def find_zone_import(self, context, criterion):
+        return self._find_zone_imports(context, criterion, one=True)
 
-    def update_zone_task(self, context, zone_task):
+    def update_zone_import(self, context, zone_import):
         return self._update(
-            context, tables.zone_tasks, zone_task,
-            exceptions.DuplicateZoneTask, exceptions.ZoneTaskNotFound)
+            context, tables.zone_tasks, zone_import,
+            exceptions.DuplicateZoneImport, exceptions.ZoneImportNotFound)
 
-    def delete_zone_task(self, context, zone_task_id):
-        # Fetch the existing zone_task, we'll need to return it.
-        zone_task = self._find_zone_tasks(context, {'id': zone_task_id},
+    def delete_zone_import(self, context, zone_import_id):
+        # Fetch the existing zone_import, we'll need to return it.
+        zone_import = self._find_zone_imports(context, {'id': zone_import_id},
                                 one=True)
-        return self._delete(context, tables.zone_tasks, zone_task,
-                    exceptions.ZoneTaskNotFound)
+        return self._delete(context, tables.zone_tasks, zone_import,
+                    exceptions.ZoneImportNotFound)
+
+    # Zone Export Methods
+    def _find_zone_exports(self, context, criterion, one=False, marker=None,
+                   limit=None, sort_key=None, sort_dir=None):
+        if not criterion:
+            criterion = {}
+        criterion['task_type'] = 'EXPORT'
+        return self._find(
+            context, tables.zone_tasks, objects.ZoneExport,
+            objects.ZoneExportList, exceptions.ZoneExportNotFound, criterion,
+            one, marker, limit, sort_key, sort_dir)
+
+    def create_zone_export(self, context, zone_export):
+        return self._create(
+            tables.zone_tasks, zone_export, exceptions.DuplicateZoneExport)
+
+    def get_zone_export(self, context, zone_export_id):
+        return self._find_zone_exports(context, {'id': zone_export_id},
+                                     one=True)
+
+    def find_zone_exports(self, context, criterion=None, marker=None,
+                  limit=None, sort_key=None, sort_dir=None):
+        return self._find_zone_exports(context, criterion, marker=marker,
+                               limit=limit, sort_key=sort_key,
+                               sort_dir=sort_dir)
+
+    def find_zone_export(self, context, criterion):
+        return self._find_zone_exports(context, criterion, one=True)
+
+    def update_zone_export(self, context, zone_export):
+        return self._update(
+            context, tables.zone_tasks, zone_export,
+            exceptions.DuplicateZoneExport, exceptions.ZoneExportNotFound)
+
+    def delete_zone_export(self, context, zone_export_id):
+        # Fetch the existing zone_export, we'll need to return it.
+        zone_export = self._find_zone_exports(context, {'id': zone_export_id},
+                                one=True)
+        return self._delete(context, tables.zone_tasks, zone_export,
+                    exceptions.ZoneExportNotFound)
 
     # diagnostics
     def ping(self, context):

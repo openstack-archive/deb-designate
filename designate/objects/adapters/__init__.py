@@ -16,6 +16,7 @@ from designate.objects.adapters.base import DesignateAdapter  # noqa
 # API v2
 from designate.objects.adapters.api_v2.blacklist import BlacklistAPIv2Adapter, BlacklistListAPIv2Adapter  # noqa
 from designate.objects.adapters.api_v2.domain import DomainAPIv2Adapter, DomainListAPIv2Adapter  # noqa
+from designate.objects.adapters.api_v2.domain_master import DomainMasterAPIv2Adapter, DomainMasterListAPIv2Adapter  # noqa
 from designate.objects.adapters.api_v2.floating_ip import FloatingIPAPIv2Adapter, FloatingIPListAPIv2Adapter  # noqa
 from designate.objects.adapters.api_v2.record import RecordAPIv2Adapter, RecordListAPIv2Adapter  # noqa
 from designate.objects.adapters.api_v2.recordset import RecordSetAPIv2Adapter, RecordSetListAPIv2Adapter  # noqa
@@ -29,3 +30,4 @@ from designate.objects.adapters.api_v2.zone_transfer_accept import ZoneTransferA
 from designate.objects.adapters.api_v2.zone_transfer_request import ZoneTransferRequestAPIv2Adapter, ZoneTransferRequestListAPIv2Adapter  # noqa
 from designate.objects.adapters.api_v2.validation_error import ValidationErrorAPIv2Adapter, ValidationErrorListAPIv2Adapter  # noqa
 from designate.objects.adapters.api_v2.zone_import import ZoneImportAPIv2Adapter, ZoneImportListAPIv2Adapter  # noqa
+from designate.objects.adapters.api_v2.zone_export import ZoneExportAPIv2Adapter, ZoneExportListAPIv2Adapter  # noqa

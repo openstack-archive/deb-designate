@@ -13,14 +13,59 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-
+import dns.rdatatype
 from tempest_lib import exceptions
 
 from functionaltests.common import datagen
+from functionaltests.common import dnsclient
 from functionaltests.common import utils
 from functionaltests.api.v2.base import DesignateV2Test
 from functionaltests.api.v2.clients.recordset_client import RecordsetClient
 from functionaltests.api.v2.clients.zone_client import ZoneClient
+
+
+RECORDSETS_DATASET = {
+    'A': dict(
+        make_recordset=lambda z: datagen.random_a_recordset(z.name)),
+    'AAAA': dict(
+        make_recordset=lambda z: datagen.random_aaaa_recordset(z.name)),
+    'CNAME': dict(
+        make_recordset=lambda z: datagen.random_cname_recordset(z.name)),
+    'MX': dict(
+        make_recordset=lambda z: datagen.random_mx_recordset(z.name)),
+    'SPF': dict(
+        make_recordset=lambda z: datagen.random_spf_recordset(z.name)),
+    'SRV': dict(
+        make_recordset=lambda z: datagen.random_srv_recordset(z.name)),
+    'SSHFP': dict(
+        make_recordset=lambda z: datagen.random_sshfp_recordset(z.name)),
+    'TXT': dict(
+        make_recordset=lambda z: datagen.random_txt_recordset(z.name)),
+}
+
+WILDCARD_RECORDSETS_DATASET = {
+    'wildcard_A': dict(make_recordset=lambda z:
+        datagen.random_a_recordset(zone_name=z.name,
+                                   name="*.{0}".format(z.name))),
+    'wildcard_AAAA': dict(make_recordset=lambda z:
+        datagen.random_aaaa_recordset(zone_name=z.name,
+                                      name="*.{0}".format(z.name))),
+    'wildcard_CNAME': dict(make_recordset=lambda z:
+        datagen.random_cname_recordset(zone_name=z.name,
+                                       name="*.{0}".format(z.name))),
+    'wildcard_MX': dict(make_recordset=lambda z:
+        datagen.random_mx_recordset(zone_name=z.name,
+                                    name="*.{0}".format(z.name))),
+    'wildcard_SPF': dict(make_recordset=lambda z:
+        datagen.random_spf_recordset(zone_name=z.name,
+                                     name="*.{0}".format(z.name))),
+    'wildcard_SSHFP': dict(make_recordset=lambda z:
+        datagen.random_sshfp_recordset(zone_name=z.name,
+                                       name="*.{0}".format(z.name))),
+    'wildcard_TXT': dict(make_recordset=lambda z:
+        datagen.random_txt_recordset(zone_name=z.name,
+                                     name="*.{0}".format(z.name))),
+}
 
 
 @utils.parameterized_class
@@ -38,25 +83,32 @@ class RecordsetTest(DesignateV2Test):
             .list_recordsets(self.zone.id)
         self.assertEqual(resp.status, 200)
 
-    @utils.parameterized({
-        'A': dict(
-            make_recordset=lambda z: datagen.random_a_recordset(z.name)),
-        'AAAA': dict(
-            make_recordset=lambda z: datagen.random_aaaa_recordset(z.name)),
-        'CNAME': dict(
-            make_recordset=lambda z: datagen.random_cname_recordset(z.name)),
-        'MX': dict(
-            make_recordset=lambda z: datagen.random_mx_recordset(z.name)),
-        'SPF': dict(
-            make_recordset=lambda z: datagen.random_spf_recordset(z.name)),
-        'SRV': dict(
-            make_recordset=lambda z: datagen.random_srv_recordset(z.name)),
-        'SSHFP': dict(
-            make_recordset=lambda z: datagen.random_sshfp_recordset(z.name)),
-        'TXT': dict(
-            make_recordset=lambda z: datagen.random_txt_recordset(z.name)),
+    def assert_dns(self, model):
+        results = dnsclient.query_servers(model.name, model.type)
 
-    })
+        model_data = model.to_dict()
+        if model.type == 'AAAA':
+            model_data['records'] = utils.shorten_ipv6_addrs(
+                model_data['records'])
+
+        for answer in results:
+            data = {
+                "type": dns.rdatatype.to_text(answer.rdtype),
+                "name": str(answer.canonical_name),
+                # DNSPython wraps TXT values in "" so '+all v=foo' becomes
+                # '"+all" "+v=foo"'
+                "records": [i.to_text().replace('"', '')
+                            for i in answer.rrset.items]
+            }
+
+            if answer.rrset.ttl != 0:
+                data['ttl'] = answer.rrset.ttl
+
+            self.assertEqual(model_data, data)
+
+    @utils.parameterized(
+        dict(RECORDSETS_DATASET.items() + WILDCARD_RECORDSETS_DATASET.items())
+    )
     def test_crud_recordset(self, make_recordset):
         post_model = make_recordset(self.zone)
 
@@ -72,6 +124,8 @@ class RecordsetTest(DesignateV2Test):
         RecordsetClient.as_user('default').wait_for_recordset(
             self.zone.id, recordset_id)
 
+        self.assert_dns(post_model)
+
         put_model = make_recordset(self.zone)
         del put_model.name  # don't try to update the name
         resp, put_resp_model = RecordsetClient.as_user('default') \
@@ -85,30 +139,16 @@ class RecordsetTest(DesignateV2Test):
         RecordsetClient.as_user('default').wait_for_recordset(
             self.zone.id, recordset_id)
 
+        put_model.name = post_model.name
+        self.assert_dns(put_model)
+
         resp, delete_resp_model = RecordsetClient.as_user('default') \
             .delete_recordset(self.zone.id, recordset_id)
         self.assertEqual(resp.status, 202, "on delete response")
         RecordsetClient.as_user('default').wait_for_404(
             self.zone.id, recordset_id)
 
-    @utils.parameterized({
-        'A': dict(
-            make_recordset=lambda z: datagen.random_a_recordset(z.name)),
-        'AAAA': dict(
-            make_recordset=lambda z: datagen.random_aaaa_recordset(z.name)),
-        'CNAME': dict(
-            make_recordset=lambda z: datagen.random_cname_recordset(z.name)),
-        'MX': dict(
-            make_recordset=lambda z: datagen.random_mx_recordset(z.name)),
-        'SPF': dict(
-            make_recordset=lambda z: datagen.random_spf_recordset(z.name)),
-        'SRV': dict(
-            make_recordset=lambda z: datagen.random_srv_recordset(z.name)),
-        'SSHFP': dict(
-            make_recordset=lambda z: datagen.random_sshfp_recordset(z.name)),
-        'TXT': dict(
-            make_recordset=lambda z: datagen.random_txt_recordset(z.name)),
-    })
+    @utils.parameterized(RECORDSETS_DATASET)
     def test_create_invalid(self, make_recordset, data=None):
         data = data or ["b0rk"]
 
@@ -121,24 +161,7 @@ class RecordsetTest(DesignateV2Test):
                 exceptions.BadRequest, 'invalid_object', 400,
                 client.post_recordset, self.zone.id, model)
 
-    @utils.parameterized({
-        'A': dict(
-            make_recordset=lambda z: datagen.random_a_recordset(z.name)),
-        'AAAA': dict(
-            make_recordset=lambda z: datagen.random_aaaa_recordset(z.name)),
-        'CNAME': dict(
-            make_recordset=lambda z: datagen.random_cname_recordset(z.name)),
-        'MX': dict(
-            make_recordset=lambda z: datagen.random_mx_recordset(z.name)),
-        'SPF': dict(
-            make_recordset=lambda z: datagen.random_spf_recordset(z.name)),
-        'SRV': dict(
-            make_recordset=lambda z: datagen.random_srv_recordset(z.name)),
-        'SSHFP': dict(
-            make_recordset=lambda z: datagen.random_sshfp_recordset(z.name)),
-        'TXT': dict(
-            make_recordset=lambda z: datagen.random_txt_recordset(z.name)),
-    })
+    @utils.parameterized(RECORDSETS_DATASET)
     def test_update_invalid(self, make_recordset, data=None):
         data = data or ["b0rk"]
 

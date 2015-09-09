@@ -40,6 +40,18 @@ class RelationNotLoaded(Base):
     error_code = 500
     error_type = 'relation_not_loaded'
 
+    def __init__(self, *args, **kwargs):
+
+        self.relation = kwargs.pop('relation', None)
+
+        super(RelationNotLoaded, self).__init__(*args, **kwargs)
+
+        self.error_message = "%(relation)s is not loaded on %(object)s" % \
+            {"relation": self.relation, "object": self.object.obj_name()}
+
+    def __str__(self):
+        return self.error_message
+
 
 class AdapterNotFound(Base):
     error_code = 500
@@ -107,6 +119,11 @@ class InvalidObject(Base):
 class BadRequest(Base):
     error_code = 400
     error_type = 'bad_request'
+    expected = True
+
+
+class EmptyRequestBody(BadRequest):
+    error_type = 'empty_request_body'
     expected = True
 
 
@@ -269,8 +286,12 @@ class DuplicatePoolNsRecord(Duplicate):
     error_type = 'duplicate_pool_ns_record'
 
 
-class DuplicateZoneTask(Duplicate):
-    error_type = 'duplicate_zone_task'
+class DuplicateZoneImport(Duplicate):
+    error_type = 'duplicate_zone_import'
+
+
+class DuplicateZoneExport(Duplicate):
+    error_type = 'duplicate_zone_export'
 
 
 class MethodNotAllowed(Base):
@@ -311,6 +332,10 @@ class BlacklistNotFound(NotFound):
 
 class DomainNotFound(NotFound):
     error_type = 'domain_not_found'
+
+
+class DomainMasterNotFound(NotFound):
+    error_type = 'domain_master_not_found'
 
 
 class DomainAttributeNotFound(NotFound):
@@ -357,8 +382,12 @@ class ZoneTransferAcceptNotFound(NotFound):
     error_type = 'zone_transfer_accept_not_found'
 
 
-class ZoneTaskNotFound(NotFound):
-    error_type = 'zone_task_not_found'
+class ZoneImportNotFound(NotFound):
+    error_type = 'zone_import_not_found'
+
+
+class ZoneExportNotFound(NotFound):
+    error_type = 'zone_export_not_found'
 
 
 class LastServerDeleteNotAllowed(BadRequest):

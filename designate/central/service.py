@@ -50,6 +50,7 @@ from designate import utils
 from designate import storage
 from designate.mdns import rpcapi as mdns_rpcapi
 from designate.pool_manager import rpcapi as pool_manager_rpcapi
+from designate.zone_manager import rpcapi as zone_manager_rpcapi
 
 
 LOG = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ def retry(cb=None, retries=50, delay=150):
     """A retry decorator that ignores attempts at creating nested retries"""
     def outer(f):
         @functools.wraps(f)
-        def wrapper(self, *args, **kwargs):
+        def retry_wrapper(self, *args, **kwargs):
             if not hasattr(RETRY_STATE, 'held'):
                 # Create the state vars if necessary
                 RETRY_STATE.held = False
@@ -109,7 +110,9 @@ def retry(cb=None, retries=50, delay=150):
                 result = f(self, *copy.deepcopy(args), **copy.deepcopy(kwargs))
 
             return result
-        return wrapper
+        retry_wrapper.__wrapped_function = f
+        retry_wrapper.__wrapper_name = 'retry'
+        return retry_wrapper
     return outer
 
 
@@ -117,7 +120,7 @@ def retry(cb=None, retries=50, delay=150):
 def transaction(f):
     @retry(cb=_retry_on_deadlock)
     @functools.wraps(f)
-    def wrapper(self, *args, **kwargs):
+    def transaction_wrapper(self, *args, **kwargs):
         self.storage.begin()
         try:
             result = f(self, *args, **kwargs)
@@ -127,7 +130,9 @@ def transaction(f):
             with excutils.save_and_reraise_exception():
                 self.storage.rollback()
 
-    return wrapper
+    transaction_wrapper.__wrapped_function = f
+    transaction_wrapper.__wrapper_name = 'transaction'
+    return transaction_wrapper
 
 
 def synchronized_domain(domain_arg=1, new_domain=False):
@@ -138,7 +143,7 @@ def synchronized_domain(domain_arg=1, new_domain=False):
     """
     def outer(f):
         @functools.wraps(f)
-        def wrapper(self, *args, **kwargs):
+        def sync_wrapper(self, *args, **kwargs):
             if not hasattr(DOMAIN_LOCKS, 'held'):
                 # Create the held set if necessary
                 DOMAIN_LOCKS.held = set()
@@ -201,14 +206,17 @@ def synchronized_domain(domain_arg=1, new_domain=False):
                     DOMAIN_LOCKS.held.remove(domain_id)
                     return result
 
-        return wrapper
+        sync_wrapper.__wrapped_function = f
+        sync_wrapper.__wrapper_name = 'synchronized_domain'
+        return sync_wrapper
+
     return outer
 
 
 def notification(notification_type):
     def outer(f):
         @functools.wraps(f)
-        def wrapper(self, *args, **kwargs):
+        def notification_wrapper(self, *args, **kwargs):
             if not hasattr(NOTIFICATION_BUFFER, 'queue'):
                 # Create the notifications queue if necessary
                 NOTIFICATION_BUFFER.stack = 0
@@ -247,12 +255,12 @@ def notification(notification_type):
                     # Reset the queue
                     NOTIFICATION_BUFFER.queue.clear()
 
-        return wrapper
+        return notification_wrapper
     return outer
 
 
 class Service(service.RPCService, service.Service):
-    RPC_API_VERSION = '5.2'
+    RPC_API_VERSION = '5.4'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
@@ -299,6 +307,10 @@ class Service(service.RPCService, service.Service):
     @property
     def pool_manager_api(self):
         return pool_manager_rpcapi.PoolManagerAPI.get_instance()
+
+    @property
+    def zone_manager_api(self):
+        return zone_manager_rpcapi.ZoneManagerAPI.get_instance()
 
     def _is_valid_domain_name(self, context, domain_name):
         # Validate domain name length
@@ -1214,6 +1226,16 @@ class Service(service.RPCService, service.Service):
         recordset = self.storage.find_recordset(context, criterion)
 
         return recordset
+
+    def export_zone(self, context, zone_id):
+        domain = self.get_domain(context, zone_id)
+
+        criterion = {'domain_id': zone_id}
+        recordsets = self.storage.find_recordsets_export(context, criterion)
+
+        return utils.render_template('export-zone.jinja2',
+                                     domain=domain,
+                                     recordsets=recordsets)
 
     @notification('dns.recordset.update')
     @synchronized_domain()
@@ -2484,9 +2506,9 @@ class Service(service.RPCService, service.Service):
             'tenant_id': context.tenant,
             'task_type': 'IMPORT'
         }
-        zone_import = objects.ZoneTask(**values)
+        zone_import = objects.ZoneImport(**values)
 
-        created_zone_import = self.storage.create_zone_task(context,
+        created_zone_import = self.storage.create_zone_import(context,
                                                             zone_import)
 
         self.tg.add_thread(self._import_zone, context, created_zone_import,
@@ -2565,13 +2587,13 @@ class Service(service.RPCService, service.Service):
         criterion = {
             'task_type': 'IMPORT'
         }
-        return self.storage.find_zone_tasks(context, criterion, marker,
+        return self.storage.find_zone_imports(context, criterion, marker,
                                       limit, sort_key, sort_dir)
 
     def get_zone_import(self, context, zone_import_id):
         target = {'tenant_id': context.tenant}
         policy.check('get_zone_import', context, target)
-        return self.storage.get_zone_task(context, zone_import_id)
+        return self.storage.get_zone_import(context, zone_import_id)
 
     @notification('dns.zone_import.update')
     def update_zone_import(self, context, zone_import):
@@ -2580,7 +2602,7 @@ class Service(service.RPCService, service.Service):
         }
         policy.check('update_zone_import', context, target)
 
-        return self.storage.update_zone_task(context, zone_import)
+        return self.storage.update_zone_import(context, zone_import)
 
     @notification('dns.zone_import.delete')
     @transaction
@@ -2591,6 +2613,71 @@ class Service(service.RPCService, service.Service):
         }
         policy.check('delete_zone_import', context, target)
 
-        zone_import = self.storage.delete_zone_task(context, zone_import_id)
+        zone_import = self.storage.delete_zone_import(context, zone_import_id)
 
         return zone_import
+
+    # Zone Export Methods
+    @notification('dns.zone_export.create')
+    def create_zone_export(self, context, zone_id):
+        # Try getting the domain to ensure it exists
+        domain = self.storage.get_domain(context, zone_id)
+
+        target = {'tenant_id': context.tenant}
+        policy.check('create_zone_export', context, target)
+
+        values = {
+            'status': 'PENDING',
+            'message': None,
+            'domain_id': zone_id,
+            'tenant_id': context.tenant,
+            'task_type': 'EXPORT'
+        }
+        zone_export = objects.ZoneExport(**values)
+
+        created_zone_export = self.storage.create_zone_export(context,
+                                                              zone_export)
+
+        self.zone_manager_api.start_zone_export(context, domain,
+                                                created_zone_export)
+
+        return created_zone_export
+
+    def find_zone_exports(self, context, criterion=None, marker=None,
+                  limit=None, sort_key=None, sort_dir=None):
+        target = {'tenant_id': context.tenant}
+        policy.check('find_zone_exports', context, target)
+
+        criterion = {
+            'task_type': 'EXPORT'
+        }
+        return self.storage.find_zone_exports(context, criterion, marker,
+                                      limit, sort_key, sort_dir)
+
+    def get_zone_export(self, context, zone_export_id):
+        target = {'tenant_id': context.tenant}
+        policy.check('get_zone_export', context, target)
+
+        return self.storage.get_zone_export(context, zone_export_id)
+
+    @notification('dns.zone_export.update')
+    def update_zone_export(self, context, zone_export):
+        target = {
+            'tenant_id': zone_export.tenant_id,
+        }
+        policy.check('update_zone_export', context, target)
+
+        return self.storage.update_zone_export(context, zone_export)
+
+    @notification('dns.zone_export.delete')
+    @transaction
+    def delete_zone_export(self, context, zone_export_id):
+        target = {
+            'zone_export_id': zone_export_id,
+            'tenant_id': context.tenant
+        }
+        policy.check('delete_zone_export', context, target)
+
+        zone_export = self.storage.delete_zone_export(context, zone_export_id)
+
+        return zone_export

@@ -84,6 +84,9 @@ debug = False
 # Number of api greenthreads to spawn
 #threads = 1000
 
+# Enable host request headers
+#enable_host_header = False
+
 # The base uri used in responses
 #api_base_uri = 'http://127.0.0.1:9001/'
 
@@ -197,6 +200,7 @@ debug = False
 #masters = 127.0.0.1:5354
 #backend_driver = fake
 #transfer_source = None
+#notify_delay = 0
 
 #-----------------------
 # Zone Manager Service
@@ -211,6 +215,9 @@ debug = False
 # List of Zone Manager tasks to enable, a value of None will enable all tasks.
 # Can be one or more of: periodic_exists
 #enabled_tasks = None
+
+# Whether to allow synchronous zone exports
+#export_synchronous = True
 
 #-----------------------
 # Pool Manager Service
@@ -300,11 +307,9 @@ debug = False
 #host = 192.168.27.100
 
 #[pool_target:f26e0b32-736f-4f0a-831b-039a415c481e]
-#options = rndc_host: 192.168.27.100, rndc_port: 953, rndc_config_file: /etc/bind/rndc.conf, rndc_key_file: /etc/bind/rndc.key
+#options = rndc_host: 192.168.27.100, rndc_port: 953, rndc_config_file: /etc/bind/rndc.conf, rndc_key_file: /etc/bind/rndc.key, port: 53, host: 192.168.27.100
 #masters = 192.168.27.100:5354
 #type = bind9
-#port = 53
-#host = 192.168.27.100
 
 ##############
 ## Network API

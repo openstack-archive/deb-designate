@@ -95,7 +95,7 @@ class RecordSet(base.DictObjectMixin, base.PersistentObjectMixin,
             'schema': {
                 'type': 'string',
                 'description': 'Zone name',
-                'format': 'domainname',
+                'format': 'hostname',
                 'maxLength': 255,
             },
             'immutable': True,
@@ -275,6 +275,10 @@ class RecordSet(base.DictObjectMixin, base.PersistentObjectMixin,
                 self.FIELDS = old_fields
         # Send in the traditional Record objects to central / storage
         self.records = old_records
+
+    STRING_KEYS = [
+        'id', 'type', 'name', 'domain_id'
+    ]
 
 
 class RecordSetList(base.ListObjectMixin, base.DesignateObject,

@@ -631,28 +631,28 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def create_zone_task(self, context, zone_task):
+    def create_zone_import(self, context, zone_import):
         """
-        Create a Zone Task.
+        Create a Zone Import.
 
         :param context: RPC Context.
-        :param zone_task: Tld object with the values to be created.
+        :param zone_import: Zone Import object with the values to be created.
         """
 
     @abc.abstractmethod
-    def get_zone_task(self, context, zone_task_id):
+    def get_zone_import(self, context, zone_import_id):
         """
-        Get a Zone Task via ID.
+        Get a Zone Import via ID.
 
         :param context: RPC Context.
-        :param zone_task_id: Zone Task  ID to get.
+        :param zone_import_id: Zone Import ID to get.
         """
 
     @abc.abstractmethod
-    def find_zone_tasks(self, context, criterion=None, marker=None,
+    def find_zone_imports(self, context, criterion=None, marker=None,
                   limit=None, sort_key=None, sort_dir=None):
         """
-        Find Zone Tasks
+        Find Zone Imports
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
@@ -665,30 +665,91 @@ class Storage(DriverPlugin):
         """
 
     @abc.abstractmethod
-    def find_zone_task(self, context, criterion):
+    def find_zone_import(self, context, criterion):
         """
-        Find a single Zone Task.
+        Find a single Zone Import.
 
         :param context: RPC Context.
         :param criterion: Criteria to filter by.
         """
 
     @abc.abstractmethod
-    def update_zone_task(self, context, zone_task):
+    def update_zone_import(self, context, zone_import):
         """
-        Update a Zone Task
+        Update a Zone Import
 
         :param context: RPC Context.
-        :param zone_task: Zone Task to update.
+        :param zone_import: Zone Import to update.
         """
 
     @abc.abstractmethod
-    def delete_zone_task(self, context, zone_task_id):
+    def delete_zone_import(self, context, zone_import_id):
         """
-        Delete a Zone Task via ID.
+        Delete a Zone Import via ID.
 
         :param context: RPC Context.
-        :param zone_task_id: Delete a Zone Task via ID
+        :param zone_import_id: Delete a Zone Import via ID
+        """
+
+    @abc.abstractmethod
+    def create_zone_export(self, context, zone_export):
+        """
+        Create a Zone Export.
+
+        :param context: RPC Context.
+        :param zone_export: Zone Export object with the values to be created.
+        """
+
+    @abc.abstractmethod
+    def get_zone_export(self, context, zone_export_id):
+        """
+        Get a Zone Export via ID.
+
+        :param context: RPC Context.
+        :param zone_export_id: Zone Export ID to get.
+        """
+
+    @abc.abstractmethod
+    def find_zone_exports(self, context, criterion=None, marker=None,
+                  limit=None, sort_key=None, sort_dir=None):
+        """
+        Find Zone Exports
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        :param marker: Resource ID from which after the requested page will
+                       start after
+        :param limit: Integer limit of objects of the page size after the
+                      marker
+        :param sort_key: Key from which to sort after.
+        :param sort_dir: Direction to sort after using sort_key.
+        """
+
+    @abc.abstractmethod
+    def find_zone_export(self, context, criterion):
+        """
+        Find a single Zone Export.
+
+        :param context: RPC Context.
+        :param criterion: Criteria to filter by.
+        """
+
+    @abc.abstractmethod
+    def update_zone_export(self, context, zone_export):
+        """
+        Update a Zone Export
+
+        :param context: RPC Context.
+        :param zone_export: Zone Export to update.
+        """
+
+    @abc.abstractmethod
+    def delete_zone_export(self, context, zone_export_id):
+        """
+        Delete a Zone Export via ID.
+
+        :param context: RPC Context.
+        :param zone_export_id: Delete a Zone Export via ID
         """
 
     def ping(self, context):

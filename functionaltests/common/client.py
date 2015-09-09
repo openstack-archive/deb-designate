@@ -18,11 +18,24 @@ import abc
 
 from config import cfg
 from noauth import NoAuthAuthProvider
+from six import string_types
+from six.moves.urllib.parse import quote_plus
 from tempest_lib.common.rest_client import RestClient
 from tempest_lib.auth import KeystoneV2Credentials
 from tempest_lib.auth import KeystoneV2AuthProvider
 
 from functionaltests.common.utils import memoized
+
+
+class KeystoneV2AuthProviderWithOverridableUrl(KeystoneV2AuthProvider):
+
+    def base_url(self, *args, **kwargs):
+        # use the base url from the config if it was specified
+        if cfg.CONF.identity.designate_override_url:
+            return cfg.CONF.identity.designate_override_url
+        else:
+            return super(KeystoneV2AuthProviderWithOverridableUrl, self) \
+                .base_url(*args, **kwargs)
 
 
 class BaseDesignateClient(RestClient):
@@ -47,6 +60,12 @@ class BaseDesignateClient(RestClient):
     def _get_keystone_auth_provider(self):
         pass
 
+    def _create_keystone_auth_provider(self, creds):
+        auth_provider = KeystoneV2AuthProviderWithOverridableUrl(
+            creds, cfg.CONF.identity.uri)
+        auth_provider.fill_credentials()
+        return auth_provider
+
 
 class DesignateClient(BaseDesignateClient):
     """Client with default user"""
@@ -63,9 +82,7 @@ class DesignateClient(BaseDesignateClient):
             password=cfg.CONF.identity.password,
             tenant_name=cfg.CONF.identity.tenant_name,
         )
-        auth_provider = KeystoneV2AuthProvider(creds, cfg.CONF.identity.uri)
-        auth_provider.fill_credentials()
-        return auth_provider
+        return self._create_keystone_auth_provider(creds)
 
 
 class DesignateAltClient(BaseDesignateClient):
@@ -83,9 +100,7 @@ class DesignateAltClient(BaseDesignateClient):
             password=cfg.CONF.identity.alt_password,
             tenant_name=cfg.CONF.identity.alt_tenant_name,
         )
-        auth_provider = KeystoneV2AuthProvider(creds, cfg.CONF.identity.uri)
-        auth_provider.fill_credentials()
-        return auth_provider
+        return self._create_keystone_auth_provider(creds)
 
 
 class DesignateAdminClient(BaseDesignateClient):
@@ -103,9 +118,7 @@ class DesignateAdminClient(BaseDesignateClient):
             password=cfg.CONF.identity.admin_password,
             tenant_name=cfg.CONF.identity.admin_tenant_name,
         )
-        auth_provider = KeystoneV2AuthProvider(creds, cfg.CONF.identity.uri)
-        auth_provider.fill_credentials()
-        return auth_provider
+        return self._create_keystone_auth_provider(creds)
 
 
 class ClientMixin(object):
@@ -136,3 +149,20 @@ class ClientMixin(object):
     @property
     def tenant_id(self):
         return self.client.tenant_id
+
+    @classmethod
+    def add_filters(cls, url, filters):
+        """
+        :param url: base URL for the request
+        :param filters: dict with var:val pairs to add as parameters to URL
+        """
+        first = True
+        for f in filters:
+            if isinstance(filters[f], string_types):
+                filters[f] = quote_plus(filters[f].encode('utf-8'))
+
+            url = '{url}{sep}{var}={val}'.format(
+                url=url, sep=('?' if first else '&'), var=f, val=filters[f]
+            )
+            first = False
+        return url

@@ -22,7 +22,7 @@ from oslo_log import log as logging
 from designate import exceptions
 from designate.schema import validators
 from designate.schema import format
-
+from designate.i18n import _
 
 LOG = logging.getLogger(__name__)
 
@@ -149,10 +149,12 @@ class DesignateObjectMetaclass(type):
 class DesignateObject(object):
     FIELDS = {}
 
+    STRING_KEYS = []
+
     def _obj_check_relation(self, name):
         if name in self.FIELDS and self.FIELDS[name].get('relation', False):
             if not self.obj_attr_is_set(name):
-                raise exceptions.RelationNotLoaded
+                raise exceptions.RelationNotLoaded(object=self, relation=name)
 
     @classmethod
     def obj_cls_from_name(cls, name):
@@ -234,6 +236,18 @@ class DesignateObject(object):
                 raise TypeError("__init__() got an unexpected keyword "
                                 "argument '%(name)s'" % {'name': name})
 
+    def __str__(self):
+        return (self._make_obj_str(self.STRING_KEYS)
+                % self)
+
+    @classmethod
+    def _make_obj_str(cls, keys):
+        msg = "<%(name)s" % {'name': cls.obj_name()}
+        for key in keys:
+            msg += " {0}:'%({0})s'".format(key)
+        msg += ">"
+        return msg
+
     def to_primitive(self):
         """
         Convert the object to primitive types so that the object can be
@@ -296,8 +310,20 @@ class DesignateObject(object):
         ValidationErrorList = self.obj_cls_from_name('ValidationErrorList')
         ValidationError = self.obj_cls_from_name('ValidationError')
 
-        values = self.to_dict()
         errors = ValidationErrorList()
+
+        try:
+            values = self.to_dict()
+        except exceptions.RelationNotLoaded as e:
+            e = ValidationError()
+            e.path = ['type']
+            e.validator = 'required'
+            e.validator_value = [e.relation]
+            e.message = "'%s' is a required property" % e.relation
+            errors.append(e)
+            raise exceptions.InvalidObject(
+                "Provided object does not match "
+                "schema", errors=errors, object=self)
 
         LOG.debug("Validating '%(name)s' object with values: %(values)r", {
             'name': self.obj_name(),
@@ -434,6 +460,10 @@ class DictObjectMixin(object):
             if self.obj_attr_is_set(field):
                 yield field, getattr(self, field)
 
+    # Compatibility with jsonutils to_primitive(). See bug
+    # https://bugs.launchpad.net/designate/+bug/1481377
+    iteritems = items
+
     def __iter__(self):
         for field in six.iterkeys(self.FIELDS):
             if self.obj_attr_is_set(field):
@@ -515,6 +545,12 @@ class ListObjectMixin(object):
             'designate_object.changes': list(self._obj_changes),
             'designate_object.original_values': dict(self._obj_original_values)
         }
+
+    def __str__(self):
+        return (_("<%(type)s count:'%(count)s' object:'%(list_type)s'>")
+                % {'count': len(self),
+                   'type': self.LIST_ITEM_TYPE.obj_name(),
+                   'list_type': self.obj_name()})
 
     def __iter__(self):
         """List iterator interface"""
@@ -615,6 +651,8 @@ class PersistentObjectMixin(object):
             'read_only': True
         }
     }
+
+    STRING_KEYS = ['id']
 
 
 class SoftDeleteObjectMixin(object):
