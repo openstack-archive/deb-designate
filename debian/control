@@ -168,7 +168,7 @@ Package: designate-api
 Architecture: all
 Depends: adduser,
          designate-common (= ${binary:Version}),
-         python-designate (= ${binary:Version}),
+         python-openstackclient,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - API server
