@@ -14,8 +14,11 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+
+import datetime
 import copy
 import random
+from collections import namedtuple
 
 import mock
 import testtools
@@ -27,7 +30,9 @@ from oslo_messaging.notify import notifier
 
 from designate import exceptions
 from designate import objects
+from designate.mdns import rpcapi as mdns_api
 from designate.tests.test_central import CentralTestCase
+from designate.storage.impl_sqlalchemy import tables
 
 LOG = logging.getLogger(__name__)
 
@@ -107,6 +112,12 @@ class CentralServiceTest(CentralTestCase):
             self.central_service._is_valid_recordset_name(
                 context, domain, 'a.example.COM.')
 
+        with testtools.ExpectedException(exceptions.InvalidRecordSetLocation):
+            # Ensure names ending in the domain name, but
+            # not contained in it fail
+            self.central_service._is_valid_recordset_name(
+                context, domain, 'aexample.org.')
+
     def test_is_blacklisted_domain_name(self):
         # Create blacklisted zones with specific names
         self.create_blacklist(pattern='example.org.')
@@ -145,6 +156,24 @@ class CentralServiceTest(CentralTestCase):
             context, 'blacklisted.org.')
 
         self.assertTrue(result)
+
+    def test_is_blacklisted_domain_name_evil(self):
+        evil_regex = "(([a-z])+.)+[A-Z]([a-z])+$"
+        evil_zone_name = ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                          "aaaaaaaa.com.")
+
+        blacklists = objects.BlacklistList(
+            objects=[objects.Blacklist(pattern=evil_regex)])
+
+        context = self.get_context()
+
+        with mock.patch.object(self.central_service.storage,
+                               'find_blacklists',
+                               return_value=blacklists):
+
+            result = self.central_service._is_blacklisted_domain_name(
+                context, evil_zone_name)
+            self.assertTrue(result)
 
     def test_is_subdomain(self):
         context = self.get_context()
@@ -974,6 +1003,283 @@ class CentralServiceTest(CentralTestCase):
         with testtools.ExpectedException(exceptions.Forbidden):
             self.central_service.count_domains(self.get_context())
 
+    def _fetch_all_domains(self):
+        """Fetch all domains including deleted ones
+        """
+        query = tables.domains.select()
+        return self.central_service.storage.session.execute(query).fetchall()
+
+    def _log_all_domains(self, zones, msg=None):
+        """Log out a summary of zones
+        """
+        if msg:
+            LOG.debug("--- %s ---" % msg)
+        cols = ('name', 'status', 'action', 'deleted', 'deleted_at',
+                'parent_domain_id')
+        tpl = "%-35s | %-11s | %-11s | %-32s | %-20s | %s"
+        LOG.debug(tpl % cols)
+        for z in zones:
+            LOG.debug(tpl % tuple(z[k] for k in cols))
+
+    def _assert_count_all_domains(self, n):
+        """Assert count ALL domains including deleted ones
+        """
+        zones = self._fetch_all_domains()
+        if len(zones) == n:
+            return
+
+        msg = "failed: %d zones expected, %d found" % (n, len(zones))
+        self._log_all_domains(zones, msg=msg)
+        raise Exception("Unexpected number of zones")
+
+    def _create_deleted_domain(self, name, mock_deletion_time):
+        # Create a domain and set it as deleted
+        domain = self.create_domain(name=name)
+        self._delete_domain(domain, mock_deletion_time)
+        return domain
+
+    def _delete_domain(self, domain, mock_deletion_time):
+        # Set a domain as deleted
+        zid = domain.id.replace('-', '')
+        query = tables.domains.update().\
+            where(tables.domains.c.id == zid).\
+            values(
+                action='NONE',
+                deleted=zid,
+                deleted_at=mock_deletion_time,
+                status='DELETED',
+        )
+
+        pxy = self.central_service.storage.session.execute(query)
+        self.assertEqual(pxy.rowcount, 1)
+        return domain
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_nothing_to_purge(self, mock_notifier):
+        # Create a zone
+        self.create_domain()
+        mock_notifier.reset_mock()
+        self._assert_count_all_domains(1)
+
+        now = datetime.datetime(2015, 7, 31, 0, 0)
+        self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'status': 'DELETED',
+                'deleted': '!0',
+                'deleted_at': "<=%s" % now
+            },
+            limit=100
+        )
+        self._assert_count_all_domains(1)
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_one_to_purge(self, mock_notifier):
+        self.create_domain()
+        new = datetime.datetime(2015, 7, 30, 0, 0)
+        now = datetime.datetime(2015, 7, 31, 0, 0)
+        self._create_deleted_domain('example2.org.', new)
+        mock_notifier.reset_mock()
+        self._assert_count_all_domains(2)
+
+        self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'deleted': '!0',
+                'deleted_at': "<=%s" % now
+            },
+            limit=100,
+        )
+        self._assert_count_all_domains(1)
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_one_to_purge_out_of_three(self, mock_notifier):
+        self.create_domain()
+        old = datetime.datetime(2015, 7, 20, 0, 0)
+        time_threshold = datetime.datetime(2015, 7, 25, 0, 0)
+        new = datetime.datetime(2015, 7, 30, 0, 0)
+        self._create_deleted_domain('old.org.', old)
+        self._create_deleted_domain('new.org.', new)
+        mock_notifier.reset_mock()
+        self._assert_count_all_domains(3)
+
+        purge_cnt = self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'deleted': '!0',
+                'deleted_at': "<=%s" % time_threshold
+            },
+            limit=100,
+        )
+        self._assert_count_all_domains(2)
+        self.assertEqual(purge_cnt, 1)
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_without_time_threshold(self, mock_notifier):
+        self.create_domain()
+        old = datetime.datetime(2015, 7, 20, 0, 0)
+        new = datetime.datetime(2015, 7, 30, 0, 0)
+        self._create_deleted_domain('old.org.', old)
+        self._create_deleted_domain('new.org.', new)
+        mock_notifier.reset_mock()
+        self._assert_count_all_domains(3)
+
+        purge_cnt = self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'deleted': '!0',
+            },
+            limit=100,
+        )
+        self._assert_count_all_domains(1)
+        self.assertEqual(purge_cnt, 2)
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_without_deleted_criterion(self, mock_notifier):
+        self.create_domain()
+        old = datetime.datetime(2015, 7, 20, 0, 0)
+        time_threshold = datetime.datetime(2015, 7, 25, 0, 0)
+        new = datetime.datetime(2015, 7, 30, 0, 0)
+        self._create_deleted_domain('old.org.', old)
+        self._create_deleted_domain('new.org.', new)
+        mock_notifier.reset_mock()
+        self._assert_count_all_domains(3)
+
+        # Nothing should be purged
+        purge_cnt = self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'deleted_at': "<=%s" % time_threshold
+            },
+            limit=100,
+        )
+        self._assert_count_all_domains(3)
+        self.assertEqual(purge_cnt, None)
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_by_name(self, mock_notifier):
+        self.create_domain()
+
+        # The domain is purged (even if it was not deleted)
+        purge_cnt = self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'name': 'example.com.'
+            },
+            limit=100,
+        )
+        self._assert_count_all_domains(0)
+        self.assertEqual(purge_cnt, 1)
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_without_any_criterion(self, mock_notifier):
+        with testtools.ExpectedException(TypeError):
+            self.central_service.purge_domains(
+                self.admin_context,
+                limit=100,
+            )
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_with_sharding(self, mock_notifier):
+        old = datetime.datetime(2015, 7, 20, 0, 0)
+        time_threshold = datetime.datetime(2015, 7, 25, 0, 0)
+        domain = self._create_deleted_domain('old.org.', old)
+        mock_notifier.reset_mock()
+
+        # purge domains in an empty shard
+        self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'deleted': '!0',
+                'deleted_at': "<=%s" % time_threshold,
+                'shard': 'BETWEEN 99998, 99999',
+            },
+            limit=100,
+        )
+        n_zones = self.central_service.count_domains(self.admin_context)
+        self.assertEqual(n_zones, 1)
+
+        # purge domains in a shard that contains the domain created above
+        self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'deleted': '!0',
+                'deleted_at': "<=%s" % time_threshold,
+                'shard': 'BETWEEN 0, %d' % domain.shard,
+            },
+            limit=100,
+        )
+        n_zones = self.central_service.count_domains(self.admin_context)
+        self.assertEqual(n_zones, 0)
+
+    def test_purge_domains_walk_up_domains(self):
+        Zone = namedtuple('Zone', 'id parent_domain_id')
+        zones = [Zone(x + 1, x) for x in range(1234, 1237)]
+
+        zones_by_id = {z.id: z for z in zones}
+        sid = self.central_service.storage._walk_up_domains(
+            zones[0], zones_by_id)
+        self.assertEqual(sid, 1234)
+
+        sid = self.central_service.storage._walk_up_domains(
+            zones[-1], zones_by_id)
+        self.assertEqual(sid, 1234)
+
+    def test_purge_domains_walk_up_domains_loop(self):
+        Zone = namedtuple('Zone', 'id parent_domain_id')
+        zones = [Zone(2, 1), Zone(3, 2), Zone(1, 3)]
+        zones_by_id = {z.id: z for z in zones}
+        with testtools.ExpectedException(exceptions.IllegalParentDomain):
+            self.central_service.storage._walk_up_domains(
+                zones[0], zones_by_id)
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_purge_domains_with_orphans(self, mock_notifier):
+        old = datetime.datetime(2015, 7, 20, 0, 0)
+        time_threshold = datetime.datetime(2015, 7, 25, 0, 0)
+
+        # Create a tree of alive and deleted [sub]domains
+        z1 = self.create_domain(name='alive.org.')
+        z2 = self.create_domain(name='deleted.alive.org.')
+        z3 = self.create_domain(name='del2.deleted.alive.org.')
+        z4 = self.create_domain(name='del3.del2.deleted.alive.org.')
+        z5 = self.create_domain(name='alive2.del3.del2.deleted.alive.org.')
+
+        self._delete_domain(z2, old)
+        self._delete_domain(z3, old)
+        self._delete_domain(z4, old)
+
+        self.assertEqual(z2['parent_domain_id'], z1.id)
+        self.assertEqual(z3['parent_domain_id'], z2.id)
+        self.assertEqual(z4['parent_domain_id'], z3.id)
+        self.assertEqual(z5['parent_domain_id'], z4.id)
+
+        self._assert_count_all_domains(5)
+        mock_notifier.reset_mock()
+
+        zones = self._fetch_all_domains()
+        self._log_all_domains(zones)
+        self.central_service.purge_domains(
+            self.admin_context,
+            {
+                'deleted': '!0',
+                'deleted_at': "<=%s" % time_threshold
+            },
+            limit=100,
+        )
+        self._assert_count_all_domains(2)
+        zones = self._fetch_all_domains()
+        self._log_all_domains(zones)
+        for z in zones:
+            if z.name == 'alive.org.':
+                self.assertEqual(z.parent_domain_id, None)
+            elif z.name == 'alive2.del3.del2.deleted.alive.org.':
+                # alive2.del2.deleted.alive.org is to be reparented under
+                # alive.org
+                self.assertEqual(z.parent_domain_id, z1.id)
+            else:
+                raise Exception("Unexpected zone %r" % z)
+
     def test_touch_domain(self):
         # Create a domain
         expected_domain = self.create_domain()
@@ -998,7 +1304,49 @@ class CentralServiceTest(CentralTestCase):
         # Create a zone
         secondary = self.create_domain(**fixture)
 
-        self.central_service.xfr_domain(self.admin_context, secondary.id)
+        mdns = mock.Mock()
+        with mock.patch.object(mdns_api.MdnsAPI, 'get_instance') as get_mdns:
+            get_mdns.return_value = mdns
+            mdns.get_serial_number.return_value = ('SUCCESS', 10, 1, )
+            self.central_service.xfr_domain(self.admin_context, secondary.id)
+
+        self.assertTrue(mdns.perform_zone_xfr.called)
+
+    def test_xfr_domain_same_serial(self):
+        # Create a domain
+        fixture = self.get_domain_fixture('SECONDARY', 0)
+        fixture['email'] = cfg.CONF['service:central'].managed_resource_email
+        fixture['attributes'] = [{"key": "master", "value": "10.0.0.10"}]
+
+        # Create a zone
+        secondary = self.create_domain(**fixture)
+
+        mdns = mock.Mock()
+        with mock.patch.object(mdns_api.MdnsAPI, 'get_instance') as get_mdns:
+            get_mdns.return_value = mdns
+            mdns.get_serial_number.return_value = ('SUCCESS', 1, 1, )
+            self.central_service.xfr_domain(self.admin_context, secondary.id)
+
+        self.assertFalse(mdns.perform_zone_xfr.called)
+
+    def test_xfr_domain_lower_serial(self):
+        # Create a domain
+        fixture = self.get_domain_fixture('SECONDARY', 0)
+        fixture['email'] = cfg.CONF['service:central'].managed_resource_email
+        fixture['attributes'] = [{"key": "master", "value": "10.0.0.10"}]
+        fixture['serial'] = 10
+
+        # Create a zone
+        secondary = self.create_domain(**fixture)
+        secondary.serial
+
+        mdns = mock.Mock()
+        with mock.patch.object(mdns_api.MdnsAPI, 'get_instance') as get_mdns:
+            get_mdns.return_value = mdns
+            mdns.get_serial_number.return_value = ('SUCCESS', 0, 1, )
+            self.central_service.xfr_domain(self.admin_context, secondary.id)
+
+        self.assertFalse(mdns.perform_zone_xfr.called)
 
     def test_xfr_domain_invalid_type(self):
         domain = self.create_domain()
@@ -1315,7 +1663,7 @@ class CentralServiceTest(CentralTestCase):
                 raise db_exception.DBDeadlock()
 
         with mock.patch.object(self.central_service.storage, 'commit',
-                          side_effect=fail_once_then_pass):
+                               side_effect=fail_once_then_pass):
             # Perform the update
             recordset = self.central_service.update_recordset(
                 self.admin_context, recordset)

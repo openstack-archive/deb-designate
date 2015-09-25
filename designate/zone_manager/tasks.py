@@ -29,6 +29,8 @@ LOG = logging.getLogger(__name__)
 
 
 class PeriodicTask(plugin.ExtensionPlugin):
+    """Abstract Zone Manager periodic task
+    """
     __plugin_ns__ = 'designate.zone_manager_tasks'
     __plugin_type__ = 'zone_manager_task'
     __interval__ = None
@@ -40,7 +42,11 @@ class PeriodicTask(plugin.ExtensionPlugin):
     @classmethod
     def get_base_opts(cls):
         options = [
-            cfg.IntOpt('interval', default=cls.__interval__),
+            cfg.IntOpt(
+                'interval',
+                default=cls.__interval__,
+                help='Run interval in seconds'
+            ),
             cfg.IntOpt('per_page', default=100),
         ]
         return options
@@ -50,12 +56,18 @@ class PeriodicTask(plugin.ExtensionPlugin):
         return rpcapi.CentralAPI.get_instance()
 
     def on_partition_change(self, my_partitions, members, event):
+        """Refresh partitions attribute
+        """
         self.my_partitions = my_partitions
 
     def _my_range(self):
+        """Returns first and last partitions
+        """
         return self.my_partitions[0], self.my_partitions[-1]
 
     def _filter_between(self, col):
+        """Generate BETWEEN filter based on _my_range
+        """
         return {col: "BETWEEN %s,%s" % self._my_range()}
 
     def _iter(self, method, *args, **kwargs):
@@ -76,6 +88,62 @@ class PeriodicTask(plugin.ExtensionPlugin):
         criterion = criterion or {}
         criterion.update(self._filter_between('shard'))
         return self._iter(self.central_api.find_domains, ctxt, criterion)
+
+
+class DeletedDomainPurgeTask(PeriodicTask):
+    """Purge deleted domains that are exceeding the grace period time interval.
+    Deleted domains have values in the deleted_at column.
+    Purging means removing them from the database entirely.
+    """
+
+    __plugin_name__ = 'domain_purge'
+    __interval__ = 3600
+
+    def __init__(self):
+        super(DeletedDomainPurgeTask, self).__init__()
+
+    @classmethod
+    def get_cfg_opts(cls):
+        group = cfg.OptGroup(cls.get_canonical_name())
+        options = cls.get_base_opts() + [
+            cfg.IntOpt(
+                'time_threshold',
+                default=604800,
+                help="How old deleted domains should be (deleted_at) to be "
+                "purged, in seconds"
+            ),
+            cfg.IntOpt(
+                'batch_size',
+                default=100,
+                help='How many domains to be purged on each run'
+            ),
+        ]
+        return [(group, options)]
+
+    def __call__(self):
+        """Call the Central API to perform a purge of deleted zones based on
+        expiration time and sharding range.
+        """
+        pstart, pend = self._my_range()
+        msg = _LI("Performing deleted domain purging for %(start)s to %(end)s")
+        LOG.info(msg % {"start": pstart, "end": pend})
+
+        delta = datetime.timedelta(seconds=self.options.time_threshold)
+        time_threshold = timeutils.utcnow() - delta
+        LOG.debug("Filtering deleted domains before %s", time_threshold)
+
+        criterion = self._filter_between('shard')
+        criterion['deleted'] = '!0'
+        criterion['deleted_at'] = "<=%s" % time_threshold
+
+        ctxt = context.DesignateContext.get_admin_context()
+        ctxt.all_tenants = True
+
+        self.central_api.purge_domains(
+            ctxt,
+            criterion,
+            limit=self.options.batch_size,
+        )
 
 
 class PeriodicExistsTask(PeriodicTask):
@@ -116,6 +184,45 @@ class PeriodicExistsTask(PeriodicTask):
         for zone in self._iter_zones(ctxt):
             zone_data = dict(zone)
             zone_data.update(data)
-
             self.notifier.info(ctxt, 'dns.domain.exists', zone_data)
+
         LOG.info(_LI("Finished emitting events."))
+
+
+class PeriodicSecondaryRefreshTask(PeriodicTask):
+    __plugin_name__ = 'periodic_secondary_refresh'
+    __interval__ = 3600
+
+    @classmethod
+    def get_cfg_opts(cls):
+        group = cfg.OptGroup(cls.get_canonical_name())
+        options = cls.get_base_opts()
+        return [(group, options)]
+
+    def __call__(self):
+        pstart, pend = self._my_range()
+        msg = _LI("Refreshing zones between for %(start)s to %(end)s")
+        LOG.info(msg % {"start": pstart, "end": pend})
+
+        ctxt = context.DesignateContext.get_admin_context()
+        ctxt.all_tenants = True
+
+        # each zone can have a different refresh / expire etc interval defined
+        # in the SOA at the source / master servers
+        criterion = {
+            "type": "SECONDARY"
+        }
+        for zone in self._iter_zones(ctxt, criterion):
+            # NOTE: If the zone isn't transferred yet, ignore it.
+            if zone.transferred_at is None:
+                continue
+
+            now = timeutils.utcnow(True)
+
+            transferred = timeutils.parse_isotime(zone.transferred_at)
+            seconds = timeutils.delta_seconds(transferred, now)
+            if seconds > zone.refresh:
+                msg = "Zone %(id)s has %(seconds)d seconds since last transfer, " \
+                      "executing AXFR"
+                LOG.debug(msg % {"id": zone.id, "seconds": seconds})
+                self.central_api.xfr_domain(ctxt, zone.id)

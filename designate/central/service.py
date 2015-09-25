@@ -21,6 +21,7 @@ import functools
 import threading
 import itertools
 import string
+import signal
 import random
 import time
 
@@ -260,7 +261,7 @@ def notification(notification_type):
 
 
 class Service(service.RPCService, service.Service):
-    RPC_API_VERSION = '5.4'
+    RPC_API_VERSION = '5.6'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
@@ -363,7 +364,8 @@ class Service(service.RPCService, service.Service):
             raise exceptions.InvalidRecordSetName('Name too long')
 
         # RecordSets must be contained in the parent zone
-        if not recordset_name.endswith(domain['name']):
+        if (recordset_name != domain['name']
+                and not recordset_name.endswith("." + domain['name'])):
             raise exceptions.InvalidRecordSetLocation(
                 'RecordSet is not contained within it\'s parent domain')
 
@@ -423,16 +425,48 @@ class Service(service.RPCService, service.Service):
                     child_domain['name']
                 raise exceptions.InvalidRecordSetLocation(msg)
 
+    def _is_valid_recordset_records(self, recordset):
+        """
+        Check to make sure that the records in the recordset
+        follow the rules, and won't blow up on the nameserver.
+        """
+        if hasattr(recordset, 'records'):
+            if len(recordset.records) > 1 and recordset.type == 'CNAME':
+                raise exceptions.BadRequest(
+                    'CNAME recordsets may not have more than 1 record'
+                )
+
     def _is_blacklisted_domain_name(self, context, domain_name):
         """
         Ensures the provided domain_name is not blacklisted.
         """
-
         blacklists = self.storage.find_blacklists(context)
 
-        for blacklist in blacklists:
-            if bool(re.search(blacklist.pattern, domain_name)):
-                return True
+        class Timeout(Exception):
+            pass
+
+        def _handle_timeout(signum, frame):
+            raise Timeout()
+
+        signal.signal(signal.SIGALRM, _handle_timeout)
+
+        try:
+            for blacklist in blacklists:
+                signal.setitimer(signal.ITIMER_REAL, 0.02)
+
+                try:
+                    if bool(re.search(blacklist.pattern, domain_name)):
+                        return True
+                finally:
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+
+        except Timeout:
+            LOG.critical(_LC(
+                'Blacklist regex (%(pattern)s) took too long to evaluate '
+                'against zone name (%(zone_name)s') %
+                {'pattern': blacklist.pattern, 'zone_name': domain_name})
+
+            return True
 
         return False
 
@@ -1010,6 +1044,12 @@ class Service(service.RPCService, service.Service):
     @notification('dns.domain.delete')
     @synchronized_domain()
     def delete_domain(self, context, domain_id):
+        """Delete or abandon a domain
+        On abandon, delete the domain from the DB immediately.
+        Otherwise, set action to DELETE and status to PENDING and poke
+        Pool Manager's "delete_domain" to update the resolvers. PM will then
+        poke back to set action to NONE and status to DELETED
+        """
         domain = self.storage.get_domain(context, domain_id)
 
         target = {
@@ -1041,6 +1081,9 @@ class Service(service.RPCService, service.Service):
 
     @transaction
     def _delete_domain_in_storage(self, context, domain):
+        """Set domain action to DELETE and status to PENDING
+        to have the domain soft-deleted later on
+        """
 
         domain.action = 'DELETE'
         domain.status = 'PENDING'
@@ -1048,6 +1091,18 @@ class Service(service.RPCService, service.Service):
         domain = self.storage.update_domain(context, domain)
 
         return domain
+
+    def purge_domains(self, context, criterion, limit=None):
+        """Purge deleted zones.
+        :returns: number of purged domains
+        """
+
+        policy.check('purge_domains', context, criterion)
+
+        LOG.debug("Performing purge with limit of %r and criterion of %r"
+                  % (limit, criterion))
+
+        return self.storage.purge_domains(context, criterion, limit)
 
     def xfr_domain(self, context, domain_id):
         domain = self.storage.get_domain(context, domain_id)
@@ -1060,11 +1115,24 @@ class Service(service.RPCService, service.Service):
 
         policy.check('xfr_domain', context, target)
 
-        if domain.type == 'SECONDARY':
-            self.mdns_api.perform_zone_xfr(context, domain)
-        else:
+        if domain.type != 'SECONDARY':
             msg = "Can't XFR a non Secondary zone."
             raise exceptions.BadRequest(msg)
+
+        # Ensure the format of the servers are correct, then poll the
+        # serial
+        srv = random.choice(domain.masters)
+        status, serial, retries = self.mdns_api.get_serial_number(
+            context, domain, srv.host, srv.port, 3, 1, 3, 0)
+
+        # Perform XFR if serial's are not equal
+        if serial > domain.serial:
+            msg = _LI(
+                "Serial %(srv_serial)d is not equal to zone's %(serial)d,"
+                " performing AXFR")
+            LOG.info(
+                msg % {"srv_serial": serial, "serial": domain.serial})
+            self.mdns_api.perform_zone_xfr(context, domain)
 
     def count_domains(self, context, criterion=None):
         if criterion is None:
@@ -1170,6 +1238,7 @@ class Service(service.RPCService, service.Service):
                                            recordset.type)
         self._is_valid_recordset_placement_subdomain(
             context, domain, recordset.name)
+        self._is_valid_recordset_records(recordset)
 
         if recordset.obj_attr_is_set('records') and len(recordset.records) > 0:
             if increment_serial:
@@ -1294,6 +1363,7 @@ class Service(service.RPCService, service.Service):
                                            recordset.type, recordset.id)
         self._is_valid_recordset_placement_subdomain(
             context, domain, recordset.name)
+        self._is_valid_recordset_records(recordset)
 
         # Ensure TTL is above the minimum
         ttl = changes.get('ttl', None)

@@ -13,13 +13,16 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import mock
 from mock import patch
 from oslo_config import cfg
 import oslo_messaging as messaging
 from oslo_log import log as logging
 
 from designate import exceptions
+from designate import objects
 from designate.central import service as central_service
+from designate.mdns import rpcapi as mdns_api
 from designate.tests.test_api.test_v2 import ApiV2TestCase
 
 
@@ -517,10 +520,12 @@ class ApiV2ZonesTest(ApiV2TestCase):
     def test_update_secondary(self):
         # Create a zone
         fixture = self.get_domain_fixture('SECONDARY', 0)
-        fixture['email'] = cfg.CONF['service:central'].managed_resource_email
+
+        domain = objects.Domain(**fixture)
+        domain.email = cfg.CONF['service:central'].managed_resource_email
 
         # Create a zone
-        zone = self.create_domain(**fixture)
+        zone = self.central_service.create_domain(self.admin_context, domain)
 
         masters = ['10.0.0.1', '10.0.0.2']
 
@@ -554,17 +559,23 @@ class ApiV2ZonesTest(ApiV2TestCase):
         # Create a zone
         zone = self.create_domain(**fixture)
 
-        response = self.client.post_json(
-            '/zones/%s/tasks/xfr' % zone['id'],
-            None, status=202)
+        mdns = mock.Mock()
+        with mock.patch.object(mdns_api.MdnsAPI, 'get_instance') as get_mdns:
+            get_mdns.return_value = mdns
+            mdns.get_serial_number.return_value = ('SUCCESS', 10, 1, )
+
+            response = self.client.post_json(
+                '/zones/%s/tasks/xfr' % zone['id'],
+                None, status=202)
+
+        self.assertTrue(mdns.perform_zone_xfr.called)
 
         # Check the headers are what we expect
         self.assertEqual(202, response.status_int)
         self.assertEqual('application/json', response.content_type)
+        self.assertEqual('""', response.body)
 
     def test_invalid_xfr_request(self):
-        # Create a zone
-
         # Create a zone
         zone = self.create_domain()
 

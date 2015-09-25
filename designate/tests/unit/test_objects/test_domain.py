@@ -17,8 +17,8 @@
 import unittest
 
 from oslo_log import log as logging
-from testtools import ExpectedException as raises  # with raises(...): ...
 import oslotest.base
+import testtools
 
 from designate import exceptions
 from designate import objects
@@ -41,7 +41,7 @@ class DomainTest(oslotest.base.BaseTestCase):
 
     def test_masters_none(self):
         domain = objects.Domain()
-        with raises(exceptions.RelationNotLoaded):
+        with testtools.ExpectedException(exceptions.RelationNotLoaded):
             self.assertEqual(domain.masters, None)
 
     def test_masters(self):
@@ -87,5 +87,70 @@ class DomainTest(oslotest.base.BaseTestCase):
         domain = objects.Domain(
             type='SECONDARY',
         )
-        with raises(exceptions.InvalidObject):
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            domain.validate()
+
+    def test_validate_primary_with_masters(self):
+        masters = objects.DomainMasterList()
+        masters.append(objects.DomainMaster.from_data("10.0.0.1:53"))
+        domain = objects.Domain(
+            name='example.com.',
+            type='PRIMARY',
+            email="foo@example.com",
+            masters=masters
+        )
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            domain.validate()
+
+    def test_validate_primary_no_email(self):
+        masters = objects.DomainMasterList()
+        masters.append(objects.DomainMaster.from_data("10.0.0.1:53"))
+        domain = objects.Domain(
+            name='example.com.',
+            type='PRIMARY',
+        )
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            domain.validate()
+
+    def test_validate_secondary_with_email(self):
+        masters = objects.DomainMasterList()
+        masters.append(objects.DomainMaster.from_data("10.0.0.1:53"))
+        domain = objects.Domain(
+            name='example.com.',
+            type='SECONDARY',
+            email="foo@example.com",
+            masters=masters
+        )
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            domain.validate()
+
+    def test_validate_secondary_with_ttl(self):
+        masters = objects.DomainMasterList()
+        masters.append(objects.DomainMaster.from_data("10.0.0.1:53"))
+        domain = objects.Domain(
+            name='example.com.',
+            type='SECONDARY',
+            ttl=600,
+            masters=masters
+        )
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            domain.validate()
+
+    def test_validate_secondary_with_masters_empty_list(self):
+        masters = objects.DomainMasterList()
+        domain = objects.Domain(
+            name='example.com.',
+            type='SECONDARY',
+            masters=masters
+        )
+        with testtools.ExpectedException(exceptions.InvalidObject):
+            domain.validate()
+
+    def test_validate_secondary_with_masters_none(self):
+        domain = objects.Domain(
+            name='example.com.',
+            type='SECONDARY',
+            masters=None
+        )
+        with testtools.ExpectedException(exceptions.InvalidObject):
             domain.validate()

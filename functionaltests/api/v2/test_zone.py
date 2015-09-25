@@ -20,9 +20,14 @@ from tempest_lib.exceptions import NotFound
 
 from functionaltests.common import datagen
 from functionaltests.api.v2.base import DesignateV2Test
+from functionaltests.api.v2.clients.recordset_client import RecordsetClient
 from functionaltests.api.v2.clients.zone_client import ZoneClient
 from functionaltests.api.v2.clients.zone_import_client import ZoneImportClient
 from functionaltests.api.v2.clients.zone_export_client import ZoneExportClient
+from functionaltests.api.v2.fixtures import ZoneFixture
+from functionaltests.api.v2.fixtures import ZoneImportFixture
+from functionaltests.api.v2.fixtures import ZoneExportFixture
+from functionaltests.common.models import ZoneFileRecord
 
 
 class ZoneTest(DesignateV2Test):
@@ -30,25 +35,18 @@ class ZoneTest(DesignateV2Test):
     def setUp(self):
         super(ZoneTest, self).setUp()
         self.increase_quotas(user='default')
-
-    def _create_zone(self, zone_model, user='default'):
-        resp, model = ZoneClient.as_user(user).post_zone(zone_model)
-        self.assertEqual(resp.status, 202)
-        ZoneClient.as_user(user).wait_for_zone(model.id)
-        return resp, model
+        self.fixture = self.useFixture(ZoneFixture(user='default'))
 
     def test_list_zones(self):
-        self._create_zone(datagen.random_zone_data())
         resp, model = ZoneClient.as_user('default').list_zones()
         self.assertEqual(resp.status, 200)
         self.assertGreater(len(model.zones), 0)
 
     def test_create_zone(self):
-        self._create_zone(datagen.random_zone_data(), user='default')
+        self.assertEqual(self.fixture.post_resp.status, 202)
 
     def test_update_zone(self):
-        post_model = datagen.random_zone_data()
-        resp, old_model = self._create_zone(post_model)
+        old_model = self.fixture.created_zone
 
         patch_model = datagen.random_zone_data()
         del patch_model.name  # don't try to override the zone name
@@ -65,10 +63,10 @@ class ZoneTest(DesignateV2Test):
         self.assertEqual(new_model.email, patch_model.email)
 
     def test_delete_zone(self):
-        resp, model = self._create_zone(datagen.random_zone_data())
-        resp, model = ZoneClient.as_user('default').delete_zone(model.id)
+        client = ZoneClient.as_user('default')
+        resp, model = client.delete_zone(self.fixture.created_zone.id)
         self.assertEqual(resp.status, 202)
-        ZoneClient.as_user('default').wait_for_zone_404(model.id)
+        client.wait_for_zone_404(model.id)
 
 
 class ZoneOwnershipTest(DesignateV2Test):
@@ -78,60 +76,48 @@ class ZoneOwnershipTest(DesignateV2Test):
         self.increase_quotas(user='default')
         self.increase_quotas(user='alt')
 
-    def _create_zone(self, zone_model, user):
-        resp, model = ZoneClient.as_user(user).post_zone(zone_model)
-        self.assertEqual(resp.status, 202)
-        ZoneClient.as_user(user).wait_for_zone(model.id)
-        return resp, model
-
     def test_no_create_duplicate_domain(self):
-        zone = datagen.random_zone_data()
-        self._create_zone(zone, user='default')
+        post_model = self.useFixture(ZoneFixture(user='default')).post_model
         self.assertRaises(Conflict,
-            lambda: self._create_zone(zone, user='default'))
+            lambda: ZoneClient.as_user('default').post_zone(post_model))
         self.assertRaises(Conflict,
-            lambda: self._create_zone(zone, user='alt'))
+            lambda: ZoneClient.as_user('alt').post_zone(post_model))
 
     def test_no_create_subdomain_by_alt_user(self):
-        zone = datagen.random_zone_data()
+        zone = self.useFixture(ZoneFixture(user='default')).post_model
         subzone = datagen.random_zone_data(name='sub.' + zone.name)
         subsubzone = datagen.random_zone_data(name='sub.sub.' + zone.name)
-        self._create_zone(zone, user='default')
         self.assertRaises(Forbidden,
-            lambda: self._create_zone(subzone, user='alt'))
+            lambda: ZoneClient.as_user('alt').post_zone(subzone))
         self.assertRaises(Forbidden,
-            lambda: self._create_zone(subsubzone, user='alt'))
+            lambda: ZoneClient.as_user('alt').post_zone(subsubzone))
 
     def test_no_create_superdomain_by_alt_user(self):
         superzone = datagen.random_zone_data()
         zone = datagen.random_zone_data(name="a.b." + superzone.name)
-        self._create_zone(zone, user='default')
+        self.useFixture(ZoneFixture(zone, user='default'))
         self.assertRaises(Forbidden,
-            lambda: self._create_zone(superzone, user='alt'))
+            lambda: ZoneClient.as_user('alt').post_zone(superzone))
 
 
 class ZoneImportTest(DesignateV2Test):
 
     def setUp(self):
         super(ZoneImportTest, self).setUp()
+        self.increase_quotas(user='default')
 
     def test_import_domain(self):
         user = 'default'
         import_client = ZoneImportClient.as_user(user)
         zone_client = ZoneClient.as_user(user)
 
-        zonefile = datagen.random_zonefile_data()
-        resp, model = import_client.post_zone_import(
-            zonefile)
-        import_id = model.id
-        self.assertEqual(resp.status, 202)
-        self.assertEqual(model.status, 'PENDING')
-        import_client.wait_for_zone_import(import_id)
+        fixture = self.useFixture(ZoneImportFixture(user=user))
+        import_id = fixture.zone_import.id
 
-        resp, model = import_client.get_zone_import(
-            model.id)
+        resp, model = import_client.get_zone_import(import_id)
         self.assertEqual(resp.status, 200)
         self.assertEqual(model.status, 'COMPLETE')
+        self.addCleanup(ZoneFixture.cleanup_zone, zone_client, model.zone_id)
 
         # Wait for the zone to become 'ACTIVE'
         zone_client.wait_for_zone(model.zone_id)
@@ -147,29 +133,37 @@ class ZoneExportTest(DesignateV2Test):
 
     def setUp(self):
         super(ZoneExportTest, self).setUp()
+        self.increase_quotas(user='default')
 
-    def test_import_domain(self):
+    def test_export_domain(self):
         user = 'default'
-        resp, zone = ZoneClient.as_user(user).post_zone(
-            datagen.random_zone_data())
-        ZoneClient.as_user(user).wait_for_zone(zone.id)
+        zone_fixture = self.useFixture(ZoneFixture(user=user))
+        zone = zone_fixture.created_zone
+
+        export_fixture = self.useFixture(ZoneExportFixture(zone.id, user=user))
+        export_id = export_fixture.zone_export.id
 
         export_client = ZoneExportClient.as_user(user)
-
-        resp, model = export_client.post_zone_export(zone.id)
-
-        export_id = model.id
-        self.assertEqual(resp.status, 202)
-        self.assertEqual(model.status, 'PENDING')
-        export_client.wait_for_zone_export(export_id)
 
         resp, model = export_client.get_zone_export(export_id)
         self.assertEqual(resp.status, 200)
         self.assertEqual(model.status, 'COMPLETE')
 
-        resp, body = export_client.get_exported_zone(export_id)
+        # fetch the zone file
+        resp, zone_file = export_client.get_exported_zone(export_id)
         self.assertEqual(resp.status, 200)
+        self.assertEqual(zone_file.origin, zone.name)
+        self.assertEqual(zone_file.ttl, zone.ttl)
+
+        # the list of records in the zone file must match the zone's recordsets
+        # (in this case there should be only two records - a SOA and an NS?)
+        recordset_client = RecordsetClient.as_user(user)
+        resp, model = recordset_client.list_recordsets(zone.id)
+        records = []
+        for recordset in model.recordsets:
+            records.extend(ZoneFileRecord.records_from_recordset(recordset))
+        self.assertEqual(set(records), set(zone_file.records))
 
         export_client.delete_zone_export(export_id)
         self.assertRaises(NotFound,
-            lambda: export_client.get_zone_export(model.id))
+            lambda: export_client.get_zone_export(export_id))

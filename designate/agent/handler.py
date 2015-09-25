@@ -50,7 +50,7 @@ class RequestHandler(object):
         self.masters = []
         for server in CONF['service:agent'].masters:
             raw_server = utils.split_host_port(server)
-            master = {'ip': raw_server[0], 'port': int(raw_server[1])}
+            master = {'host': raw_server[0], 'port': int(raw_server[1])}
             self.masters.append(master)
 
         LOG.info(_LI("Agent masters: %(masters)s") %
@@ -234,6 +234,10 @@ class RequestHandler(object):
         return response
 
     def _allowed(self, request, requester, op, domain_name):
+        # If there are no explict notifiers specified, allow all
+        if not self.allow_notify:
+            return True
+
         if requester not in self.allow_notify:
             LOG.warn(_LW("%(verb)s for %(name)s from %(server)s refused") %
             {'verb': op, 'name': domain_name, 'server': requester})
