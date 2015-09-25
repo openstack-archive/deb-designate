@@ -14,7 +14,7 @@ Build-Depends: debhelper (>= 9),
                python-sphinx,
 Build-Depends-Indep: python-babel,
                      python-coverage,
-                     python-designateclient (>= 1.0.0),
+                     python-designateclient (>= 1.5.0),
                      python-dnspython,
                      python-eventlet (>= 0.17.4),
                      python-fixtures (>= 1.3.1),
@@ -76,7 +76,7 @@ Package: python-designate
 Section: python
 Architecture: all
 Depends: python-babel,
-         python-designateclient (>= 1.0.0),
+         python-designateclient (>= 1.5.0),
          python-dnspython,
          python-eventlet (>= 0.17.4),
          python-flask,
