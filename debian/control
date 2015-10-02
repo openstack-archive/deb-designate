@@ -255,6 +255,21 @@ Description: OpenStack DNS as a Service - pool manager
  .
  This package provides the pool manager service.
 
+Package: designate-zone-manager
+Architecture: all
+Depends: designate-common (= ${binary:Version}),
+         python-designate (= ${binary:Version}),
+         ${misc:Depends},
+         ${python:Depends},
+Description: OpenStack DNS as a Service - zone manager
+ Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
+ REST API for domain & record management. It is Integrated with Keystone for
+ authentication, and provides a framework in place to integrate with Nova and
+ Neutron notifications (for auto-generated records). Designate supports
+ PowerDNS and Bind9 out of the box.
+ .
+ This package provides the zone manager service.
+
 Package: designate-doc
 Section: doc
 Architecture: all
