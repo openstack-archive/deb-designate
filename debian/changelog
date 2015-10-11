@@ -1,5 +1,7 @@
-designate (1:1.0.0~rc1-2) experimental; urgency=medium
+designate (1:1.0.0~rc2-1) experimental; urgency=medium
 
+  * New upstream release.
+  * Added BSD license for designate/api/v2/controllers/rest.py.
   * Added designate-zone-manager service which was missing.
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 02 Oct 2015 14:00:40 +0200
