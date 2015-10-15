@@ -1,5 +1,6 @@
-designate (1:1.0.0~rc2-2) UNRELEASED; urgency=medium
+designate (1:1.0.0-1) experimental; urgency=medium
 
+  * New upstream release.
   * Added python-pymysql as runtime dependency.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 13 Oct 2015 15:00:14 +0200
