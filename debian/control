@@ -171,6 +171,7 @@ Architecture: all
 Depends: adduser,
          designate-common (= ${binary:Version}),
          python-openstackclient,
+         q-text-as-data,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - API server
