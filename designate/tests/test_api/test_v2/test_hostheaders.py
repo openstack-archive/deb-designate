@@ -27,7 +27,7 @@ class ApiV2HostHeadersTest(ApiV2TestCase):
 
     def test_host_header(self):
         # Create a zone with host header
-        fixture = self.get_domain_fixture(fixture=0)
+        fixture = self.get_zone_fixture(fixture=0)
         response = self.client.post_json('/zones/',
                                          fixture,
                                          headers={'Host': 'testhost.com'})
@@ -36,8 +36,8 @@ class ApiV2HostHeadersTest(ApiV2TestCase):
         self.assertEqual('application/json', response.content_type)
 
         # Check the host request header url
-        self.assertTrue('http://testhost.com/zones/' in
-                response.json_body['links']['self'])
+        self.assertIn('http://testhost.com/zones/',
+                      response.json_body['links']['self'])
 
         # Get zone with host header
         response = self.client.get('/zones/',
@@ -48,5 +48,5 @@ class ApiV2HostHeadersTest(ApiV2TestCase):
         self.assertEqual('application/json', response.content_type)
 
         # Check the host request header url
-        self.assertTrue('http://testhost.com/zones' in
-                response.json_body['links']['self'])
+        self.assertIn('http://testhost.com/zones',
+                      response.json_body['links']['self'])

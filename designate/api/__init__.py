@@ -21,17 +21,17 @@ cfg.CONF.register_group(cfg.OptGroup(
 ))
 
 cfg.CONF.register_opts([
-    cfg.IntOpt('workers', default=None,
+    cfg.IntOpt('workers',
                help='Number of api worker processes to spawn'),
     cfg.IntOpt('threads', default=1000,
                help='Number of api greenthreads to spawn'),
     cfg.BoolOpt('enable-host-header', default=False,
                help='Enable host request headers'),
     cfg.StrOpt('api-base-uri', default='http://127.0.0.1:9001/'),
-    cfg.StrOpt('api_host', default='0.0.0.0',
-               help='API Host'),
-    cfg.IntOpt('api_port', default=9001,
-               help='API Port Number'),
+    cfg.IPOpt('api_host', default='0.0.0.0',
+              help='API Host'),
+    cfg.PortOpt('api_port', default=9001,
+                help='API Port Number'),
     cfg.StrOpt('api_paste_config', default='api-paste.ini',
                help='File name for the paste.deploy config for designate-api'),
     cfg.StrOpt('auth_strategy', default='keystone',

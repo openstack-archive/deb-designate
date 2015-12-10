@@ -53,10 +53,18 @@ class KeystoneV2AuthProviderNoToken(KeystoneV2AuthProviderWithOverridableUrl):
 class BaseDesignateClient(RestClient):
 
     def __init__(self, with_token=True):
+        no_cert_check = cfg.CONF.testconfig.disable_ssl_certificate_validation
+
+        interface = cfg.CONF.designate.interface
+        if not interface.endswith('URL'):
+            interface += "URL"
+
         super(BaseDesignateClient, self).__init__(
             auth_provider=self.get_auth_provider(with_token),
-            service='dns',
-            region=cfg.CONF.identity.region
+            service=cfg.CONF.designate.service,
+            region=cfg.CONF.identity.region,
+            disable_ssl_certificate_validation=no_cert_check,
+            endpoint_type=interface
         )
 
     def get_auth_provider(self, with_token=True):
@@ -184,3 +192,18 @@ class ClientMixin(object):
             )
             first = False
         return url
+
+    def create_uri(self, path, filters=None):
+        url_pattern = cfg.CONF.testconfig.v2_path_pattern
+        params = {
+            'path': path,
+            'tenant_id': self.client.tenant_id,
+            'tenant_name': self.client.tenant_name,
+            'user': self.client.user,
+            'user_id': self.client.user_id,
+        }
+        uri = url_pattern.format(**params)
+        uri.replace('//', '/')
+        if filters:
+            uri = self.add_filters(uri, filters)
+        return uri

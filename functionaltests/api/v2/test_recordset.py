@@ -75,6 +75,7 @@ class RecordsetTest(DesignateV2Test):
     def setUp(self):
         super(RecordsetTest, self).setUp()
         self.increase_quotas(user='default')
+        self.ensure_tld_exists('com')
         self.zone = self.useFixture(ZoneFixture()).created_zone
 
     def test_list_recordsets(self):
@@ -82,7 +83,7 @@ class RecordsetTest(DesignateV2Test):
         self.useFixture(RecordsetFixture(self.zone.id, post_model))
         resp, model = RecordsetClient.as_user('default') \
             .list_recordsets(self.zone.id)
-        self.assertEqual(resp.status, 200)
+        self.assertEqual(200, resp.status)
         self.assertGreater(len(model.recordsets), 0)
 
     def assert_dns(self, model):
@@ -120,11 +121,11 @@ class RecordsetTest(DesignateV2Test):
         del put_model.name  # don't try to update the name
         resp, put_resp_model = RecordsetClient.as_user('default') \
             .put_recordset(self.zone.id, recordset_id, put_model)
-        self.assertEqual(resp.status, 202, "on put response")
-        self.assertEqual(put_resp_model.status, "PENDING")
-        self.assertEqual(put_resp_model.name, post_model.name)
-        self.assertEqual(put_resp_model.records, put_model.records)
-        self.assertEqual(put_resp_model.ttl, put_model.ttl)
+        self.assertEqual(202, resp.status, "on put response")
+        self.assertEqual("PENDING", put_resp_model.status)
+        self.assertEqual(post_model.name, put_resp_model.name)
+        self.assertEqual(put_model.records, put_resp_model.records)
+        self.assertEqual(put_model.ttl, put_resp_model.ttl)
 
         RecordsetClient.as_user('default').wait_for_recordset(
             self.zone.id, recordset_id)
@@ -134,7 +135,7 @@ class RecordsetTest(DesignateV2Test):
 
         resp, delete_resp_model = RecordsetClient.as_user('default') \
             .delete_recordset(self.zone.id, recordset_id)
-        self.assertEqual(resp.status, 202, "on delete response")
+        self.assertEqual(202, resp.status, "on delete response")
         RecordsetClient.as_user('default').wait_for_404(
             self.zone.id, recordset_id)
 
@@ -200,6 +201,7 @@ class RecordsetOwnershipTest(DesignateV2Test):
         super(RecordsetOwnershipTest, self).setUp()
         self.increase_quotas(user='default')
         self.increase_quotas(user='alt')
+        self.ensure_tld_exists('com')
 
     def test_no_create_recordset_by_alt_tenant(self):
         zone = self.useFixture(ZoneFixture(user='default')).created_zone

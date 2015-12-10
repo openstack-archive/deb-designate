@@ -19,6 +19,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 
 from designate import exceptions
+from designate import policy
 from designate import rpc
 from designate.i18n import _  # noqa
 from designate.i18n import _LI
@@ -35,8 +36,6 @@ class AkamaiCommands(base.Commands):
         super(AkamaiCommands, self).__init__()
         rpc.init(cfg.CONF)
         self.central_api = central_rpcapi.CentralAPI()
-
-        self.context.all_tenants = True
 
     def _get_config(self, pool_id, target_id):
         pool = pool_object.Pool.from_config(cfg.CONF, pool_id)
@@ -61,7 +60,11 @@ class AkamaiCommands(base.Commands):
         client = impl_akamai.EnhancedDNSClient(
             target.options.get("username"), target.options.get("password"))
 
-        zone = self.central_api.find_domain(self.context, {"name": zone_name})
+        # Bug 1519356 - Init policy after configuration has been read
+        policy.init()
+        self.context.all_tenants = True
+
+        zone = self.central_api.find_zone(self.context, {"name": zone_name})
         akamai_zone = client.getZone(zone_name)
 
         print("Designate zone\n%s" % pformat(zone.to_dict()))
@@ -70,19 +73,23 @@ class AkamaiCommands(base.Commands):
     @base.args('pool-id', help="Pool to Sync", type=str)
     @base.args('pool-target-id', help="Pool Target to Sync", type=str)
     @base.args('--batch-size', default=20, type=int)
-    def sync_domains(self, pool_id, pool_target_id, batch_size):
+    def sync_zones(self, pool_id, pool_target_id, batch_size):
         pool, target = self._get_config(pool_id, pool_target_id)
 
         client = impl_akamai.EnhancedDNSClient(
             target.options.get("username"), target.options.get("password"))
 
-        LOG.info(_LI("Doing batches of %i") % batch_size)
+        LOG.info(_LI("Doing batches of %i"), batch_size)
 
         criterion = {"pool_id": pool_id}
         marker = None
 
+        # Bug 1519356 - Init policy after configuration has been read
+        policy.init()
+        self.context.all_tenants = True
+
         while (marker is not False):
-            zones = self.central_api.find_domains(
+            zones = self.central_api.find_zones(
                 self.context, criterion, limit=batch_size, marker=marker)
             update = []
 
@@ -96,6 +103,6 @@ class AkamaiCommands(base.Commands):
                 z = impl_akamai.build_zone(client, target, zone)
                 update.append(z)
 
-            LOG.info(_LI('Uploading %d Zones') % len(update))
+            LOG.info(_LI('Uploading %d Zones'), len(update))
 
             client.setZones(update)

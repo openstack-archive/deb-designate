@@ -22,7 +22,7 @@ CONF.register_group(cfg.OptGroup(
 ))
 
 OPTS = [
-    cfg.IntOpt('workers', default=None,
+    cfg.IntOpt('workers',
                help='Number of Pool Manager worker processes to spawn'),
     cfg.IntOpt('threads', default=1000,
                help='Number of Pool Manager greenthreads to spawn'),
@@ -31,7 +31,7 @@ OPTS = [
                     'Pool Manager'),
     cfg.IntOpt('threshold-percentage', default=100,
                help='The percentage of servers requiring a successful update '
-                    'for a domain change to be considered active'),
+                    'for a zone change to be considered active'),
     cfg.IntOpt('poll-timeout', default=30,
                help='The time to wait for a response from a server'),
     cfg.IntOpt('poll-retry-interval', default=15,

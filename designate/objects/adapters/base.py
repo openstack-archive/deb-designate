@@ -178,7 +178,7 @@ class DesignateAdapter(object):
 
         except exceptions.InvalidObject:
             LOG.info(_LI("InvalidObject creating %(name)s with "
-                         "values %(values)r") %
+                         "values %(values)r"),
                      {"name": output_object.obj_name(), "values": values})
             raise
 
@@ -209,7 +209,7 @@ class DesignateAdapter(object):
                 ##############################################################
 
                 # Check if the field should be allowed change after it is
-                # initially set (eg domain name)
+                # initially set (eg zone name)
                 if cls.MODIFICATIONS['fields'][key].get('immutable', False):
                     if getattr(output_object, obj_key, False) and \
                             getattr(output_object, obj_key) != value:

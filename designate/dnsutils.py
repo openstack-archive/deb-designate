@@ -281,7 +281,7 @@ def from_dnspython_zone(dnspython_zone):
         'expire': soa[0].expire
     }
 
-    zone = objects.Domain(**values)
+    zone = objects.Zone(**values)
 
     rrsets = dnspyrecords_to_recordsetlist(dnspython_zone.nodes)
     zone.recordsets = rrsets
@@ -336,7 +336,7 @@ def do_axfr(zone_name, servers, timeout=None, source=None):
         to = eventlet.Timeout(timeout)
         log_info = {'name': zone_name, 'host': srv}
         try:
-            LOG.info(_LI("Doing AXFR for %(name)s from %(host)s") % log_info)
+            LOG.info(_LI("Doing AXFR for %(name)s from %(host)s"), log_info)
 
             xfr = dns.query.xfr(srv['host'], zone_name, relativize=False,
                                 timeout=1, port=srv['port'], source=source)
@@ -348,7 +348,7 @@ def do_axfr(zone_name, servers, timeout=None, source=None):
                 LOG.error(msg % log_info)
                 continue
         except dns.exception.FormError:
-            msg = _LE("Domain %(name)s is not present on %(host)s."
+            msg = _LE("Zone %(name)s is not present on %(host)s."
                       "Trying next server.")
             LOG.error(msg % log_info)
         except socket.error:

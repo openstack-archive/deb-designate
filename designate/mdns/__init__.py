@@ -23,14 +23,14 @@ cfg.CONF.register_group(cfg.OptGroup(
 ))
 
 OPTS = [
-    cfg.IntOpt('workers', default=None,
+    cfg.IntOpt('workers',
                help='Number of mdns worker processes to spawn'),
     cfg.IntOpt('threads', default=1000,
                help='Number of mdns greenthreads to spawn'),
-    cfg.StrOpt('host', default='0.0.0.0',
-               help='mDNS Bind Host'),
-    cfg.IntOpt('port', default=5354,
-               help='mDNS Port Number'),
+    cfg.IPOpt('host', default='0.0.0.0',
+              help='mDNS Bind Host'),
+    cfg.PortOpt('port', default=5354,
+                help='mDNS Port Number'),
     cfg.IntOpt('tcp-backlog', default=100,
                help='mDNS TCP Backlog'),
     cfg.FloatOpt('tcp-recv-timeout', default=0.5,

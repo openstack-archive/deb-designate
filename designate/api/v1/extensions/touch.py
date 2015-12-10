@@ -26,6 +26,6 @@ blueprint = flask.Blueprint('touch', __name__)
 def touch_domain(domain_id):
     context = flask.request.environ.get('context')
 
-    central_api.touch_domain(context, domain_id)
+    central_api.touch_zone(context, domain_id)
 
     return flask.Response(status=200)

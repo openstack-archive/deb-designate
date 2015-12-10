@@ -40,14 +40,15 @@ class AdminApiQuotasTest(AdminApiTestCase):
 
         self.assertIn('quota', response.json)
         self.assertIn('zones', response.json['quota'])
+        self.assertIn('api_export_size', response.json['quota'])
         self.assertIn('zone_records', response.json['quota'])
         self.assertIn('zone_recordsets', response.json['quota'])
         self.assertIn('recordset_records', response.json['quota'])
 
         max_zones = response.json['quota']['zones']
         max_zone_records = response.json['quota']['zone_records']
-        self.assertEqual(cfg.CONF.quota_domains, max_zones)
-        self.assertEqual(cfg.CONF.quota_domain_records, max_zone_records)
+        self.assertEqual(cfg.CONF.quota_zones, max_zones)
+        self.assertEqual(cfg.CONF.quota_zone_records, max_zone_records)
 
     def test_patch_quotas(self):
         self.policy({'set_quotas': '@'})

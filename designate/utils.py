@@ -32,8 +32,6 @@ from oslo_utils import timeutils
 from designate import exceptions
 from designate.i18n import _
 from designate.i18n import _LI
-from designate.openstack.common.report import guru_meditation_report as gmr
-from designate import version as designate_version
 
 
 LOG = logging.getLogger(__name__)
@@ -52,9 +50,9 @@ cfg.CONF.register_group(cfg.OptGroup(
 ))
 
 proxy_opts = [
-    cfg.StrOpt('http_proxy', default=None,
+    cfg.StrOpt('http_proxy',
                help='Proxy HTTP requests via this proxy.'),
-    cfg.StrOpt('https_proxy', default=None,
+    cfg.StrOpt('https_proxy',
                help='Proxy HTTPS requests via this proxy'),
     cfg.ListOpt('no_proxy', default=[],
                 help='These addresses should not be proxied')
@@ -394,10 +392,6 @@ def cache_result(function):
     return wrapper
 
 
-def setup_gmr(log_dir=None):
-    gmr.TextGuruMeditation.setup_autorun(designate_version, log_dir=log_dir)
-
-
 def split_host_port(string, default_port=53):
     try:
         (host, port) = string.split(':', 1)
@@ -459,7 +453,7 @@ def get_paging_params(params, sort_keys):
 
 def bind_tcp(host, port, tcp_backlog, tcp_keepidle=None):
     # Bind to the TCP port
-    LOG.info(_LI('Opening TCP Listening Socket on %(host)s:%(port)d') %
+    LOG.info(_LI('Opening TCP Listening Socket on %(host)s:%(port)d'),
              {'host': host, 'port': port})
     sock_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -486,7 +480,7 @@ def bind_tcp(host, port, tcp_backlog, tcp_keepidle=None):
 
 def bind_udp(host, port):
     # Bind to the UDP port
-    LOG.info(_LI('Opening UDP Listening Socket on %(host)s:%(port)d') %
+    LOG.info(_LI('Opening UDP Listening Socket on %(host)s:%(port)d'),
              {'host': host, 'port': port})
     sock_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

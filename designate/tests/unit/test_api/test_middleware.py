@@ -89,8 +89,8 @@ class KeystoneContextMiddlewareTest(oslotest.base.BaseTestCase):
 
         self.app(self.request)
 
-        self.assertFalse('all_tenants' in self.request.params)
-        self.assertEqual(self.ctxt.all_tenants, True)
+        self.assertNotIn('all_tenants', self.request.params)
+        self.assertTrue(self.ctxt.all_tenants)
 
     def test_all_tenants_in_params(self):
         self.request.headers.update({
@@ -101,8 +101,8 @@ class KeystoneContextMiddlewareTest(oslotest.base.BaseTestCase):
 
         self.app(self.request)
 
-        self.assertFalse('all_tenants' in self.request.params)
-        self.assertEqual(self.ctxt.all_tenants, True)
+        self.assertNotIn('all_tenants', self.request.params)
+        self.assertTrue(self.ctxt.all_tenants)
 
     def test_all_tenants_not_set(self):
         self.request.headers.update({
@@ -122,7 +122,7 @@ class KeystoneContextMiddlewareTest(oslotest.base.BaseTestCase):
 
         self.app(self.request)
 
-        self.assertFalse('edit_managed_records' in self.request.params)
+        self.assertNotIn('edit_managed_records', self.request.params)
         self.assertTrue(self.ctxt.edit_managed_records)
 
     def test_edit_managed_records_in_headers(self):
@@ -158,21 +158,21 @@ class SSLMiddlewareTest(oslotest.base.BaseTestCase):
         self.request.environ['HTTP_X_FORWARDED_PROTO'] = 'poo'
         self.app(self.request)
 
-        self.assertEqual(self.request.environ['wsgi.url_scheme'], 'poo')
+        self.assertEqual('poo', self.request.environ['wsgi.url_scheme'])
 
     def test_http_header(self):
         self.request.environ['wsgi.url_scheme'] = ''
         self.request.environ['HTTP_X_FORWARDED_PROTO'] = 'http'
         self.app(self.request)
 
-        self.assertEqual(self.request.environ['wsgi.url_scheme'], 'http')
+        self.assertEqual('http', self.request.environ['wsgi.url_scheme'])
 
     def test_https_header(self):
         self.request.environ['wsgi.url_scheme'] = 'http'
         self.request.environ['HTTP_X_FORWARDED_PROTO'] = 'https'
         self.app(self.request)
 
-        self.assertEqual(self.request.environ['wsgi.url_scheme'], 'https')
+        self.assertEqual('https', self.request.environ['wsgi.url_scheme'])
 
     def test_override_proto(self):
         self.request.environ['wsgi.url_scheme'] = 'http'
@@ -181,4 +181,4 @@ class SSLMiddlewareTest(oslotest.base.BaseTestCase):
 
         self.app(self.request)
 
-        self.assertEqual(self.request.environ['wsgi.url_scheme'], 'poo')
+        self.assertEqual('poo', self.request.environ['wsgi.url_scheme'])

@@ -124,8 +124,8 @@ class DesignateContext(context.RequestContext):
 
         policy.check('use_sudo', self)
 
-        LOG.info(_LI('Accepted sudo from user %(user)s to tenant %(tenant)s')
-                 % {'user': self.user, 'tenant': tenant})
+        LOG.info(_LI('Accepted sudo from user %(user)s to tenant %(tenant)s'),
+                 {'user': self.user, 'tenant': tenant})
         self.original_tenant = self.tenant
         self.tenant = tenant
 
@@ -169,7 +169,7 @@ class DesignateContext(context.RequestContext):
     @abandon.setter
     def abandon(self, value):
         if value:
-            policy.check('abandon_domain', self)
+            policy.check('abandon_zone', self)
         self._abandon = value
 
     @property

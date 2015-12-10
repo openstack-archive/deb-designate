@@ -81,14 +81,14 @@ class Service(service.RPCService, coordination.CoordinationMixin,
             self.tg.add_timer(interval, task)
 
     def _rebalance(self, my_partitions, members, event):
-        LOG.info(_LI("Received rebalance event %s") % event)
+        LOG.info(_LI("Received rebalance event %s"), event)
         self.partition_range = my_partitions
 
     # Begin RPC Implementation
 
     # Zone Export
-    def start_zone_export(self, context, domain, export):
-        criterion = {'domain_id': domain.id}
+    def start_zone_export(self, context, zone, export):
+        criterion = {'zone_id': zone.id}
         count = self.storage.count_recordsets(context, criterion)
 
         export = self._determine_export_method(context, export, count)
@@ -139,11 +139,11 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         return export
 
     def _export_zone(self, context, zone_id):
-        domain = self.central_api.get_domain(context, zone_id)
+        zone = self.central_api.get_zone(context, zone_id)
 
-        criterion = {'domain_id': zone_id}
+        criterion = {'zone_id': zone_id}
         recordsets = self.storage.find_recordsets_export(context, criterion)
 
         return utils.render_template('export-zone.jinja2',
-                                     domain=domain,
+                                     zone=zone,
                                      recordsets=recordsets)

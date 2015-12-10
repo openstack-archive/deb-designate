@@ -13,6 +13,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+from debtcollector import removals
 import flask
 import webob.dec
 from oslo_config import cfg
@@ -47,7 +48,6 @@ cfg.CONF.register_opts([
                     "the original request protocol scheme was, even if it was "
                     "removed by an SSL terminating proxy."),
     cfg.StrOpt('override-proto',
-               default=None,
                help="A scheme that will be used to override "
                     "the request protocol scheme, even if it was "
                     "set by an SSL terminating proxy.")
@@ -62,7 +62,7 @@ def auth_pipeline_factory(loader, global_conf, **local_conf):
     """
     pipeline = local_conf[cfg.CONF['service:api'].auth_strategy]
     pipeline = pipeline.split()
-    LOG.info(_LI('Getting auth pipeline: %s') % pipeline[:-1])
+    LOG.info(_LI('Getting auth pipeline: %s'), pipeline[:-1])
     filters = [loader.get_filter(n) for n in pipeline[:-1]]
     app = loader.get_app(pipeline[-1])
     filters.reverse()
@@ -378,6 +378,8 @@ class SSLMiddleware(base.Middleware):
 
     Code nabbed from Heat.
     """
+    # Replaced by oslo.middleware's http_proxy_to_wsgi middleware
+    @removals.remove
     def __init__(self, application):
         super(SSLMiddleware, self).__init__(application)
         LOG.info(_LI('Starting designate ssl middleware'))

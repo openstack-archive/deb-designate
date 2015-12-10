@@ -35,15 +35,16 @@ class ZoneTest(DesignateV2Test):
     def setUp(self):
         super(ZoneTest, self).setUp()
         self.increase_quotas(user='default')
+        self.ensure_tld_exists('com')
         self.fixture = self.useFixture(ZoneFixture(user='default'))
 
     def test_list_zones(self):
         resp, model = ZoneClient.as_user('default').list_zones()
-        self.assertEqual(resp.status, 200)
+        self.assertEqual(200, resp.status)
         self.assertGreater(len(model.zones), 0)
 
     def test_create_zone(self):
-        self.assertEqual(self.fixture.post_resp.status, 202)
+        self.assertEqual(202, self.fixture.post_resp.status)
 
     def test_update_zone(self):
         old_model = self.fixture.created_zone
@@ -52,20 +53,20 @@ class ZoneTest(DesignateV2Test):
         del patch_model.name  # don't try to override the zone name
         resp, new_model = ZoneClient.as_user('default').patch_zone(
             old_model.id, patch_model)
-        self.assertEqual(resp.status, 202)
+        self.assertEqual(202, resp.status)
         ZoneClient.as_user('default').wait_for_zone(new_model.id)
 
         resp, model = ZoneClient.as_user('default').get_zone(new_model.id)
-        self.assertEqual(resp.status, 200)
-        self.assertEqual(new_model.id, old_model.id)
-        self.assertEqual(new_model.name, old_model.name)
-        self.assertEqual(new_model.ttl, patch_model.ttl)
-        self.assertEqual(new_model.email, patch_model.email)
+        self.assertEqual(200, resp.status)
+        self.assertEqual(old_model.id, new_model.id)
+        self.assertEqual(old_model.name, new_model.name)
+        self.assertEqual(patch_model.ttl, new_model.ttl)
+        self.assertEqual(patch_model.email, new_model.email)
 
     def test_delete_zone(self):
         client = ZoneClient.as_user('default')
         resp, model = client.delete_zone(self.fixture.created_zone.id)
-        self.assertEqual(resp.status, 202)
+        self.assertEqual(202, resp.status)
         client.wait_for_zone_404(model.id)
 
 
@@ -75,6 +76,7 @@ class ZoneOwnershipTest(DesignateV2Test):
         super(ZoneTest, self).setUp()
         self.increase_quotas(user='default')
         self.increase_quotas(user='alt')
+        self.ensure_tld_exists('com')
 
     def test_no_create_duplicate_domain(self):
         post_model = self.useFixture(ZoneFixture(user='default')).post_model
@@ -105,6 +107,7 @@ class ZoneImportTest(DesignateV2Test):
     def setUp(self):
         super(ZoneImportTest, self).setUp()
         self.increase_quotas(user='default')
+        self.ensure_tld_exists('com')
 
     def test_import_domain(self):
         user = 'default'
@@ -115,8 +118,8 @@ class ZoneImportTest(DesignateV2Test):
         import_id = fixture.zone_import.id
 
         resp, model = import_client.get_zone_import(import_id)
-        self.assertEqual(resp.status, 200)
-        self.assertEqual(model.status, 'COMPLETE')
+        self.assertEqual(200, resp.status)
+        self.assertEqual('COMPLETE', model.status)
         self.addCleanup(ZoneFixture.cleanup_zone, zone_client, model.zone_id)
 
         # Wait for the zone to become 'ACTIVE'
@@ -134,6 +137,7 @@ class ZoneExportTest(DesignateV2Test):
     def setUp(self):
         super(ZoneExportTest, self).setUp()
         self.increase_quotas(user='default')
+        self.ensure_tld_exists('com')
 
     def test_export_domain(self):
         user = 'default'
@@ -146,14 +150,14 @@ class ZoneExportTest(DesignateV2Test):
         export_client = ZoneExportClient.as_user(user)
 
         resp, model = export_client.get_zone_export(export_id)
-        self.assertEqual(resp.status, 200)
-        self.assertEqual(model.status, 'COMPLETE')
+        self.assertEqual(200, resp.status)
+        self.assertEqual('COMPLETE', model.status)
 
         # fetch the zone file
         resp, zone_file = export_client.get_exported_zone(export_id)
-        self.assertEqual(resp.status, 200)
-        self.assertEqual(zone_file.origin, zone.name)
-        self.assertEqual(zone_file.ttl, zone.ttl)
+        self.assertEqual(200, resp.status)
+        self.assertEqual(zone.name, zone_file.origin)
+        self.assertEqual(zone.ttl, zone_file.ttl)
 
         # the list of records in the zone file must match the zone's recordsets
         # (in this case there should be only two records - a SOA and an NS?)

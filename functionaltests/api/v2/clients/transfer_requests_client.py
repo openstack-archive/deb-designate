@@ -23,24 +23,22 @@ from functionaltests.common.client import ClientMixin
 
 class TransferRequestClient(ClientMixin):
 
-    @classmethod
-    def create_transfer_requests_uri(cls, zone_id, filters=None):
-        url = "/v2/zones/{0}/tasks/transfer_requests".format(zone_id)
-        if filters:
-            url = cls.add_filters(url, filters)
-        return url
+    def create_transfer_requests_uri(self, zone_id, filters=None):
+        return self.create_uri(
+            "/zones/{0}/tasks/transfer_requests".format(zone_id),
+            filters=filters,
+        )
 
-    @classmethod
-    def transfer_requests_uri(cls, filters=None):
-        url = "/v2/zones/tasks/transfer_requests"
-        if filters:
-            url = cls.add_filters(url, filters)
-        return url
+    def transfer_requests_uri(self, filters=None):
+        return self.create_uri(
+            "/zones/tasks/transfer_requests",
+            filters=filters,
+        )
 
-    @classmethod
-    def transfer_request_uri(cls, transfer_request_id):
-        return "/v2/zones/tasks/transfer_requests/{0}".format(
-            transfer_request_id)
+    def transfer_request_uri(self, transfer_request_id):
+        return self.create_uri(
+            "/zones/tasks/transfer_requests/{0}".format(transfer_request_id)
+        )
 
     def list_transfer_requests(self, filters=None, **kwargs):
         resp, body = self.client.get(

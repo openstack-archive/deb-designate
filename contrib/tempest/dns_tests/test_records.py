@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import six
 from tempest.api.dns import base
 from tempest.common.utils import data_utils
 from tempest import exceptions
@@ -30,7 +31,7 @@ class RecordsTest(base.BaseDnsTest):
         cls.setup_records = list()
         name = data_utils.rand_name('domain') + '.com.'
         email = data_utils.rand_name('dns') + '@testmail.com'
-        _, cls.domain = cls.dns_domains_client.create_domain(name, email)
+        _, cls.domain = cls.dns_domains_client.create_zone(name, email)
         # Creates a record with type as A
         r_name = 'www.' + name
         data1 = "192.0.2.3"
@@ -49,7 +50,7 @@ class RecordsTest(base.BaseDnsTest):
     def tearDownClass(cls):
         for record in cls.setup_records:
             cls.client.delete_record(cls.domain['id'], record['id'])
-        cls.dns_domains_client.delete_domain(cls.domain['id'])
+        cls.dns_domains_client.delete_zone(cls.domain['id'])
 
     def _delete_record(self, domain_id, record_id):
         self.client.delete_record(domain_id, record_id)
@@ -62,15 +63,16 @@ class RecordsTest(base.BaseDnsTest):
         _, records = self.client.list_records(self.domain['id'])
         # Verify records created in setup class are in the list
         for record in self.setup_records:
-            self.assertIn(record['id'], map(lambda x: x['id'], records))
+            self.assertIn(record['id'],
+                          six.moves.map(lambda x: x['id'], records))
 
     @test.attr(type='smoke')
     def test_create_update_get_delete_record(self):
-        # Create Domain
+        # Create Zone
         name = data_utils.rand_name('domain') + '.com.'
         email = data_utils.rand_name('dns') + '@testmail.com'
-        _, domain = self.dns_domains_client.create_domain(name, email)
-        self.addCleanup(self.dns_domains_client.delete_domain, domain['id'])
+        _, domain = self.dns_domains_client.create_zone(name, email)
+        self.addCleanup(self.dns_domains_client.delete_zone, domain['id'])
         # Create Record
         r_name = 'www.' + name
         r_data = "192.0.2.4"

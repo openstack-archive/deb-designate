@@ -26,6 +26,10 @@ cfg.CONF.register_group(cfg.OptGroup(
     name='noauth', title="Configuration to run tests without Keystone"
 ))
 
+cfg.CONF.register_group(cfg.OptGroup(
+    name='testconfig', title="Configuration to customize how the tests run"
+))
+
 cfg.CONF.register_opts([
     cfg.StrOpt('designate_override_url',
                help="Use this instead of the endpoint in the service catalog"),
@@ -33,7 +37,7 @@ cfg.CONF.register_opts([
     cfg.StrOpt('uri', help="The Keystone v2 endpoint"),
     cfg.StrOpt('uri_v3', help="The Keystone v3 endpoint"),
     cfg.StrOpt('auth_version', default='v2'),
-    cfg.StrOpt('region', default='RegionOne'),
+    cfg.StrOpt('region'),
 
     cfg.StrOpt('username'),
     cfg.StrOpt('tenant_name'),
@@ -59,10 +63,20 @@ cfg.CONF.register_opts([
     cfg.BoolOpt('use_noauth', default=False),
 ], group='noauth')
 
+cfg.CONF.register_opts([
+    cfg.ListOpt('nameservers', default=["127.0.0.1:53"]),
+    cfg.StrOpt('interface', default='public'),
+    cfg.StrOpt('service', default='dns')
+], group="designate")
+
 
 cfg.CONF.register_opts([
-    cfg.ListOpt('nameservers', default=["127.0.0.1:53"])
-], group="designate")
+    cfg.StrOpt('v2_path_pattern', default='/v2/{path}',
+               help="Specifies how to build the path for the request"),
+    cfg.BoolOpt('no_admin_setup', default=False,
+                help="Skip admin actions (like increasing quotas) in setUp()"),
+    cfg.BoolOpt('disable_ssl_certificate_validation', default=False),
+], group='testconfig')
 
 
 def find_config_file():

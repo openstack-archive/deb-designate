@@ -22,16 +22,17 @@ from functionaltests.common.models import ZoneFile
 
 class ZoneExportClient(ClientMixin):
 
-    @classmethod
-    def zone_exports_uri(cls, filters=None):
-        url = "/v2/zones/tasks/exports"
-        if filters:
-            url = cls.add_filters(url, filters)
-        return url
+    def zone_exports_uri(self, filters=None):
+        return self.create_uri("/zones/tasks/exports", filters=filters)
 
-    @classmethod
-    def zone_export_uri(cls, id):
-        return "{0}/{1}".format(cls.zone_exports_uri(), id)
+    def create_zone_export_uri(self, zone_id, filters=None):
+        return self.create_uri(
+            "/zones/{0}/tasks/export".format(zone_id),
+            filters=filters,
+        )
+
+    def zone_export_uri(self, id):
+        return "{0}/{1}".format(self.zone_exports_uri(), id)
 
     def list_zone_exports(self, filters=None, **kwargs):
         resp, body = self.client.get(
@@ -43,7 +44,7 @@ class ZoneExportClient(ClientMixin):
         return self.deserialize(resp, body, ZoneExportModel)
 
     def get_exported_zone(self, id, **kwargs):
-        uri = "/v2/zones/tasks/exports/{0}/export".format(id)
+        uri = "{0}/export".format(self.zone_export_uri(id))
         headers = {'Accept': 'text/dns'}
         resp, body = self.client.get(uri, headers=headers)
         if resp.status < 400:
@@ -51,7 +52,7 @@ class ZoneExportClient(ClientMixin):
         return resp, body
 
     def post_zone_export(self, zone_id, **kwargs):
-        uri = "/v2/zones/{0}/tasks/export".format(zone_id)
+        uri = self.create_zone_export_uri(zone_id)
         resp, body = self.client.post(uri, body='', **kwargs)
         return self.deserialize(resp, body, ZoneExportModel)
 

@@ -20,14 +20,14 @@ cfg.CONF.register_group(cfg.OptGroup(
 ))
 
 OPTS = [
-    cfg.IntOpt('workers', default=None,
+    cfg.IntOpt('workers',
                help='Number of agent worker processes to spawn'),
     cfg.IntOpt('threads', default=1000,
                help='Number of agent greenthreads to spawn'),
-    cfg.StrOpt('host', default='0.0.0.0',
-               help='The Agent Bind Host'),
-    cfg.IntOpt('port', default=5358,
-               help='mDNS Port Number'),
+    cfg.IPOpt('host', default='0.0.0.0',
+              help='The Agent Bind Host'),
+    cfg.PortOpt('port', default=5358,
+                help='mDNS Port Number'),
     cfg.IntOpt('tcp-backlog', default=100,
                help='The Agent TCP Backlog'),
     cfg.FloatOpt('tcp-recv-timeout', default=0.5,
@@ -38,7 +38,7 @@ OPTS = [
                 help='List of masters for the Agent, format ip:port'),
     cfg.StrOpt('backend-driver', default='bind9',
                help='The backend driver to use'),
-    cfg.StrOpt('transfer-source', default=None,
+    cfg.StrOpt('transfer-source',
                help='An IP address to be used to fetch zones transferred in'),
     cfg.FloatOpt('notify-delay', default=0.0,
                help='Delay after a NOTIFY arrives for a zone that the Agent '
