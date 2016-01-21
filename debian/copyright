@@ -3,13 +3,13 @@ Upstream-Name: designate
 Upstream-Contact: OpenStack Development Mailing List <openstack-dev@lists.openstack.org>
 Source: git://github.com/stackforge/designate.git
 
-Files: debian/*
-Copyright: (c) 2013, Hewlett-Packard Development Company, L.P.
-           (c) 2013, Thomas Goirand <zigo@debian.org>
-License: Apache-2.0
-
 Files: *
 Copyright: (c) 2013 Designate Developers
+License: Apache-2.0
+
+Files: debian/*
+Copyright: (c) 2013, Hewlett-Packard Development Company, L.P.
+           (c) 2013-2016, Thomas Goirand <zigo@debian.org>
 License: Apache-2.0
 
 Files: designate/api/v2/controllers/rest.py

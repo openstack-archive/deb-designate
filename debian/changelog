@@ -4,6 +4,7 @@ designate (1:2.0.0~b2-1) experimental; urgency=medium
   * Fixed (build-)depends for this release.
   * Black list unit test:
     - PoolManagerInitTest.test_init_no_pool_targets
+  * Fixed debian/copyright ordering.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 10 Dec 2015 18:03:30 +0100
 
