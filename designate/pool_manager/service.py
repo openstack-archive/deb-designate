@@ -42,7 +42,7 @@ CONF = cfg.CONF
 
 SUCCESS_STATUS = 'SUCCESS'
 ERROR_STATUS = 'ERROR'
-NO_DOMAIN_STATUS = 'NO_DOMAIN'
+NO_ZONE_STATUS = 'NO_ZONE'
 CREATE_ACTION = 'CREATE'
 DELETE_ACTION = 'DELETE'
 UPDATE_ACTION = 'UPDATE'
@@ -103,7 +103,7 @@ class Service(service.RPCService, coordination.CoordinationMixin,
             # Fetch an instance of the Backend class, passing in the options
             # and masters
             self.target_backends[target.id] = backend.get_backend(
-                    target.type, target)
+                target.type, target)
 
         LOG.info(_LI('%d targets setup'), len(self.pool.targets))
 
@@ -138,18 +138,16 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         self._pool_election.start()
 
         if CONF['service:pool_manager'].enable_recovery_timer:
-            LOG.info(_LI('Starting periodic recovery timer'))
-            self.tg.add_timer(
-                CONF['service:pool_manager'].periodic_recovery_interval,
-                self.periodic_recovery,
-                CONF['service:pool_manager'].periodic_recovery_interval)
+            interval = CONF['service:pool_manager'].periodic_recovery_interval
+            LOG.info(_LI('Starting periodic recovery timer every'
+                         ' %(interval)s s') % {'interval': interval})
+            self.tg.add_timer(interval, self.periodic_recovery, interval)
 
         if CONF['service:pool_manager'].enable_sync_timer:
-            LOG.info(_LI('Starting periodic synchronization timer'))
-            self.tg.add_timer(
-                CONF['service:pool_manager'].periodic_sync_interval,
-                self.periodic_sync,
-                CONF['service:pool_manager'].periodic_sync_interval)
+            interval = CONF['service:pool_manager'].periodic_sync_interval
+            LOG.info(_LI('Starting periodic synchronization timer every'
+                         ' %(interval)s s') % {'interval': interval})
+            self.tg.add_timer(interval, self.periodic_sync, interval)
 
     def stop(self):
         self._pool_election.stop()
@@ -167,80 +165,83 @@ class Service(service.RPCService, coordination.CoordinationMixin,
     def mdns_api(self):
         return mdns_api.MdnsAPI.get_instance()
 
+    def _get_admin_context_all_tenants(self):
+        return DesignateContext.get_admin_context(all_tenants=True)
+
     # Periodioc Tasks
     def periodic_recovery(self):
         """
+        Runs only on the pool leader
         :return: None
         """
-        # NOTE(kiall): Only run this periodic task on the pool leader
-        if self._pool_election.is_leader:
-            context = DesignateContext.get_admin_context(all_tenants=True)
+        if not self._pool_election.is_leader:
+            return
 
-            LOG.debug("Starting Periodic Recovery")
+        context = self._get_admin_context_all_tenants()
+        LOG.debug("Starting Periodic Recovery")
 
-            try:
-                # Handle Deletion Failures
-                zones = self._get_failed_zones(context, DELETE_ACTION)
+        try:
+            # Handle Deletion Failures
+            zones = self._get_failed_zones(context, DELETE_ACTION)
+            LOG.info(_LI("periodic_recovery:delete_zone needed on %d zones"),
+                     len(zones))
+            for zone in zones:
+                self.delete_zone(context, zone)
 
-                for zone in zones:
-                    self.delete_zone(context, zone)
+            # Handle Creation Failures
+            zones = self._get_failed_zones(context, CREATE_ACTION)
+            LOG.info(_LI("periodic_recovery:create_zone needed on %d zones"),
+                     len(zones))
+            for zone in zones:
+                self.create_zone(context, zone)
 
-                # Handle Creation Failures
-                zones = self._get_failed_zones(context, CREATE_ACTION)
+            # Handle Update Failures
+            zones = self._get_failed_zones(context, UPDATE_ACTION)
+            LOG.info(_LI("periodic_recovery:update_zone needed on %d zones"),
+                     len(zones))
+            for zone in zones:
+                self.update_zone(context, zone)
 
-                for zone in zones:
-                    self.create_zone(context, zone)
-
-                # Handle Update Failures
-                zones = self._get_failed_zones(context, UPDATE_ACTION)
-
-                for zone in zones:
-                    self.update_zone(context, zone)
-
-            except Exception:
-                LOG.exception(_LE('An unhandled exception in periodic '
-                                  'recovery occurred'))
+        except Exception:
+            LOG.exception(_LE('An unhandled exception in periodic '
+                              'recovery occurred'))
 
     def periodic_sync(self):
-        """
+        """Periodically sync all the zones that are not in ERROR status
+        Runs only on the pool leader
         :return: None
         """
-        # NOTE(kiall): Only run this periodic task on the pool leader
-        if self._pool_election.is_leader:
-            context = DesignateContext.get_admin_context(all_tenants=True)
+        if not self._pool_election.is_leader:
+            return
 
-            LOG.debug("Starting Periodic Synchronization")
+        LOG.debug("Starting Periodic Synchronization")
+        context = self._get_admin_context_all_tenants()
+        zones = self._fetch_healthy_zones(context)
 
-            criterion = {
-                'pool_id': CONF['service:pool_manager'].pool_id,
-                'status': '!%s' % ERROR_STATUS
-            }
+        try:
+            for zone in zones:
+                # TODO(kiall): If the zone was created within the last
+                #              periodic_sync_seconds, attempt to recreate
+                #              to fill in targets which may have failed.
+                success = self.update_zone(context, zone)
+                if not success:
+                    self.central_api.update_status(context, zone.id,
+                                                   ERROR_STATUS, zone.serial)
 
-            periodic_sync_seconds = \
-                CONF['service:pool_manager'].periodic_sync_seconds
-
-            if periodic_sync_seconds is not None:
-                # Generate the current serial, will provide a UTC Unix TS.
-                current = utils.increment_serial()
-                criterion['serial'] = ">%s" % (current - periodic_sync_seconds)
-
-            zones = self.central_api.find_zones(context, criterion)
-
-            try:
-                for zone in zones:
-                    # TODO(kiall): If the zone was created within the last
-                    #              periodic_sync_seconds, attempt to recreate
-                    #              to fill in targets which may have failed.
-                    self.update_zone(context, zone)
-
-            except Exception:
-                LOG.exception(_LE('An unhandled exception in periodic '
-                                  'synchronization occurred.'))
+        except Exception:
+            LOG.exception(_LE('An unhandled exception in periodic '
+                              'synchronization occurred.'))
+            self.central_api.update_status(context, zone.id, ERROR_STATUS,
+                                           zone.serial)
 
     # Standard Create/Update/Delete Methods
 
     def create_zone(self, context, zone):
-        """
+        """Called by Central or by periodic_recovery, instruct the backends to
+        create a zone, then poll for consensus.
+        On success, send NOTIFY to also_notifies and nameservers
+        Finally, poll for zone serial number on nameservers.
+
         :param context: Security context information.
         :param zone: Zone to be created
         :return: None
@@ -258,14 +259,15 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         if self._exceed_or_meet_threshold(results.count(True)):
             LOG.debug('Consensus reached for creating zone %(zone)s '
                       'on pool targets' % {'zone': zone.name})
+            # The zone status will be updated asyncronously by MiniDNS
 
         else:
 
-            LOG.warn(_LW('Consensus not reached for creating zone %(zone)s'
+            LOG.warning(_LW('Consensus not reached for creating zone %(zone)s'
                          ' on pool targets') % {'zone': zone.name})
 
             self.central_api.update_status(
-                    context, zone.id, ERROR_STATUS, zone.serial)
+                context, zone.id, ERROR_STATUS, zone.serial)
 
             return
 
@@ -284,7 +286,8 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                 self.retry_interval, self.max_retries, self.delay)
 
     def _create_zone_on_target(self, context, target, zone):
-        """
+        """Called by create_zone, run create_zone on backends
+
         :param context: Security context information.
         :param target: Target to create Zone on
         :param zone: Zone to be created
@@ -302,44 +305,45 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                 return True
             except Exception:
                 retries += 1
-                LOG.exception(_LE("Failed to create zone %(zone)s on "
-                             "target %(target)s on attempt %(attempt)d"),
+                LOG.exception(_LE(
+                    "Failed to create zone %(zone)s on "
+                    "target %(target)s on attempt %(attempt)d"),
                         {
-                           'zone': zone.name,
-                           'target': target.id,
-                           'attempt': retries
-                        })
+                            'zone': zone.name,
+                            'target': target.id,
+                            'attempt': retries
+                        })  # noqa
                 time.sleep(self.retry_interval)
 
         return False
 
     def update_zone(self, context, zone):
-        """
+        """Update a zone across every pool target, check for consensus and
+        for propagation.
         :param context: Security context information.
         :param zone: Zone to be updated
-        :return: None
+        :return: consensus reached (bool)
         """
         LOG.info(_LI("Updating zone %s"), zone.name)
 
-        results = []
-
         # Update the zone on each of the Pool Targets
+        success_count = 0
         for target in self.pool.targets:
-            results.append(
-                self._update_zone_on_target(context, target, zone))
+            ok_status = self._update_zone_on_target(context, target, zone)
+            if ok_status:
+                success_count += 1
 
-        if self._exceed_or_meet_threshold(results.count(True)):
-            LOG.debug('Consensus reached for updating zone %(zone)s '
-                      'on pool targets' % {'zone': zone.name})
-
-        else:
-            LOG.warn(_LW('Consensus not reached for updating zone %(zone)s'
+        if not self._exceed_or_meet_threshold(success_count):
+            LOG.warning(_LW('Consensus not reached for updating zone %(zone)s'
                          ' on pool targets') % {'zone': zone.name})
+            self.central_api.update_status(context, zone.id, ERROR_STATUS,
+                                           zone.serial)
+            return False
 
-            self.central_api.update_status(
-                    context, zone.id, ERROR_STATUS, zone.serial)
+        LOG.debug('Consensus reached for updating zone %(zone)s '
+                  'on pool targets' % {'zone': zone.name})
 
-            return
+        # The zone status will be updated asyncronously by MiniDNS
 
         # Send a NOTIFY to each also-notifies
         for also_notify in self.pool.also_notifies:
@@ -349,8 +353,8 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         for nameserver in self.pool.nameservers:
             # See if there is already another update in progress
             try:
-                update_status = self.cache.retrieve(
-                    context, nameserver.id, zone.id, UPDATE_ACTION)
+                self.cache.retrieve(context, nameserver.id, zone.id,
+                                    UPDATE_ACTION)
             except exceptions.PoolManagerStatusNotFound:
                 update_status = self._build_status_object(
                     nameserver, zone, UPDATE_ACTION)
@@ -360,8 +364,10 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                 context, zone, nameserver, self.timeout,
                 self.retry_interval, self.max_retries, self.delay)
 
+        return True
+
     def _update_zone_on_target(self, context, target, zone):
-        """
+        """Instruct the appropriate backend to update a zone on a target
         :param context: Security context information.
         :param target: Target to update Zone on
         :param zone: Zone to be updated
@@ -415,14 +421,14 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                       'on pool targets' % {'zone': zone.name})
 
             self.central_api.update_status(
-                    context, zone.id, SUCCESS_STATUS, zone.serial)
+                context, zone.id, SUCCESS_STATUS, zone.serial)
 
         else:
-            LOG.warn(_LW('Consensus not reached for deleting zone %(zone)s'
+            LOG.warning(_LW('Consensus not reached for deleting zone %(zone)s'
                          ' on pool targets') % {'zone': zone.name})
 
             self.central_api.update_status(
-                    context, zone.id, ERROR_STATUS, zone.serial)
+                context, zone.id, ERROR_STATUS, zone.serial)
 
     def _delete_zone_on_target(self, context, target, zone):
         """
@@ -443,12 +449,13 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                 return True
             except Exception:
                 retries += 1
-                LOG.exception(_LE("Failed to delete zone %(zone)s on "
-                             "target %(target)s on attempt %(attempt)d"),
+                LOG.exception(_LE(
+                    "Failed to delete zone %(zone)s on "
+                    "target %(target)s on attempt %(attempt)d"),
                         {
-                           'zone': zone.name,
-                           'target': target.id,
-                           'attempt': retries
+                            'zone': zone.name,
+                            'target': target.id,
+                            'attempt': retries
                         })
                 time.sleep(self.retry_interval)
 
@@ -512,18 +519,18 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                 error_serial = self._get_error_serial(
                     context, zone, consensus_serial)
                 if error_serial > consensus_serial or error_serial == 0:
-                    LOG.warn(_LW('For zone %(zone)s '
+                    LOG.warning(_LW('For zone %(zone)s '
                                  'the error serial is %(error_serial)s.') %
                              {'zone': zone.name,
                               'error_serial': error_serial})
                     self.central_api.update_status(
                         context, zone.id, ERROR_STATUS, error_serial)
 
-            if status == NO_DOMAIN_STATUS and action != DELETE_ACTION:
-                LOG.warn(_LW('Zone %(zone)s is not present in some '
+            if status == NO_ZONE_STATUS and action != DELETE_ACTION:
+                LOG.warning(_LW('Zone %(zone)s is not present in some '
                              'targets') % {'zone': zone.name})
                 self.central_api.update_status(
-                    context, zone.id, NO_DOMAIN_STATUS, 0)
+                    context, zone.id, NO_ZONE_STATUS, 0)
 
             if consensus_serial == zone.serial and self._is_consensus(
                     context, zone, action, SUCCESS_STATUS,
@@ -535,9 +542,29 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         criterion = {
             'pool_id': CONF['service:pool_manager'].pool_id,
             'action': action,
-            'status': 'ERROR'
+            'status': ERROR_STATUS
         }
         return self.central_api.find_zones(context, criterion)
+
+    def _fetch_healthy_zones(self, context):
+        """Fetch all zones not in error
+        :return: :class:`ZoneList` zones
+        """
+        criterion = {
+            'pool_id': CONF['service:pool_manager'].pool_id,
+            'status': '!%s' % ERROR_STATUS
+        }
+
+        periodic_sync_seconds = \
+            CONF['service:pool_manager'].periodic_sync_seconds
+
+        if periodic_sync_seconds is not None:
+            # Generate the current serial, will provide a UTC Unix TS.
+            current = utils.increment_serial()
+            criterion['serial'] = ">%s" % (current - periodic_sync_seconds)
+
+        zones = self.central_api.find_zones(context, criterion)
+        return zones
 
     @staticmethod
     def _get_destination(nameserver):
@@ -548,10 +575,12 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         return (Decimal(count) / Decimal(total_count)) * Decimal(100)
 
     def _exceed_or_meet_threshold(self, count, threshold=None):
+        """Evaluate if count / the number of pool targets >= threshold
+        Used to implement consensus
+        """
         threshold = threshold or self.threshold
-
-        return self._percentage(
-            count, len(self.pool.targets)) >= Decimal(threshold)
+        perc = self._percentage(count, len(self.pool.targets))
+        return perc >= Decimal(threshold)
 
     @staticmethod
     def _get_sorted_serials(pool_manager_statuses, descending=False):
@@ -568,6 +597,10 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         return self._get_sorted_serials(pool_manager_statuses, descending=True)
 
     def _is_consensus(self, context, zone, action, status, threshold=None):
+        """Fetch zone status across all nameservers through MiniDNS and compare
+        it with the expected `status`
+        :return: consensus reached (bool)
+        """
         status_count = 0
         pool_manager_statuses = self._retrieve_statuses(
             context, zone, action)
@@ -609,6 +642,9 @@ class Service(service.RPCService, coordination.CoordinationMixin,
     # value the nameserver
     @staticmethod
     def _build_status_object(nameserver, zone, action):
+        """
+        :return: :class:`objects.PoolManagerStatus`
+        """
         values = {
             'nameserver_id': nameserver.id,
             'zone_id': zone.id,
@@ -643,6 +679,10 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                 pass
 
     def _retrieve_from_mdns(self, context, nameserver, zone, action):
+        """Instruct MiniDNS to get a zone serial number from a nameserver
+        Set error status if the zone is unexpectedly missing.
+        :return: :class:`objects.PoolManagerStatus` or None
+        """
         try:
             (status, actual_serial, retries) = \
                 self.mdns_api.get_serial_number(
@@ -659,18 +699,18 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         pool_manager_status = self._build_status_object(
             nameserver, zone, action)
 
-        if status == NO_DOMAIN_STATUS:
+        if status == NO_ZONE_STATUS:
             if action == CREATE_ACTION:
-                pool_manager_status.status = 'ERROR'
+                pool_manager_status.status = ERROR_STATUS
             elif action == DELETE_ACTION:
-                pool_manager_status.status = 'SUCCESS'
+                pool_manager_status.status = SUCCESS_STATUS
             elif action == UPDATE_ACTION:
-                pool_manager_status.action = 'CREATE'
-                pool_manager_status.status = 'ERROR'
+                pool_manager_status.action = CREATE_ACTION
+                pool_manager_status.status = ERROR_STATUS
         else:
             pool_manager_status.status = status
-        pool_manager_status.serial_number = actual_serial \
-            if actual_serial is not None else 0
+
+        pool_manager_status.serial_number = actual_serial or 0
         LOG.debug('Retrieved status %s and serial %s for zone %s '
                   'on nameserver %s with action %s from mdns.' %
                   (pool_manager_status.status,
@@ -681,6 +721,11 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         return pool_manager_status
 
     def _retrieve_statuses(self, context, zone, action):
+        """Instruct MiniDNS to get a zone serial number from all nameservers,
+        unless a cached value is available.
+        Set error status if the zone is unexpectedly missing.
+        :return: list of :class:`objects.PoolManagerStatus`
+        """
         pool_manager_statuses = []
         for nameserver in self.pool.nameservers:
             try:

@@ -2911,6 +2911,15 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(set([n.hostname for n in pool.ns_records]),
                          set([n.data for n in ns_recordset.records]))
 
+    def test_update_pool_add_ns_record_without_priority(self):
+        pool = self.create_pool(fixture=0)
+        self.create_zone(pool_id=pool.id)
+        new_ns_record = objects.PoolNsRecord(hostname='ns-new.example.org.')
+        pool.ns_records.append(new_ns_record)
+        # PoolNsRecord without "priority" triggers a DB exception
+        with testtools.ExpectedException(db_exception.DBError):
+            self.central_service.update_pool(self.admin_context, pool)
+
     def test_update_pool_remove_ns_record(self):
         # Create a server pool and zone
         pool = self.create_pool(fixture=0)
@@ -2996,6 +3005,41 @@ class CentralServiceTest(CentralTestCase):
             self.central_service.get_record(
                 self.admin_context, zone['id'], recordset['id'],
                 record['id'])
+
+    @mock.patch.object(notifier.Notifier, "info")
+    def test_update_status_send_notification(self, mock_notifier):
+
+        # Create zone and ensure that two zone/domain create notifications
+        # have been sent - status is PENDING
+        zone = self.create_zone(email='info@example.org')
+        self.assertEqual(2, mock_notifier.call_count)
+
+        notify_string, notified_zone = mock_notifier.call_args_list[0][0][1:]
+        self.assertEqual('dns.domain.create', notify_string)
+        self.assertEqual('example.com.', notified_zone.name)
+        self.assertEqual('PENDING', notified_zone.status)
+
+        notify_string, notified_zone = mock_notifier.call_args_list[1][0][1:]
+        self.assertEqual('dns.zone.create', notify_string)
+        self.assertEqual('example.com.', notified_zone.name)
+        self.assertEqual('PENDING', notified_zone.status)
+
+        # Perform an update; ensure that zone/domain update notifications
+        # have been sent and the zone is now in ACTIVE status
+        mock_notifier.reset_mock()
+        self.central_service.update_status(
+            self.admin_context, zone['id'], "SUCCESS", zone.serial)
+
+        self.assertEqual(2, mock_notifier.call_count)
+        notify_string, notified_zone = mock_notifier.call_args_list[0][0][1:]
+        self.assertEqual('dns.domain.update', notify_string)
+        self.assertEqual('example.com.', notified_zone.name)
+        self.assertEqual('ACTIVE', notified_zone.status)
+
+        notify_string, notified_zone = mock_notifier.call_args_list[1][0][1:]
+        self.assertEqual('dns.zone.update', notify_string)
+        self.assertEqual('example.com.', notified_zone.name)
+        self.assertEqual('ACTIVE', notified_zone.status)
 
     def test_update_status_delete_last_record_without_incrementing_serial(
             self):

@@ -1,6 +1,6 @@
 # Copyright 2013 Hewlett-Packard Development Company, L.P.
 #
-# Author: Endre Karlson <endre.karlson@hp.com>
+# Author: Endre Karlson <endre.karlson@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -28,7 +28,7 @@ cfg.CONF.register_opts([
 
 
 def get_network_api(network_api_driver):
-    LOG.debug("Loading network_api driver: %s" % network_api_driver)
+    LOG.debug("Loading network_api driver: %s", network_api_driver)
 
     cls = NetworkAPI.get_driver(network_api_driver)
 

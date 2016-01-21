@@ -1,6 +1,6 @@
 # Copyright 2015 Hewlett-Packard Development Company, L.P.
 #
-# Author: Kiall Mac Innes <kiall@hp.com>
+# Author: Kiall Mac Innes <kiall@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -29,7 +29,7 @@ meta = MetaData()
 def upgrade(migrate_engine):
     meta.bind = migrate_engine
 
-    LOG.warn(_LW('It will not be possible to downgrade from schema #11'))
+    LOG.warning(_LW('It will not be possible to downgrade from schema #11'))
 
     records_table = Table('records', meta, autoload=True)
     records_table.c.designate_id.drop()

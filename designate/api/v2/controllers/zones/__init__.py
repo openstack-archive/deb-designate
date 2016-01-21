@@ -1,6 +1,6 @@
 # Copyright 2013 Hewlett-Packard Development Company, L.P.
 #
-# Author: Kiall Mac Innes <kiall@hp.com>
+# Author: Kiall Mac Innes <kiall@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -82,9 +82,6 @@ class ZonesController(rest.RestController):
         context = request.environ['context']
 
         zone = request.body_dict
-
-        # We need to check the zone type before validating the schema since if
-        # it's the type is SECONDARY we need to set the email to the mgmt email
 
         if isinstance(zone, dict):
             if 'type' not in zone:

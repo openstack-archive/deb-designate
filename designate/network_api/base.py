@@ -1,6 +1,6 @@
 # Copyright 2013 Hewlett-Packard Development Company, L.P.
 #
-# Author: Endre Karlson <endre.karlson@hp.com>
+# Author: Endre Karlson <endre.karlson@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -57,7 +57,7 @@ class NetworkAPI(DriverPlugin):
             msg = 'No service_catalog and no configured endpoints'
             raise exceptions.ConfigurationError(msg)
 
-        LOG.debug('Returning endpoints: %s' % endpoints)
+        LOG.debug('Returning endpoints: %s', endpoints)
         return endpoints
 
     def _endpoints_from_catalog(self, service_catalog, service_type,

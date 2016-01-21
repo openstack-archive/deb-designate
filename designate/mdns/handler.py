@@ -1,6 +1,6 @@
 # Copyright 2014 Hewlett-Packard Development Company, L.P.
 #
-# Author: Kiall Mac Innes <kiall@hp.com>
+# Author: Kiall Mac Innes <kiall@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -132,7 +132,7 @@ class RequestHandler(xfr.XFRMixin):
         if not master_addr:
             msg = _LW("NOTIFY for %(name)s from non-master server "
                       "%(addr)s, ignoring.")
-            LOG.warn(msg % {"name": zone.name, "addr": notify_addr})
+            LOG.warning(msg % {"name": zone.name, "addr": notify_addr})
             response.set_rcode(dns.rcode.REFUSED)
             yield response
             raise StopIteration

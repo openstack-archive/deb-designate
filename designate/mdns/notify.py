@@ -66,7 +66,9 @@ class NotifyEndpoint(base.BaseEndpoint):
 
     def poll_for_serial_number(self, context, zone, nameserver, timeout,
                                retry_interval, max_retries, delay):
-        """
+        """Get the serial number of a zone on a resolver, then call update_status
+        on Pool Manager to update the zone status.
+
         :param context: The user context.
         :param zone: The designate zone object.  This contains the zone
             name. zone.serial = expected_serial
@@ -78,7 +80,7 @@ class NotifyEndpoint(base.BaseEndpoint):
             an expected serial number. After this many retries, mindns returns
             an ERROR.
         :param delay: The time to wait before sending the first request.
-        :return: The pool manager is informed of the status with update_status.
+        :return: None
         """
         (status, actual_serial, retries) = self.get_serial_number(
             context, zone, nameserver.host, nameserver.port, timeout,
@@ -118,7 +120,7 @@ class NotifyEndpoint(base.BaseEndpoint):
                 zone, host, port, timeout, retry_interval, retries)
             if response and response.rcode() in (
                     dns.rcode.NXDOMAIN, dns.rcode.REFUSED, dns.rcode.SERVFAIL):
-                status = 'NO_DOMAIN'
+                status = 'NO_ZONE'
             elif response and len(response.answer) == 1 \
                     and str(response.answer[0].name) == str(zone.name) \
                     and response.answer[0].rdclass == dns.rdataclass.IN \
@@ -130,7 +132,7 @@ class NotifyEndpoint(base.BaseEndpoint):
             if actual_serial is None or actual_serial < zone.serial:
                 # TODO(vinod): Account for serial number wrap around.
                 retries = retries - retry
-                LOG.warn(_LW("Got lower serial for '%(zone)s' to '%(host)s:"
+                LOG.warning(_LW("Got lower serial for '%(zone)s' to '%(host)s:"
                              "%(port)s'. Expected:'%(es)d'. Got:'%(as)s'."
                              "Retries left='%(retries)d'") %
                          {'zone': zone.name, 'host': host,
@@ -184,25 +186,27 @@ class NotifyEndpoint(base.BaseEndpoint):
                 dns_message, host, port, timeout)
 
             if isinstance(response, dns.exception.Timeout):
-                LOG.warn(_LW("Got Timeout while trying to send '%(msg)s' for "
-                             "'%(zone)s' to '%(server)s:%(port)d'. Timeout="
-                             "'%(timeout)d' seconds. Retry='%(retry)d'") %
-                         {'msg': 'NOTIFY' if notify else 'SOA',
-                          'zone': zone.name, 'server': host,
-                          'port': port, 'timeout': timeout,
-                          'retry': retry})
+                LOG.warning(
+                    _LW("Got Timeout while trying to send '%(msg)s' for "
+                        "'%(zone)s' to '%(server)s:%(port)d'. Timeout="
+                        "'%(timeout)d' seconds. Retry='%(retry)d'") %
+                    {'msg': 'NOTIFY' if notify else 'SOA',
+                     'zone': zone.name, 'server': host,
+                     'port': port, 'timeout': timeout,
+                     'retry': retry})
                 response = None
                 # retry sending the message if we get a Timeout.
                 time.sleep(retry_interval)
                 continue
             elif isinstance(response, dns_query.BadResponse):
-                LOG.warn(_LW("Got BadResponse while trying to send '%(msg)s' "
-                             "for '%(zone)s' to '%(server)s:%(port)d'. Timeout"
-                             "='%(timeout)d' seconds. Retry='%(retry)d'") %
-                         {'msg': 'NOTIFY' if notify else 'SOA',
-                          'zone': zone.name, 'server': host,
-                          'port': port, 'timeout': timeout,
-                          'retry': retry})
+                LOG.warning(
+                    _LW("Got BadResponse while trying to send '%(msg)s' "
+                        "for '%(zone)s' to '%(server)s:%(port)d'. Timeout"
+                        "='%(timeout)d' seconds. Retry='%(retry)d'") %
+                    {'msg': 'NOTIFY' if notify else 'SOA',
+                     'zone': zone.name, 'server': host,
+                     'port': port, 'timeout': timeout,
+                     'retry': retry})
                 response = None
                 break
             # Check that we actually got a NOERROR in the rcode and and an
@@ -215,12 +219,13 @@ class NotifyEndpoint(base.BaseEndpoint):
                 break
             elif not (response.flags & dns.flags.AA) or dns.rcode.from_flags(
                     response.flags, response.ednsflags) != dns.rcode.NOERROR:
-                LOG.warn(_LW("Failed to get expected response while trying to "
-                             "send '%(msg)s' for '%(zone)s' to '%(server)s:"
-                             "%(port)d'.\nResponse message:\n%(resp)s\n") %
-                         {'msg': 'NOTIFY' if notify else 'SOA',
-                          'zone': zone.name, 'server': host,
-                          'port': port, 'resp': str(response)})
+                LOG.warning(
+                    _LW("Failed to get expected response while trying to "
+                        "send '%(msg)s' for '%(zone)s' to '%(server)s:"
+                        "%(port)d'.\nResponse message:\n%(resp)s\n") %
+                    {'msg': 'NOTIFY' if notify else 'SOA',
+                     'zone': zone.name, 'server': host,
+                     'port': port, 'resp': str(response)})
                 response = None
                 break
             else:

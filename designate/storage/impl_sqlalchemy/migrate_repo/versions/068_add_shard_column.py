@@ -1,6 +1,6 @@
 # Copyright 2015 Hewlett-Packard Development Company, L.P.
 #
-# Author: Endre Karlson <endre.karlson@hp.com>
+# Author: Endre Karlson <endre.karlson@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -90,7 +90,7 @@ def upgrade(migrate_engine):
             # try again
             msg = i18n._LW(
                 "Updating migration for sharding failed, retrying.")
-            LOG.warn(msg)
+            LOG.warning(msg)
             if i >= 4:
                 # Raise if we've reached max attempts causing migration to
                 # fail

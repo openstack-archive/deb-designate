@@ -1,6 +1,6 @@
 # Copyright 2015 Hewlett-Packard Development Company, L.P.
 #
-# Author: Endre Karlson <endre.karlson@hp.com>
+# Author: Endre Karlson <endre.karlson@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -15,9 +15,9 @@
 # under the License.
 from designateclient.v2 import client
 from designateclient import exceptions
-from keystoneclient.auth.identity import v2 as v2_auth
-from keystoneclient.auth.identity import v3 as v3_auth
-from keystoneclient import session as ks_session
+from keystoneauth1.identity import v2 as v2_auth
+from keystoneauth1.identity import v3 as v3_auth
+from keystoneauth1 import session as ks_session
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -103,4 +103,4 @@ class DesignateBackend(base.Backend):
             self.client.zones.delete(zone.name)
         except exceptions.NotFound:
             msg = _LW("Zone %s not found on remote Designate, Ignoring")
-            LOG.warn(msg, zone.id)
+            LOG.warning(msg, zone.id)

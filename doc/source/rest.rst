@@ -91,6 +91,9 @@ V2 API
        rest/v2/tlds
        rest/v2/blacklists
        rest/v2/pools
+       rest/v2/limits
+       rest/v2/reverse
+       rest/v2/tsigkeys
 
 Admin API
 ---------
@@ -99,4 +102,3 @@ Admin API
        :glob:
 
        rest/admin/quotas
-

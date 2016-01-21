@@ -1,6 +1,6 @@
 # Copyright 2014 Hewlett-Packard Development Company, L.P.
 #
-# Author: Kiall Mac Innes <kiall@hp.com>
+# Author: Kiall Mac Innes <kiall@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -409,6 +409,71 @@ class MdnsRequestHandlerTest(MdnsTestCase):
         request.environ = {'addr': self.addr, 'context': self.context}
         response = next(self.handler(request)).to_wire()
 
+        self.assertEqual(expected_response, binascii.b2a_hex(response))
+
+    def test_dispatch_opcode_query_TXT(self):
+        # query is for text.example.com. IN TXT
+        payload = "d2f5012000010000000000010474657874076578616d706c6503636f6d00001000010000291000000000000000"  # noqa
+
+        # expected_response is NOERROR.  The other fields are
+        # id 54005
+        # opcode QUERY
+        # rcode NOERROR
+        # flags QR AA RD
+        # edns 0
+        # payload 8192
+        # ;QUESTION
+        # text.example.com. IN TXT
+        # ;ANSWER
+        # text.example.com. 3600 IN TXT "footxtdata"
+        # ;AUTHORITY
+        # ;ADDITIONAL
+
+        expected_response = "d2f5850000010001000000010474657874076578616d706c6503636f6d0000100001c00c0010000100000e10000b0a666f6f747874646174610000292000000000000000"  # noqa
+
+        # This creates an TXT record for mail.example.com
+        zone = self.create_zone()
+        recordset = self.create_recordset(zone, 'TXT')
+        self.create_record(zone, recordset)
+
+        request = dns.message.from_wire(binascii.a2b_hex(payload))
+        request.environ = {'addr': self.addr, 'context': self.context}
+        response = next(self.handler(request)).to_wire()
+        print("response:", dns.message.from_wire(response))
+        print(''.join("%02x" % ord(i) for i in response))
+        self.assertEqual(expected_response, binascii.b2a_hex(response))
+
+    def test_dispatch_opcode_query_TXT_quoted_strings(self):
+        # query is for text.example.com. IN TXT
+        payload = "d2f5012000010000000000010474657874076578616d706c6503636f6d00001000010000291000000000000000"  # noqa
+
+        expected_response = "d2f5850000010001000000010474657874076578616d706c6503636f6d0000100001c00c0010000100000e10000d03666f6f0362617204626c61680000292000000000000000"  # noqa
+        # expected_response is NOERROR.  The other fields are
+        # response: id 54005
+        # opcode QUERY
+        # rcode NOERROR
+        # flags QR AA RD
+        # edns 0
+        # payload 8192
+        # ;QUESTION
+        # text.example.com. IN TXT
+        # ;ANSWER
+        # text.example.com. 3600 IN TXT "foo" "bar" "blah"
+        # ;AUTHORITY
+        # ;ADDITIONAL
+
+        zone = self.create_zone()
+        recordset = self.create_recordset(zone, type='TXT')
+        values = {'data': '"foo" "bar" "blah"'}
+        self.storage.create_record(
+            self.admin_context, zone['id'], recordset['id'],
+            objects.Record.from_dict(values))
+
+        request = dns.message.from_wire(binascii.a2b_hex(payload))
+        request.environ = {'addr': self.addr, 'context': self.context}
+        response = next(self.handler(request)).to_wire()
+        print("response:", dns.message.from_wire(response))
+        print(''.join("%02x" % ord(i) for i in response))
         self.assertEqual(expected_response, binascii.b2a_hex(response))
 
     def test_dispatch_opcode_query_MX(self):

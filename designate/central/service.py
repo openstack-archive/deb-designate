@@ -65,7 +65,7 @@ def _retry_on_deadlock(exc):
     # TODO(kiall): This is a total leak of the SQLA Driver, we'll need a better
     #              way to handle this.
     if isinstance(exc, db_exception.DBDeadlock):
-        LOG.warn(_LW("Deadlock detected. Retrying..."))
+        LOG.warning(_LW("Deadlock detected. Retrying..."))
         return True
     return False
 
@@ -294,7 +294,7 @@ class Service(service.RPCService, service.Service):
         if (cfg.CONF['service:central'].managed_resource_tenant_id ==
                 "00000000-0000-0000-0000-000000000000"):
             msg = _LW("Managed Resource Tenant ID is not properly configured")
-            LOG.warn(msg)
+            LOG.warning(msg)
 
         super(Service, self).start()
 
@@ -2265,6 +2265,8 @@ class Service(service.RPCService, service.Service):
         return pool
 
     # Pool Manager Integration
+    @notification('dns.domain.update')
+    @notification('dns.zone.update')
     @transaction
     def update_status(self, context, zone_id, status, serial):
         """
@@ -2272,14 +2274,19 @@ class Service(service.RPCService, service.Service):
         :param zone_id: The ID of the designate zone.
         :param status: The status, 'SUCCESS' or 'ERROR'.
         :param serial: The consensus serial number for the zone.
-        :return: None
+        :return: updated zone
         """
         # TODO(kiall): If the status is SUCCESS and the zone is already ACTIVE,
         #              we likely don't need to do anything.
         self._update_record_status(context, zone_id, status, serial)
-        self._update_zone_status(context, zone_id, status, serial)
+        zone = self._update_zone_status(context, zone_id, status, serial)
+        return zone
 
     def _update_zone_status(self, context, zone_id, status, serial):
+        """Update zone status in storage
+
+        :return: updated zone
+        """
         zone = self.storage.get_zone(context, zone_id)
 
         zone, deleted = self._update_zone_or_record_status(
@@ -2298,7 +2305,12 @@ class Service(service.RPCService, service.Service):
             # that the action, status and serial are updated correctly.
             self.storage.delete_zone(context, zone.id)
 
+        return zone
+
     def _update_record_status(self, context, zone_id, status, serial):
+        """Update status on every record in a zone based on `serial`
+        :returns: updated records
+        """
         criterion = {
             'zone_id': zone_id
         }
@@ -2347,6 +2359,8 @@ class Service(service.RPCService, service.Service):
                 if len(recordset.records) == 0:
                     self.storage.delete_recordset(context, recordset.id)
 
+        return records
+
     @staticmethod
     def _update_zone_or_record_status(zone_or_record, status, serial):
         deleted = False
@@ -2368,7 +2382,7 @@ class Service(service.RPCService, service.Service):
                     and (serial >= zone_or_record.serial or serial == 0):
                 zone_or_record.status = 'ERROR'
 
-        elif status == 'NO_zone':
+        elif status == 'NO_ZONE':
             if zone_or_record.action in ['CREATE', 'UPDATE']:
                 zone_or_record.action = 'CREATE'
                 zone_or_record.status = 'ERROR'

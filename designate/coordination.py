@@ -2,7 +2,7 @@
 # Copyright 2014 Red Hat, Inc.
 # Copyright 2015 Hewlett-Packard Development Company, L.P.
 #
-# Author: Endre Karlson <endre.karlson@hp.com>
+# Author: Endre Karlson <endre.karlson@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -74,7 +74,7 @@ class CoordinationMixin(object):
             msg = _LW("No coordination backend configured, distributed "
                       "coordination functionality will be disabled. "
                       "Please configure a coordination backend.")
-            LOG.warn(msg)
+            LOG.warning(msg)
 
         super(CoordinationMixin, self).start()
 

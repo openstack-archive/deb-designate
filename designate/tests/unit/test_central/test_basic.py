@@ -1,6 +1,6 @@
 # Copyright 2015 Hewlett-Packard Development Company, L.P.
 #
-# Author: Federico Ceratto <federico.ceratto@hp.com>
+# Author: Federico Ceratto <federico.ceratto@hpe.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -1916,7 +1916,7 @@ class CentralStatusTests(CentralBasic):
                     serial=0,
                 )
         dom, deleted = self.service.\
-            _update_zone_or_record_status(zone, 'NO_zone', 0)
+            _update_zone_or_record_status(zone, 'NO_ZONE', 0)
 
         self.assertEqual(dom.action, 'CREATE')
         self.assertEqual(dom.status, 'ERROR')
