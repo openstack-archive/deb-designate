@@ -1,1 +1,2 @@
 fixes-keystone-authtoken.patch
+disable_pool_manager_unit_test.patch
