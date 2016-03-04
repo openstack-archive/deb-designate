@@ -188,7 +188,7 @@ class PoolManagerServiceNoopTest(PoolManagerTestCase):
         self.assertFalse(mock_notify_zone_changed.called)
         self.assertFalse(mock_poll_for_serial_number.called)
 
-        # Since consensus is not reached this early, we immediatly call
+        # Since consensus is not reached this early, we immediately call
         # central's update_status.
         self.assertTrue(mock_update_status.called)
 
@@ -212,7 +212,7 @@ class PoolManagerServiceNoopTest(PoolManagerTestCase):
             self.admin_context, zone, 'CREATE')
         self.assertEqual(0, len(create_statuses))
 
-        # Since consensus is not reached this early, we immediatly call
+        # Since consensus is not reached this early, we immediately call
         # central's update_status.
         self.assertTrue(mock_update_status.called)
 
@@ -251,65 +251,6 @@ class PoolManagerServiceNoopTest(PoolManagerTestCase):
             mock_poll_for_serial_number.call_args_list)
 
         self.assertFalse(mock_update_status.called)
-
-    @patch.object(impl_fake.FakeBackend, 'delete_zone',
-                  side_effect=exceptions.Backend)
-    @patch.object(central_rpcapi.CentralAPI, 'update_status')
-    def test_delete_zone(self, mock_update_status, _):
-        zone = self._build_zone('example.org.', 'DELETE', 'PENDING')
-
-        self.service.delete_zone(self.admin_context, zone)
-
-        mock_update_status.assert_called_once_with(
-            self.admin_context, zone.id, 'ERROR', zone.serial)
-
-    @patch.object(impl_fake.FakeBackend, 'delete_zone')
-    @patch.object(central_rpcapi.CentralAPI, 'update_status')
-    def test_delete_zone_target_both_failure(
-            self, mock_update_status, mock_delete_zone):
-
-        zone = self._build_zone('example.org.', 'DELETE', 'PENDING')
-
-        mock_delete_zone.side_effect = exceptions.Backend
-
-        self.service.delete_zone(self.admin_context, zone)
-
-        mock_update_status.assert_called_once_with(
-            self.admin_context, zone.id, 'ERROR', zone.serial)
-
-    @patch.object(impl_fake.FakeBackend, 'delete_zone')
-    @patch.object(central_rpcapi.CentralAPI, 'update_status')
-    def test_delete_zone_target_one_failure(
-            self, mock_update_status, mock_delete_zone):
-
-        zone = self._build_zone('example.org.', 'DELETE', 'PENDING')
-
-        mock_delete_zone.side_effect = [None, exceptions.Backend]
-
-        self.service.delete_zone(self.admin_context, zone)
-
-        mock_update_status.assert_called_once_with(
-            self.admin_context, zone.id, 'ERROR', zone.serial)
-
-    @patch.object(impl_fake.FakeBackend, 'delete_zone')
-    @patch.object(central_rpcapi.CentralAPI, 'update_status')
-    def test_delete_zone_target_one_failure_consensus(
-            self, mock_update_status, mock_delete_zone):
-
-        self.service.stop()
-        self.config(
-            threshold_percentage=50,
-            group='service:pool_manager')
-        self.service = self.start_service('pool_manager')
-
-        zone = self._build_zone('example.org.', 'DELETE', 'PENDING')
-
-        mock_delete_zone.side_effect = [None, exceptions.Backend]
-
-        self.service.delete_zone(self.admin_context, zone)
-
-        mock_update_status.assert_called_once_with(
-            self.admin_context, zone.id, 'ERROR', zone.serial)
 
     @patch.object(mdns_rpcapi.MdnsAPI, 'get_serial_number',
                   side_effect=messaging.MessagingException)
@@ -494,11 +435,12 @@ class PoolManagerServiceNoopTest(PoolManagerTestCase):
         self.assertEqual(2, self.service.update_zone.call_count)
         self.assertEqual(0, mock_cent_update_status.call_count)
 
+    @patch.object(pm_module.time, 'sleep')
     @patch.object(mdns_rpcapi.MdnsAPI, 'notify_zone_changed')
     @patch.object(central_rpcapi.CentralAPI, 'update_status')
     @patch.object(central_rpcapi.CentralAPI, 'find_zones')
-    def test_periodic_sync_with_failing_update(self, mock_find_zones,
-                                               mock_cent_update_status, *a):
+    def test_periodic_sync_with_failing_update(
+            self, mock_find_zones, mock_cent_update_status, *mocks):
         self.service.update_zone = Mock(return_value=False)  # fail update
         mock_find_zones.return_value = self._build_zones(3, 'UPDATE',
                                                          'PENDING')
@@ -507,15 +449,19 @@ class PoolManagerServiceNoopTest(PoolManagerTestCase):
         self.assertEqual(1, mock_find_zones.call_count)
         criterion = mock_find_zones.call_args_list[0][0][1]
         self.assertEqual('!ERROR', criterion['status'])
-        # all zones are now in ERROR status
-        self.assertEqual(3, self.service.update_zone.call_count)
+
+        # 3 zones, all failing, with 3 attempts: 9 calls
+        self.assertEqual(9, self.service.update_zone.call_count)
+
+        # the zones have been put in ERROR status
         self.assertEqual(3, mock_cent_update_status.call_count)
 
+    @patch.object(pm_module.time, 'sleep')
     @patch.object(mdns_rpcapi.MdnsAPI, 'notify_zone_changed')
     @patch.object(central_rpcapi.CentralAPI, 'update_status')
     @patch.object(central_rpcapi.CentralAPI, 'find_zones')
     def test_periodic_sync_with_failing_update_with_exception(
-            self, mock_find_zones, mock_cent_update_status, *a):
+            self, mock_find_zones, mock_cent_update_status, *mocks):
         self.service.update_zone = Mock(side_effect=Exception)
         mock_find_zones.return_value = self._build_zones(3, 'UPDATE',
                                                          'PENDING')
@@ -524,35 +470,12 @@ class PoolManagerServiceNoopTest(PoolManagerTestCase):
         self.assertEqual(1, mock_find_zones.call_count)
         criterion = mock_find_zones.call_args_list[0][0][1]
         self.assertEqual('!ERROR', criterion['status'])
-        # the first updated zone is now in ERROR status
-        self.assertEqual(1, self.service.update_zone.call_count)
-        self.assertEqual(1, mock_cent_update_status.call_count)
 
-    # Periodic recovery
+        # 3 zones, all failing, with 3 attempts: 9 calls
+        self.assertEqual(9, self.service.update_zone.call_count)
 
-    @patch.object(mdns_rpcapi.MdnsAPI, 'notify_zone_changed')
-    @patch.object(central_rpcapi.CentralAPI, 'update_status')
-    def test_periodic_recovery(self, mock_find_zones,
-                               mock_cent_update_status, *a):
-
-        def mock_get_failed_zones(ctx, action):
-            if action == pm_module.DELETE_ACTION:
-                return self._build_zones(3, 'DELETE', 'ERROR')
-            if action == pm_module.CREATE_ACTION:
-                return self._build_zones(4, 'CREATE', 'ERROR')
-            if action == pm_module.UPDATE_ACTION:
-                return self._build_zones(5, 'UPDATE', 'ERROR')
-
-        self.service._get_failed_zones = mock_get_failed_zones
-        self.service.delete_zone = Mock()
-        self.service.create_zone = Mock()
-        self.service.update_zone = Mock()
-
-        self.service.periodic_recovery()
-
-        self.assertEqual(3, self.service.delete_zone.call_count)
-        self.assertEqual(4, self.service.create_zone.call_count)
-        self.assertEqual(5, self.service.update_zone.call_count)
+        # the zones have been put in ERROR status
+        self.assertEqual(3, mock_cent_update_status.call_count)
 
 
 class PoolManagerServiceEndToEndTest(PoolManagerServiceNoopTest):
@@ -609,41 +532,3 @@ class PoolManagerServiceEndToEndTest(PoolManagerServiceNoopTest):
             LOG.error("Expected %d healthy zones, got %d", n, len(zones))
             self._log_all_zones(zones, msg='listing zones')
             self.assertEqual(n, len(zones))
-
-    @patch.object(mdns_rpcapi.MdnsAPI, 'notify_zone_changed')
-    def test_periodic_sync_and_recovery(
-            self, mock_cent_update_status, *a):
-        # Periodic sync + recovery
-
-        # Create healthy zones, run a periodic sync that will fail
-        self.create_zone(name='created.example.com.')
-        self._assert_num_healthy_zones(pm_module.CREATE_ACTION, 1)
-
-        z = self.create_zone(name='updated.example.net.')
-        z.email = 'info@example.net'
-        self.service.central_api.update_zone(self.admin_context, z)
-        self._assert_num_healthy_zones(pm_module.UPDATE_ACTION, 1)
-
-        with patch.object(self.service, '_update_zone_on_target',
-                          return_value=False):
-            self.service.periodic_sync()
-
-        zones = self.service._fetch_healthy_zones(self.admin_context)
-        self.assertEqual(0, len(zones))
-        self._assert_num_failed_zones(pm_module.CREATE_ACTION, 1)
-        self._assert_num_failed_zones(pm_module.UPDATE_ACTION, 1)
-
-        # Now run a periodic_recovery that will fix the zones
-
-        backends = self.service.target_backends
-        for tid in self.service.target_backends:
-            backends[tid].create_zone = Mock()
-            backends[tid].update_zone = Mock()
-            backends[tid].delete_zone = Mock()
-
-        self.service.periodic_recovery()
-
-        # There are 2 pool targets in use
-        for backend in self.service.target_backends.itervalues():
-            self.assertEqual(1, backend.create_zone.call_count)
-            self.assertEqual(1, backend.update_zone.call_count)

@@ -96,7 +96,7 @@ def make_class_validator(obj):
     if isinstance(obj, ListObjectMixin):
 
         schema['type'] = 'array',
-        schema['items'] = make_class_validator(obj.LIST_ITEM_TYPE)
+        schema['items'] = make_class_validator(obj.LIST_ITEM_TYPE())
 
     else:
         schema['type'] = 'object'
@@ -614,6 +614,36 @@ class ListObjectMixin(object):
             if item.obj_what_changed():
                 changes.add('objects')
         return changes
+
+
+class AttributeListObjectMixin(ListObjectMixin):
+    """
+    Mixin class for "Attribute" objects.
+
+    Attribute objects are ListObjects, who's memebers have a "key" and "value"
+    property, which should be exposed on the list itself as list.<key>.
+    """
+    @classmethod
+    def from_dict(cls, _dict):
+        instances = cls.from_list([{'key': k, 'value': v} for k, v
+                                   in _dict.items()])
+
+        return cls.from_list(instances)
+
+    def to_dict(self):
+        data = {}
+
+        for item in self.objects:
+            data[item.key] = item.value
+
+        return data
+
+    def get(self, key, default=None):
+        for obj in self.objects:
+            if obj.key == key:
+                return obj.value
+
+        return default
 
 
 class PersistentObjectMixin(object):

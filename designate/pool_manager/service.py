@@ -16,6 +16,7 @@
 from contextlib import contextmanager
 from decimal import Decimal
 import time
+from datetime import datetime
 
 from oslo_config import cfg
 import oslo_messaging as messaging
@@ -28,6 +29,7 @@ from designate import exceptions
 from designate import objects
 from designate import utils
 from designate.central import rpcapi as central_api
+from designate.pool_manager import rpcapi as pool_manager_rpcapi
 from designate.mdns import rpcapi as mdns_api
 from designate import service
 from designate.context import DesignateContext
@@ -41,6 +43,7 @@ LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 SUCCESS_STATUS = 'SUCCESS'
+PENDING_STATUS = 'PENDING'
 ERROR_STATUS = 'ERROR'
 NO_ZONE_STATUS = 'NO_ZONE'
 CREATE_ACTION = 'CREATE'
@@ -62,6 +65,20 @@ def wrap_backend_call():
         raise exceptions.Backend('Unknown backend failure: %r' % e)
 
 
+def _constant_retries(num_attempts, sleep_interval):
+    """Generate a sequence of False terminated by a True
+    Sleep `sleep_interval` between cycles but not at the end.
+    """
+    for cnt in range(num_attempts):
+        if cnt != 0:
+            LOG.debug(_LI("Executing retry n. %d"), cnt)
+        if cnt < num_attempts - 1:
+            yield False
+            time.sleep(sleep_interval)
+        else:
+            yield True
+
+
 class Service(service.RPCService, coordination.CoordinationMixin,
               service.Service):
     """
@@ -70,8 +87,10 @@ class Service(service.RPCService, coordination.CoordinationMixin,
     API version history:
 
         1.0 - Initial version
+        2.0 - The Big Rename
+        2.1 - Add target_sync
     """
-    RPC_API_VERSION = '2.0'
+    RPC_API_VERSION = '2.1'
 
     target = messaging.Target(version=RPC_API_VERSION)
 
@@ -92,6 +111,15 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         self.retry_interval = CONF['service:pool_manager'].poll_retry_interval
         self.max_retries = CONF['service:pool_manager'].poll_max_retries
         self.delay = CONF['service:pool_manager'].poll_delay
+        self._periodic_sync_max_attempts = \
+            CONF['service:pool_manager'].periodic_sync_max_attempts
+        self._periodic_sync_retry_interval = \
+            CONF['service:pool_manager'].periodic_sync_retry_interval
+
+        # Compute a time (seconds) by which things should have propagated
+        self.max_prop_time = (self.timeout * self.max_retries +
+                             self.max_retries * self.retry_interval +
+                             self.delay)
 
         # Create the necessary Backend instances for each target
         self._setup_target_backends()
@@ -159,16 +187,27 @@ class Service(service.RPCService, coordination.CoordinationMixin,
 
     @property
     def central_api(self):
-        return central_api.CentralAPI.get_instance()
+        if not hasattr(self, '_central_api'):
+            self._central_api = central_api.CentralAPI.get_instance()
+        return self._central_api
 
     @property
     def mdns_api(self):
-        return mdns_api.MdnsAPI.get_instance()
+        if not hasattr(self, '_mdns_adpi'):
+            self._mdns_api = mdns_api.MdnsAPI.get_instance()
+        return self._mdns_api
+
+    @property
+    def pool_manager_api(self):
+        if not hasattr(self, '_pool_manager_api'):
+            pool_mgr_api = pool_manager_rpcapi.PoolManagerAPI
+            self._pool_manager_api = pool_mgr_api.get_instance()
+        return self._pool_manager_api
 
     def _get_admin_context_all_tenants(self):
         return DesignateContext.get_admin_context(all_tenants=True)
 
-    # Periodioc Tasks
+    # Periodic Tasks
     def periodic_recovery(self):
         """
         Runs only on the pool leader
@@ -178,7 +217,7 @@ class Service(service.RPCService, coordination.CoordinationMixin,
             return
 
         context = self._get_admin_context_all_tenants()
-        LOG.debug("Starting Periodic Recovery")
+        LOG.info(_LI("Starting Periodic Recovery"))
 
         try:
             # Handle Deletion Failures
@@ -186,21 +225,21 @@ class Service(service.RPCService, coordination.CoordinationMixin,
             LOG.info(_LI("periodic_recovery:delete_zone needed on %d zones"),
                      len(zones))
             for zone in zones:
-                self.delete_zone(context, zone)
+                self.pool_manager_api.delete_zone(context, zone)
 
             # Handle Creation Failures
             zones = self._get_failed_zones(context, CREATE_ACTION)
             LOG.info(_LI("periodic_recovery:create_zone needed on %d zones"),
                      len(zones))
             for zone in zones:
-                self.create_zone(context, zone)
+                self.pool_manager_api.create_zone(context, zone)
 
             # Handle Update Failures
             zones = self._get_failed_zones(context, UPDATE_ACTION)
             LOG.info(_LI("periodic_recovery:update_zone needed on %d zones"),
                      len(zones))
             for zone in zones:
-                self.update_zone(context, zone)
+                self.pool_manager_api.update_zone(context, zone)
 
         except Exception:
             LOG.exception(_LE('An unhandled exception in periodic '
@@ -214,25 +253,111 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         if not self._pool_election.is_leader:
             return
 
-        LOG.debug("Starting Periodic Synchronization")
+        LOG.info(_LI("Starting Periodic Synchronization"))
         context = self._get_admin_context_all_tenants()
         zones = self._fetch_healthy_zones(context)
+        zones = set(zones)
 
-        try:
+        # TODO(kiall): If the zone was created within the last
+        #              periodic_sync_seconds, attempt to recreate
+        #              to fill in targets which may have failed.
+        retry_gen = _constant_retries(
+            self._periodic_sync_max_attempts,
+            self._periodic_sync_retry_interval
+        )
+        for is_last_cycle in retry_gen:
+            zones_in_error = []
             for zone in zones:
-                # TODO(kiall): If the zone was created within the last
-                #              periodic_sync_seconds, attempt to recreate
-                #              to fill in targets which may have failed.
-                success = self.update_zone(context, zone)
-                if not success:
-                    self.central_api.update_status(context, zone.id,
-                                                   ERROR_STATUS, zone.serial)
+                try:
+                    success = self.update_zone(context, zone)
+                    if not success:
+                        zones_in_error.append(zone)
+                except Exception:
+                    LOG.exception(_LE('An unhandled exception in periodic '
+                                      'synchronization occurred.'))
+                    zones_in_error.append(zone)
 
-        except Exception:
-            LOG.exception(_LE('An unhandled exception in periodic '
-                              'synchronization occurred.'))
+            if not zones_in_error:
+                return
+
+            zones = zones_in_error
+
+        for zone in zones_in_error:
             self.central_api.update_status(context, zone.id, ERROR_STATUS,
                                            zone.serial)
+
+    def target_sync(self, context, pool_id, target_id, timestamp):
+        """
+        Replay all the events that we can since a certain timestamp
+        """
+        context = self._get_admin_context_all_tenants()
+        context.show_deleted = True
+
+        target = None
+        for tar in self.pool.targets:
+            if tar.id == target_id:
+                target = tar
+        if target is None:
+            raise exceptions.BadRequest('Please supply a valid target id.')
+
+        LOG.info(_LI('Starting Target Sync'))
+
+        criterion = {
+            'pool_id': pool_id,
+            'updated_at': '>%s' % datetime.fromtimestamp(timestamp).
+            isoformat(),
+        }
+
+        zones = self.central_api.find_zones(context, criterion=criterion,
+            sort_key='updated_at', sort_dir='asc')
+
+        self.tg.add_thread(self._target_sync,
+            context, zones, target, timestamp)
+
+        return 'Syncing %(len)s zones on %(target)s' % {'len': len(zones),
+                                                        'target': target_id}
+
+    def _target_sync(self, context, zones, target, timestamp):
+        zone_ops = []
+        timestamp_dt = datetime.fromtimestamp(timestamp)
+
+        for zone in zones:
+            if zone.status == 'DELETED':
+                # Remove any other ops for this zone
+                for zone_op in zone_ops:
+                    if zone.name == zone_op[0].name:
+                        zone_ops.remove(zone_op)
+                # If the zone was created before the timestamp delete it,
+                # otherwise, it will just never be created
+                if (datetime.strptime(zone.created_at, "%Y-%m-%dT%H:%M:%S.%f")
+                        <= timestamp_dt):
+                    zone_ops.append((zone, 'DELETE'))
+            elif (datetime.strptime(zone.created_at, "%Y-%m-%dT%H:%M:%S.%f") >
+                  timestamp_dt):
+                # If the zone was created after the timestamp
+                for zone_op in zone_ops:
+                    if (
+                        zone.name == zone_op[0].name and
+                        zone_op[1] == 'DELETE'
+                    ):
+                        zone_ops.remove(zone_op)
+
+                zone_ops.append((zone, 'CREATE'))
+            else:
+                zone_ops.append((zone, 'UPDATE'))
+
+        for zone, action in zone_ops:
+            if action == 'CREATE':
+                self._create_zone_on_target(context, target, zone)
+            elif action == 'UPDATE':
+                self._update_zone_on_target(context, target, zone)
+            elif action == 'DELETE':
+                self._delete_zone_on_target(context, target, zone)
+                zone.serial = 0
+            for nameserver in self.pool.nameservers:
+                self.mdns_api.poll_for_serial_number(
+                    context, zone, nameserver, self.timeout,
+                    self.retry_interval, self.max_retries, self.delay)
 
     # Standard Create/Update/Delete Methods
 
@@ -275,7 +400,7 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         for also_notify in self.pool.also_notifies:
             self._update_zone_on_also_notify(context, also_notify, zone)
 
-        # Send a NOTIFY to each nameserver
+        # Ensure the change has propagated to each nameserver
         for nameserver in self.pool.nameservers:
             create_status = self._build_status_object(
                 nameserver, zone, CREATE_ACTION)
@@ -349,7 +474,7 @@ class Service(service.RPCService, coordination.CoordinationMixin,
         for also_notify in self.pool.also_notifies:
             self._update_zone_on_also_notify(context, also_notify, zone)
 
-        # Ensure the change has propogated to each nameserver
+        # Ensure the change has propagated to each nameserver
         for nameserver in self.pool.nameservers:
             # See if there is already another update in progress
             try:
@@ -411,24 +536,28 @@ class Service(service.RPCService, coordination.CoordinationMixin,
             results.append(
                 self._delete_zone_on_target(context, target, zone))
 
-        # TODO(kiall): We should monitor that the Zone is actually deleted
-        #              correctly on each of the nameservers, rather than
-        #              assuming a successful delete-on-target is OK as we have
-        #              in the past.
-        if self._exceed_or_meet_threshold(
+        if not self._exceed_or_meet_threshold(
                 results.count(True), MAXIMUM_THRESHOLD):
-            LOG.debug('Consensus reached for deleting zone %(zone)s '
-                      'on pool targets' % {'zone': zone.name})
-
-            self.central_api.update_status(
-                context, zone.id, SUCCESS_STATUS, zone.serial)
-
-        else:
             LOG.warning(_LW('Consensus not reached for deleting zone %(zone)s'
-                         ' on pool targets') % {'zone': zone.name})
-
+                            ' on pool targets') % {'zone': zone.name})
             self.central_api.update_status(
                 context, zone.id, ERROR_STATUS, zone.serial)
+
+        zone.serial = 0
+        # Ensure the change has propagated to each nameserver
+        for nameserver in self.pool.nameservers:
+            # See if there is already another update in progress
+            try:
+                self.cache.retrieve(context, nameserver.id, zone.id,
+                                    DELETE_ACTION)
+            except exceptions.PoolManagerStatusNotFound:
+                update_status = self._build_status_object(
+                    nameserver, zone, DELETE_ACTION)
+                self.cache.store(context, update_status)
+
+            self.mdns_api.poll_for_serial_number(
+                context, zone, nameserver, self.timeout,
+                self.retry_interval, self.max_retries, self.delay)
 
     def _delete_zone_on_target(self, context, target, zone):
         """
@@ -500,7 +629,11 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                 current_status.serial_number = actual_serial
                 self.cache.store(context, current_status)
 
+            LOG.debug('Attempting to get consensus serial for %s' %
+                      zone.name)
             consensus_serial = self._get_consensus_serial(context, zone)
+            LOG.debug('Consensus serial for %s is %s' %
+                      (zone.name, consensus_serial))
 
             # If there is a valid consensus serial we can still send a success
             # for that serial.
@@ -526,11 +659,15 @@ class Service(service.RPCService, coordination.CoordinationMixin,
                     self.central_api.update_status(
                         context, zone.id, ERROR_STATUS, error_serial)
 
-            if status == NO_ZONE_STATUS and action != DELETE_ACTION:
-                LOG.warning(_LW('Zone %(zone)s is not present in some '
-                             'targets') % {'zone': zone.name})
-                self.central_api.update_status(
-                    context, zone.id, NO_ZONE_STATUS, 0)
+            if status == NO_ZONE_STATUS:
+                if action == DELETE_ACTION:
+                    self.central_api.update_status(
+                        context, zone.id, NO_ZONE_STATUS, 0)
+                else:
+                    LOG.warning(_LW('Zone %(zone)s is not present in some '
+                                 'targets') % {'zone': zone.name})
+                    self.central_api.update_status(
+                        context, zone.id, NO_ZONE_STATUS, 0)
 
             if consensus_serial == zone.serial and self._is_consensus(
                     context, zone, action, SUCCESS_STATUS,
@@ -539,12 +676,46 @@ class Service(service.RPCService, coordination.CoordinationMixin,
 
     # Utility Methods
     def _get_failed_zones(self, context, action):
+        """
+        Fetch zones that are in ERROR status or have been PENDING for a long
+        time. Used by periodic recovery.
+        After a certain time changes either should have successfully
+        propagated or gone to an ERROR state.
+        However, random failures and undiscovered bugs leave zones hanging out
+        in PENDING state forever. By treating those "stale" zones as failed,
+        periodic recovery will attempt to restore them.
+        :return: :class:`ZoneList` zones
+        """
         criterion = {
             'pool_id': CONF['service:pool_manager'].pool_id,
             'action': action,
             'status': ERROR_STATUS
         }
-        return self.central_api.find_zones(context, criterion)
+        error_zones = self.central_api.find_zones(context, criterion)
+
+        # Include things that have been hanging out in PENDING
+        # status for longer than they should
+        # Generate the current serial, will provide a UTC Unix TS.
+        current = utils.increment_serial()
+        stale_criterion = {
+            'pool_id': CONF['service:pool_manager'].pool_id,
+            'action': action,
+            'status': PENDING_STATUS,
+            'serial': "<%s" % (current - self.max_prop_time)
+        }
+        LOG.debug('Including zones with action %(action)s and %(status)s '
+                  'older than %(seconds)ds' % {'action': action,
+                                               'status': PENDING_STATUS,
+                                               'seconds': self.max_prop_time})
+
+        stale_zones = self.central_api.find_zones(context, stale_criterion)
+        if stale_zones:
+            LOG.warn(_LW('Found %(len)d zones PENDING for more than %(sec)d '
+                         'seconds'), {'len': len(stale_zones),
+                                      'sec': self.max_prop_time})
+            error_zones.extend(stale_zones)
+
+        return error_zones
 
     def _fetch_healthy_zones(self, context):
         """Fetch all zones not in error

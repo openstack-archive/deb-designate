@@ -517,6 +517,11 @@ class CentralServiceTest(CentralTestCase):
         with testtools.ExpectedException(exceptions.OverQuota):
             self.create_zone()
 
+    def test_create_zone_with_refresh_time_dispersion(self):
+        random.seed(42)
+        zone = self.create_zone()
+        self.assertEqual(3563, zone['refresh'])
+
     def test_create_subzone(self):
         # Create the Parent Zone using fixture 0
         parent_zone = self.create_zone(fixture=0)
@@ -1936,9 +1941,9 @@ class CentralServiceTest(CentralTestCase):
         self.assertEqual(values['data'], record['data'])
         self.assertIn('status', record)
 
-    def test_create_record_over_zone_quota(self):
+    def test_create_record_and_update_over_zone_quota(self):
         # SOA and NS Records exist
-        self.config(quota_zone_records=3)
+        self.config(quota_zone_records=1)
 
         # Creating the zone automatically creates SOA & NS records
         zone = self.create_zone()
@@ -1948,6 +1953,26 @@ class CentralServiceTest(CentralTestCase):
 
         with testtools.ExpectedException(exceptions.OverQuota):
             self.create_record(zone, recordset)
+
+    def test_create_record_over_zone_quota(self):
+        self.config(quota_zone_records=1)
+
+        # Creating the zone automatically creates SOA & NS records
+        zone = self.create_zone()
+
+        recordset = objects.RecordSet(
+            name='www.%s' % zone.name,
+            type='A',
+            records=objects.RecordList(objects=[
+                objects.Record(data='192.3.3.15'),
+                objects.Record(data='192.3.3.16'),
+            ])
+        )
+
+        with testtools.ExpectedException(exceptions.OverQuota):
+            # Persist the Object
+            recordset = self.central_service.create_recordset(
+                self.admin_context, zone.id, recordset=recordset)
 
     def test_create_record_over_recordset_quota(self):
         self.config(quota_recordset_records=1)
@@ -2675,7 +2700,7 @@ class CentralServiceTest(CentralTestCase):
         blacklist = self.create_blacklist(fixture=0)
 
         # Update the Object
-        blacklist.description = "New Comment"
+        blacklist.description = u"New Comment"
 
         # Perform the update
         self.central_service.update_blacklist(self.admin_context, blacklist)
@@ -2685,7 +2710,7 @@ class CentralServiceTest(CentralTestCase):
                                                        blacklist.id)
 
         # Verify that the record was updated correctly
-        self.assertEqual("New Comment", blacklist.description)
+        self.assertEqual(u"New Comment", blacklist.description)
 
     def test_delete_blacklist(self):
         # Create a blacklisted zone
@@ -2871,19 +2896,21 @@ class CentralServiceTest(CentralTestCase):
         pool = self.create_pool(fixture=0)
 
         # Update and save the pool
-        pool.description = 'New Comment'
+        pool.description = u'New Comment'
         self.central_service.update_pool(self.admin_context, pool)
 
         # Fetch the pool
         pool = self.central_service.get_pool(self.admin_context, pool.id)
 
         # Verify that the pool was updated correctly
-        self.assertEqual("New Comment", pool.description)
+        self.assertEqual(u"New Comment", pool.description)
 
     def test_update_pool_add_ns_record(self):
-        # Create a server pool and zone
+        # Create a server pool and 3 zones
         pool = self.create_pool(fixture=0)
         zone = self.create_zone(pool_id=pool.id)
+        self.create_zone(fixture=1, pool_id=pool.id)
+        self.create_zone(fixture=2, pool_id=pool.id)
 
         ns_record_count = len(pool.ns_records)
         new_ns_record = objects.PoolNsRecord(
@@ -2907,9 +2934,16 @@ class CentralServiceTest(CentralTestCase):
             self.admin_context,
             criterion={'zone_id': zone.id, 'type': "NS"})
 
-        # Verify that the doamins NS records ware updated correctly
+        # Verify that the doamins NS records were updated correctly
         self.assertEqual(set([n.hostname for n in pool.ns_records]),
                          set([n.data for n in ns_recordset.records]))
+
+        # Verify that the 3 zones are in the database and that
+        # the delayed_notify flag is set
+        zones = self._fetch_all_zones()
+        self.assertEqual(3, len(zones))
+        for z in zones:
+            self.assertTrue(z.delayed_notify)
 
     def test_update_pool_add_ns_record_without_priority(self):
         pool = self.create_pool(fixture=0)
@@ -2947,6 +2981,10 @@ class CentralServiceTest(CentralTestCase):
         # Verify that the doamins NS records ware updated correctly
         self.assertEqual(set([n.hostname for n in pool.ns_records]),
                          set([n.data for n in ns_recordset.records]))
+
+        zones = self._fetch_all_zones()
+        self.assertEqual(1, len(zones))
+        self.assertTrue(zones[0].delayed_notify)
 
     def test_delete_pool(self):
         # Create a server pool

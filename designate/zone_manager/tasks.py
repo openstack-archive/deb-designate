@@ -20,6 +20,7 @@ from designate import plugin
 from designate import rpc
 from designate.central import rpcapi
 from designate.i18n import _LI
+from designate.pool_manager.rpcapi import PoolManagerAPI
 
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -168,7 +169,8 @@ class PeriodicExistsTask(PeriodicTask):
 
     def __call__(self):
         pstart, pend = self._my_range()
-        msg = _LI("Emitting zone exist events for %(start)s to %(end)s")
+
+        msg = _LI("Emitting zone exist events for shards %(start)s to %(end)s")
         LOG.info(msg, {"start": pstart, "end": pend})
 
         ctxt = context.DesignateContext.get_admin_context()
@@ -176,17 +178,24 @@ class PeriodicExistsTask(PeriodicTask):
 
         start, end = self._get_period(self.options.interval)
 
-        data = {
-            "audit_period_beginning": str(start),
-            "audit_period_ending": str(end)
+        extra_data = {
+            "audit_period_beginning": start,
+            "audit_period_ending": end
         }
 
+        counter = 0
+
         for zone in self._iter_zones(ctxt):
-            zone_data = dict(zone)
-            zone_data.update(data)
+            counter += 1
+
+            zone_data = zone.to_dict()
+            zone_data.update(extra_data)
+
             self.notifier.info(ctxt, 'dns.domain.exists', zone_data)
 
-        LOG.info(_LI("Finished emitting events."))
+        LOG.info(_LI("Finished emitting %(counter)d events for shards "
+                     "%(start)s to %(end)s"),
+                 {"start": pstart, "end": pend, "counter": counter})
 
 
 class PeriodicSecondaryRefreshTask(PeriodicTask):
@@ -224,5 +233,67 @@ class PeriodicSecondaryRefreshTask(PeriodicTask):
             if seconds > zone.refresh:
                 msg = "Zone %(id)s has %(seconds)d seconds since last transfer, " \
                       "executing AXFR"
-                LOG.debug(msg % {"id": zone.id, "seconds": seconds})
+                LOG.debug(msg, {"id": zone.id, "seconds": seconds})
                 self.central_api.xfr_zone(ctxt, zone.id)
+
+
+class PeriodicGenerateDelayedNotifyTask(PeriodicTask):
+    """Generate delayed NOTIFY transactions
+    Scan the database for zones with the delayed_notify flag set.
+    """
+
+    __plugin_name__ = 'delayed_notify'
+    __interval__ = 5
+
+    def __init__(self):
+        super(PeriodicGenerateDelayedNotifyTask, self).__init__()
+
+    @classmethod
+    def get_cfg_opts(cls):
+        group = cfg.OptGroup(cls.get_canonical_name())
+        options = cls.get_base_opts() + [
+            cfg.IntOpt(
+                'interval',
+                default=cls.__interval__,
+                help='Run interval in seconds'
+            ),
+            cfg.IntOpt(
+                'batch_size',
+                default=100,
+                help='How many zones to receive NOTIFY on each run'
+            ),
+        ]
+        return [(group, options)]
+
+    def __call__(self):
+        """Fetch a list of zones with the delayed_notify flag set up to
+        "batch_size"
+        Call Pool Manager to emit NOTIFY transactions,
+        Reset the flag.
+        """
+        pstart, pend = self._my_range()
+
+        ctxt = context.DesignateContext.get_admin_context()
+        ctxt.all_tenants = True
+
+        # Select zones where "delayed_notify" is set and starting from the
+        # oldest "updated_at".
+        # There's an index on delayed_notify.
+        criterion = self._filter_between('shard')
+        criterion['delayed_notify'] = True
+        zones = self.central_api.find_zones(
+            ctxt,
+            criterion,
+            limit=self.options.batch_size,
+            sort_key='updated_at',
+            sort_dir='asc',
+        )
+
+        msg = _LI("Performing delayed NOTIFY for %(start)s to %(end)s: %(n)d")
+        LOG.debug(msg % dict(start=pstart, end=pend, n=len(zones)))
+
+        pm_api = PoolManagerAPI.get_instance()
+        for z in zones:
+            pm_api.update_zone(ctxt, z)
+            z.delayed_notify = False
+            self.central_api.update_zone(ctxt, z)

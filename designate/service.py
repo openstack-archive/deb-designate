@@ -28,7 +28,6 @@ import eventlet.debug
 import oslo_messaging as messaging
 from oslo_config import cfg
 from oslo_log import log as logging
-from oslo_log import loggers
 from oslo_service import service
 from oslo_service import sslutils
 
@@ -189,7 +188,7 @@ class WSGIService(object):
         eventlet.wsgi.server(self._wsgi_sock,
                              self._wsgi_application,
                              custom_pool=self.tg.pool,
-                             log=loggers.WritableLogger(logger))
+                             log=logger)
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -264,17 +263,20 @@ class DNSService(object):
                         break
                     payload += data
 
+            # NOTE: Any uncaught exceptions will result in the main loop
+            # ending unexpectedly. Ensure proper ordering of blocks, and
+            # ensure no exceptions are generated from within.
+            except socket.timeout:
+                client.close()
+                LOG.warning(_LW("TCP Timeout from: %(host)s:%(port)d") %
+                            {'host': addr[0], 'port': addr[1]})
+
             except socket.error as e:
                 client.close()
                 errname = errno.errorcode[e.args[0]]
                 LOG.warning(
                     _LW("Socket error %(err)s from: %(host)s:%(port)d") %
                     {'host': addr[0], 'port': addr[1], 'err': errname})
-
-            except socket.timeout:
-                client.close()
-                LOG.warning(_LW("TCP Timeout from: %(host)s:%(port)d") %
-                         {'host': addr[0], 'port': addr[1]})
 
             except struct.error:
                 client.close()

@@ -34,6 +34,9 @@ debug = False
 # Which networking API to use, Defaults to neutron
 #network_api = neutron
 
+# Supported record types
+#supported_record_type = A, AAAA, CNAME, MX, SRV, TXT, SPF, NS, PTR, SSHFP, SOA
+
 #-----------------------
 # RabbitMQ Config
 #-----------------------
@@ -131,7 +134,7 @@ debug = False
 #enable_api_admin = False
 
 # Enabled Admin API extensions
-# Can be one or more of : reports, quotas, counts, tenants, zones
+# Can be one or more of : reports, quotas, counts, tenants, target_sync
 # zone export is in zones extension
 #enabled_extensions_admin =
 
@@ -157,6 +160,7 @@ debug = False
 #admin_tenant_name = service
 #admin_user = designate
 #admin_password = designate
+#memcached_servers = localhost:11211
 
 #-----------------------
 # Sink Service
@@ -242,6 +246,16 @@ debug = False
 # How old deleted records should be (deleted_at) to be purged, in seconds
 #time_threshold = 604800  # 7 days
 
+#------------------------
+# Delayed zones NOTIFY
+#------------------------
+[zone_manager_task:delayed_notify]
+# How frequently to scan for zones pending NOTIFY, in seconds
+#interval = 5
+
+# How many zones to receive NOTIFY on each run
+#batch_size = 100
+
 #-----------------------
 # Pool Manager Service
 #-----------------------
@@ -287,6 +301,11 @@ debug = False
 
 # Zones Updated within last N seconds will be syncd. Use None to sync all zones
 #periodic_sync_seconds = None
+
+# Perform multiple update attempts during periodic_sync
+#periodic_sync_max_attempts = 3
+#periodic_sync_retry_interval = 30
+
 
 # The cache driver to use
 #cache_driver = memcache
@@ -380,6 +399,7 @@ debug = False
 #notification_topics = notifications
 #control_exchange = 'nova'
 #format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
+#format = '%(hostname)s.%(project)s.%(domain)s'
 #format = '%(hostname)s.%(domain)s'
 
 #------------------------
@@ -391,6 +411,7 @@ debug = False
 #notification_topics = notifications
 #control_exchange = 'neutron'
 #format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
+#format = '%(hostname)s.%(project)s.%(domain)s'
 #format = '%(hostname)s.%(domain)s'
 
 #############################

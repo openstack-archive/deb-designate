@@ -20,6 +20,7 @@ from mock import Mock
 from mock import patch
 from oslo_config import cfg
 from oslo_config import fixture as cfg_fixture
+from oslo_log import log as logging
 from oslotest import base
 import fixtures
 import mock
@@ -29,6 +30,7 @@ from designate import exceptions
 from designate.central.service import Service
 import designate.central.service
 
+LOG = logging.getLogger(__name__)
 
 # FIXME: create mock, do not use cfg
 cfg.CONF.import_opt('storage_driver', 'designate.central',
@@ -44,7 +46,8 @@ def unwrap(f):
     for _ in range(42):
         try:
             uf = getattr(f, '__wrapped_function')
-            print("Unwrapping %s from %s" % (f.func_name, f.__wrapper_name))
+            LOG.debug("Unwrapping %s from %s" %
+                      (f.func_name, f.__wrapper_name))
             f = uf
         except AttributeError:
             return f
@@ -310,10 +313,22 @@ class CentralServiceTestCase(CentralBasic):
 
     def test_init(self):
         self.assertTrue(self.service.check_for_tlds)
+
+        # Ensure these attributes are lazy
+        self.assertFalse(designate.central.service.storage.get_storage.called)
+        self.assertFalse(designate.central.service.quota.get_quota.called)
+
+    def test_storage_loads_lazily(self):
+        assert self.service.storage
         self.assertTrue(designate.central.service.storage.get_storage.called)
 
+    def test_quota_loads_lazily(self):
+        assert self.service.quota
+        self.assertTrue(designate.central.service.quota.get_quota.called)
+
     def test__is_valid_ttl(self):
-        self.CONF.set_override('min_ttl', 10, 'service:central')
+        self.CONF.set_override('min_ttl', 10, 'service:central',
+                               enforce_type=True)
         self.service._is_valid_ttl(self.context, 20)
 
         # policy.check() not to raise: the user is allowed to create low TTLs
@@ -369,20 +384,74 @@ class CentralServiceTestCase(CentralBasic):
             self.context, {'a': 1}
         )
 
-    def test_create_recordset_in_storage(self):
-        self.service._enforce_recordset_quota = mock.Mock()
-        self.service._is_valid_ttl = mock.Mock()
+    def test_validate_new_recordset(self):
         self.service._is_valid_recordset_name = mock.Mock()
         self.service._is_valid_recordset_placement = mock.Mock()
         self.service._is_valid_recordset_placement_subzone = mock.Mock()
-        self.service.storage.create_recordset = mock.Mock(return_value='rs')
-        self.service._update_zone_in_storage = mock.Mock()
+        self.service._is_valid_ttl = mock.Mock()
+
+        MockRecordSet.id = None
+
+        self.service._validate_recordset(
+            self.context, Mockzone, MockRecordSet
+        )
+
+        assert self.service._is_valid_recordset_name.called
+        assert self.service._is_valid_recordset_placement.called
+        assert self.service._is_valid_recordset_placement_subzone.called
+        assert self.service._is_valid_ttl.called
+
+    def test_validate_existing_recordset(self):
+        self.service._is_valid_recordset_name = mock.Mock()
+        self.service._is_valid_recordset_placement = mock.Mock()
+        self.service._is_valid_recordset_placement_subzone = mock.Mock()
+        self.service._is_valid_ttl = mock.Mock()
+
+        MockRecordSet.obj_get_changes = Mock(return_value={'ttl': 3600})
+
+        self.service._validate_recordset(
+            self.context, Mockzone, MockRecordSet
+        )
+
+        assert self.service._is_valid_recordset_name.called
+        assert self.service._is_valid_recordset_placement.called
+        assert self.service._is_valid_recordset_placement_subzone.called
+        assert self.service._is_valid_ttl.called
+
+    def test_create_recordset_in_storage(self):
+        self.service._enforce_recordset_quota = Mock()
+        self.service._validate_recordset = mock.Mock()
+
+        self.service.storage.create_recordset = Mock(return_value='rs')
+        self.service._update_zone_in_storage = Mock()
 
         rs, zone = self.service._create_recordset_in_storage(
             self.context, Mockzone(), MockRecordSet()
         )
         self.assertEqual(rs, 'rs')
         self.assertFalse(self.service._update_zone_in_storage.called)
+
+    def test_create_recordset_with_records_in_storage(self):
+        self.service._enforce_recordset_quota = mock.Mock()
+        self.service._enforce_record_quota = mock.Mock()
+        self.service._is_valid_recordset_name = mock.Mock()
+        self.service._is_valid_recordset_placement = mock.Mock()
+        self.service._is_valid_recordset_placement_subzone = mock.Mock()
+        self.service._is_valid_ttl = mock.Mock()
+
+        self.service.storage.create_recordset = mock.Mock(return_value='rs')
+        self.service._update_zone_in_storage = mock.Mock()
+
+        recordset = Mock()
+        recordset.obj_attr_is_set.return_value = True
+        recordset.records = [MockRecord()]
+
+        rs, zone = self.service._create_recordset_in_storage(
+            self.context, Mockzone(), recordset
+        )
+
+        assert self.service._enforce_record_quota.called
+        assert self.service._update_zone_in_storage.called
 
     def test__create_soa(self):
         self.service._create_recordset_in_storage = Mock(
@@ -429,7 +498,7 @@ class CentralServiceTestCase(CentralBasic):
         self.service._enforce_zone_quota = mock.Mock(return_value=None)
         self.service._is_valid_zone_name = mock.Mock(return_value=None)
         self.service._is_valid_ttl = mock.Mock(return_value=True)
-        self.service._is_subzone = Mock()
+        self.service._is_subzone = mock.Mock()
         self.service._create_zone_in_storage = mock.Mock(
             return_value=Mockzone()
         )
@@ -778,11 +847,12 @@ class CentralzoneTestCase(CentralBasic):
 
         out = self.service.create_zone(
             self.context,
-            RoObject(
+            RwObject(
                 tenant_id='1',
                 name='example.com.',
                 ttl=60,
                 pool_id='2',
+                refresh=0,
                 type='PRIMARY'
             )
         )
@@ -1128,6 +1198,7 @@ class CentralzoneTestCase(CentralBasic):
         recordset.type = 't'
         recordset.id = 'i'
         recordset.obj_get_changes.return_value = {'ttl': 90}
+        recordset.ttl = 90
         recordset.records = []
         self.service._is_valid_recordset_name = Mock()
         self.service._is_valid_recordset_placement = Mock()
@@ -1166,6 +1237,7 @@ class CentralzoneTestCase(CentralBasic):
         recordset.name = 'n'
         recordset.type = 't'
         recordset.id = 'i'
+        recordset.ttl = None
         recordset.obj_get_changes.return_value = {'ttl': None}
         recordset.records = [RwObject(
             action='a',
@@ -1177,6 +1249,7 @@ class CentralzoneTestCase(CentralBasic):
         self.service._is_valid_recordset_placement_subzone = Mock()
         self.service._is_valid_ttl = Mock()
         self.service._update_zone_in_storage = Mock()
+        self.service._enforce_record_quota = mock.Mock()
 
         self.service._update_recordset_in_storage(
             self.context,
@@ -1201,6 +1274,7 @@ class CentralzoneTestCase(CentralBasic):
         assert not self.service._is_valid_ttl.called
         assert not self.service._update_zone_in_storage.called
         assert self.service.storage.update_recordset.called
+        assert self.service._enforce_record_quota.called
 
     def test_delete_recordset_not_found(self):
         self.service.storage.get_zone.return_value = RoObject(
@@ -1770,12 +1844,12 @@ class IsSubzoneTestCase(CentralBasic):
         super(IsSubzoneTestCase, self).setUp()
 
         def find_zone(ctx, criterion):
-            print("Calling find_zone on %r" % criterion)
+            LOG.debug("Calling find_zone on %r" % criterion)
             if criterion['name'] == 'example.com.':
-                print("Returning %r" % criterion['name'])
+                LOG.debug("Returning %r" % criterion['name'])
                 return criterion['name']
 
-            print("Not found")
+            LOG.debug("Not found")
             raise exceptions.ZoneNotFound
 
         self.service.storage.find_zone = find_zone
@@ -1920,3 +1994,40 @@ class CentralStatusTests(CentralBasic):
 
         self.assertEqual(dom.action, 'CREATE')
         self.assertEqual(dom.status, 'ERROR')
+
+
+class CentralQuotaTest(unittest.TestCase):
+
+    def setUp(self):
+        self.context = mock.Mock()
+        self.zone = mock.Mock()
+
+    @patch('designate.central.service.storage')
+    @patch('designate.central.service.quota')
+    def test_zone_record_quota_allows_lowering_value(self, quota, storage):
+        service = Service()
+        service.storage.count_records.return_value = 10
+
+        recordset = mock.Mock()
+        recordset.managed = False
+        recordset.records = ['1.1.1.%i' % (i + 1) for i in range(5)]
+
+        service._enforce_record_quota(
+            self.context, self.zone, recordset
+        )
+
+        # Ensure we check against the number of records that will
+        # result in the API call. The 5 value is as if there were 10
+        # unmanaged records unders a single recordset. We find 10
+        # total - 10 for the recordset being passed in and add the 5
+        # from the new recordset.
+        check_zone_records = mock.call(
+            self.context, self.zone.tenant_id, zone_records=10 - 10 + 5
+        )
+        assert check_zone_records in service.quota.limit_check.mock_calls
+
+        # Check the recordset limit as well
+        check_recordset_records = mock.call(
+            self.context, self.zone.tenant_id, recordset_records=10
+        )
+        assert check_recordset_records in service.quota.limit_check.mock_calls

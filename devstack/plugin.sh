@@ -250,8 +250,8 @@ function install_designateclient {
 function install_designatedashboard {
     git_clone $DESIGNATEDASHBOARD_REPO $DESIGNATEDASHBOARD_DIR $DESIGNATEDASHBOARD_BRANCH
     setup_develop $DESIGNATEDASHBOARD_DIR
-    ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_70_dns_add_group.py $HORIZON_DIR/openstack_dashboard/local/enabled/70_dns_add_group.py
-    ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_71_dns_project.py $HORIZON_DIR/openstack_dashboard/local/enabled/71_dns_project.py
+    ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_1710_project_dns_panel_group.py $HORIZON_DIR/openstack_dashboard/local/enabled/_1710_project_dns_panel_group.py
+    ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_1720_project_dns_panel.py $HORIZON_DIR/openstack_dashboard/local/enabled/_1720_project_dns_panel.py
 }
 
 # start_designate - Start running processes, including screen
@@ -294,11 +294,11 @@ function stop_designate {
 if is_service_enabled designate; then
 
     if [[ "$1" == "stack" && "$2" == "install" ]]; then
-        echo_summary "Installing Designate"
-        install_designate
-
         echo_summary "Installing Designate client"
         install_designateclient
+
+        echo_summary "Installing Designate"
+        install_designate
 
         if is_service_enabled horizon; then
             echo_summary "Installing Designate dashboard"

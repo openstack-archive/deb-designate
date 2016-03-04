@@ -268,14 +268,22 @@ class Service(service.RPCService, service.Service):
     def __init__(self, threads=None):
         super(Service, self).__init__(threads=threads)
 
-        # Get a storage connection
-        storage_driver = cfg.CONF['service:central'].storage_driver
-        self.storage = storage.get_storage(storage_driver)
-
-        # Get a quota manager instance
-        self.quota = quota.get_quota()
-
         self.network_api = network_api.get_network_api(cfg.CONF.network_api)
+
+    @property
+    def quota(self):
+        if not hasattr(self, '_quota'):
+            # Get a quota manager instance
+            self._quota = quota.get_quota()
+        return self._quota
+
+    @property
+    def storage(self):
+        if not hasattr(self, '_storage'):
+            # Get a storage connection
+            storage_driver = cfg.CONF['service:central'].storage_driver
+            self._storage = storage.get_storage(storage_driver)
+        return self._storage
 
     @property
     def service_name(self):
@@ -527,10 +535,16 @@ class Service(service.RPCService, service.Service):
                 raise exceptions.InvalidTTL('TTL is below the minimum: %s'
                                             % min_ttl)
 
-    def _increment_zone_serial(self, context, zone):
+    def _increment_zone_serial(self, context, zone, set_delayed_notify=False):
+        """Update the zone serial and the SOA record
+        Optionally set delayed_notify to have PM issue delayed notify
+        """
 
         # Increment the serial number
         zone.serial = utils.increment_serial(zone.serial)
+        if set_delayed_notify:
+            zone.delayed_notify = True
+
         zone = self.storage.update_zone(context, zone)
 
         # Update SOA record
@@ -634,7 +648,8 @@ class Service(service.RPCService, service.Service):
         ns_recordset.records.append(
             objects.Record(data=ns_record, managed=True))
 
-        self._update_recordset_in_storage(context, zone, ns_recordset)
+        self._update_recordset_in_storage(context, zone, ns_recordset,
+                                          set_delayed_notify=True)
 
     def _delete_ns(self, context, zone, ns_record):
         ns_recordset = self.find_recordset(
@@ -644,7 +659,8 @@ class Service(service.RPCService, service.Service):
             if record.data == ns_record:
                 ns_recordset.records.remove(record)
 
-        self._update_recordset_in_storage(context, zone, ns_recordset)
+        self._update_recordset_in_storage(context, zone, ns_recordset,
+                                          set_delayed_notify=True)
 
     # Quota Enforcement Methods
     def _enforce_zone_quota(self, context, tenant_id):
@@ -662,19 +678,37 @@ class Service(service.RPCService, service.Service):
             context, zone.tenant_id, zone_recordsets=count)
 
     def _enforce_record_quota(self, context, zone, recordset):
+        # Quotas don't apply to managed records.
+        if recordset.managed:
+            return
+
         # Ensure the records per zone quota is OK
-        criterion = {'zone_id': zone.id}
-        count = self.storage.count_records(context, criterion)
+        zone_criterion = {
+            'zone_id': zone.id,
+            'managed': False,  # only include non-managed records
+        }
+
+        zone_records = self.storage.count_records(context, zone_criterion)
+
+        recordset_criterion = {
+            'recordset_id': recordset.id,
+            'managed': False,  # only include non-managed records
+        }
+        recordset_records = self.storage.count_records(
+            context, recordset_criterion)
+
+        # We need to check the current number of zones + the
+        # changes that add, so lets get +/- from our recordset
+        # records based on the action
+        adjusted_zone_records = (
+            zone_records - recordset_records + len(recordset.records))
 
         self.quota.limit_check(context, zone.tenant_id,
-                               zone_records=count)
+                               zone_records=adjusted_zone_records)
 
         # Ensure the records per recordset quota is OK
-        criterion = {'recordset_id': recordset.id}
-        count = self.storage.count_records(context, criterion)
-
         self.quota.limit_check(context, zone.tenant_id,
-                               recordset_records=count)
+                               recordset_records=recordset_records)
 
     # Misc Methods
     def get_absolute_limits(self, context):
@@ -835,6 +869,20 @@ class Service(service.RPCService, service.Service):
         return self.storage.count_tenants(context)
 
     # Zone Methods
+
+    def _generate_soa_refresh_interval(self):
+        """Generate a random refresh interval to stagger AXFRs across multiple
+        zones and resolvers
+        maximum val: default_soa_refresh_min
+        minimum val: default_soa_refresh_max
+        """
+        assert cfg.CONF.default_soa_refresh_min is not None
+        assert cfg.CONF.default_soa_refresh_max is not None
+        dispersion = (cfg.CONF.default_soa_refresh_max -
+                      cfg.CONF.default_soa_refresh_min) * random.random()
+        refresh_time = cfg.CONF.default_soa_refresh_min + dispersion
+        return int(refresh_time)
+
     @notification('dns.domain.create')
     @notification('dns.zone.create')
     @synchronized_zone(new_zone=True)
@@ -905,6 +953,9 @@ class Service(service.RPCService, service.Service):
 
         if zone.type == 'SECONDARY' and zone.serial is None:
             zone.serial = 1
+
+        # randomize the zone refresh time
+        zone.refresh = self._generate_soa_refresh_interval()
 
         zone = self._create_zone_in_storage(context, zone)
 
@@ -1047,14 +1098,15 @@ class Service(service.RPCService, service.Service):
 
     @transaction
     def _update_zone_in_storage(self, context, zone,
-                                increment_serial=True):
+            increment_serial=True, set_delayed_notify=False):
 
         zone.action = 'UPDATE'
         zone.status = 'PENDING'
 
         if increment_serial:
             # _increment_zone_serial increments and updates the zone
-            zone = self._increment_zone_serial(context, zone)
+            zone = self._increment_zone_serial(
+                context, zone, set_delayed_notify=set_delayed_notify)
         else:
             zone = self.storage.update_zone(context, zone)
 
@@ -1175,12 +1227,21 @@ class Service(service.RPCService, service.Service):
             reports.append({'zones': self.count_zones(context),
                             'records': self.count_records(context),
                             'tenants': self.count_tenants(context)})
+
         elif criterion == 'zones':
             reports.append({'zones': self.count_zones(context)})
+
+        elif criterion == 'zones_delayed_notify':
+            num_zones = self.count_zones(context, criterion=dict(
+                delayed_notify=True))
+            reports.append({'zones_delayed_notify': num_zones})
+
         elif criterion == 'records':
             reports.append({'records': self.count_records(context)})
+
         elif criterion == 'tenants':
             reports.append({'tenants': self.count_tenants(context)})
+
         else:
             raise exceptions.ReportNotFound()
 
@@ -1240,6 +1301,35 @@ class Service(service.RPCService, service.Service):
 
         return recordset
 
+    def _validate_recordset(self, context, zone, recordset):
+
+        # See if we're validating an existing or new recordset
+        recordset_id = None
+        if hasattr(recordset, 'id'):
+            recordset_id = recordset.id
+
+        # Ensure TTL is above the minimum
+        if not recordset_id:
+            ttl = getattr(recordset, 'ttl', None)
+        else:
+            changes = recordset.obj_get_changes()
+            ttl = changes.get('ttl', None)
+
+        if ttl is not None:
+            self._is_valid_ttl(context, ttl)
+
+        # Ensure the recordset name and placement is valid
+        self._is_valid_recordset_name(context, zone, recordset.name)
+
+        self._is_valid_recordset_placement(
+            context, zone, recordset.name, recordset.type, recordset_id)
+
+        self._is_valid_recordset_placement_subzone(
+            context, zone, recordset.name)
+
+        # Validate the records
+        self._is_valid_recordset_records(recordset)
+
     @transaction
     def _create_recordset_in_storage(self, context, zone, recordset,
                                      increment_serial=True):
@@ -1247,20 +1337,14 @@ class Service(service.RPCService, service.Service):
         # Ensure the tenant has enough quota to continue
         self._enforce_recordset_quota(context, zone)
 
-        # Ensure TTL is above the minimum
-        ttl = getattr(recordset, 'ttl', None)
-        if ttl is not None:
-            self._is_valid_ttl(context, ttl)
-
-        # Ensure the recordset name and placement is valid
-        self._is_valid_recordset_name(context, zone, recordset.name)
-        self._is_valid_recordset_placement(context, zone, recordset.name,
-                                           recordset.type)
-        self._is_valid_recordset_placement_subzone(
-            context, zone, recordset.name)
-        self._is_valid_recordset_records(recordset)
+        self._validate_recordset(context, zone, recordset)
 
         if recordset.obj_attr_is_set('records') and len(recordset.records) > 0:
+
+            # Ensure the tenant has enough zone record quotas to
+            # create new records
+            self._enforce_record_quota(context, zone, recordset)
+
             if increment_serial:
                 # update the zone's status and increment the serial
                 zone = self._update_zone_in_storage(
@@ -1373,27 +1457,15 @@ class Service(service.RPCService, service.Service):
 
     @transaction
     def _update_recordset_in_storage(self, context, zone, recordset,
-                                     increment_serial=True):
+            increment_serial=True, set_delayed_notify=False):
 
-        changes = recordset.obj_get_changes()
-
-        # Ensure the record name is valid
-        self._is_valid_recordset_name(context, zone, recordset.name)
-        self._is_valid_recordset_placement(context, zone, recordset.name,
-                                           recordset.type, recordset.id)
-        self._is_valid_recordset_placement_subzone(
-            context, zone, recordset.name)
-        self._is_valid_recordset_records(recordset)
-
-        # Ensure TTL is above the minimum
-        ttl = changes.get('ttl', None)
-        if ttl is not None:
-            self._is_valid_ttl(context, ttl)
+        self._validate_recordset(context, zone, recordset)
 
         if increment_serial:
             # update the zone's status and increment the serial
             zone = self._update_zone_in_storage(
-                context, zone, increment_serial)
+                context, zone, increment_serial,
+                set_delayed_notify=set_delayed_notify)
 
         if recordset.records:
             for record in recordset.records:
@@ -1401,6 +1473,10 @@ class Service(service.RPCService, service.Service):
                     record.action = 'UPDATE'
                     record.status = 'PENDING'
                     record.serial = zone.serial
+
+            # Ensure the tenant has enough zone record quotas to
+            # create new records
+            self._enforce_record_quota(context, zone, recordset)
 
         # Update the recordset
         recordset = self.storage.update_recordset(context, recordset)
@@ -1433,7 +1509,7 @@ class Service(service.RPCService, service.Service):
         policy.check('delete_recordset', context, target)
 
         if recordset.managed and not context.edit_managed_records:
-            raise exceptions.BadRequest('Managed records may not be updated')
+            raise exceptions.BadRequest('Managed records may not be deleted')
 
         recordset, zone = self._delete_recordset_in_storage(
             context, zone, recordset, increment_serial=increment_serial)
@@ -1670,7 +1746,7 @@ class Service(service.RPCService, service.Service):
         policy.check('delete_record', context, target)
 
         if recordset.managed and not context.edit_managed_records:
-            raise exceptions.BadRequest('Managed records may not be updated')
+            raise exceptions.BadRequest('Managed records may not be deleted')
 
         record, zone = self._delete_record_in_storage(
             context, zone, record, increment_serial=increment_serial)
@@ -2292,17 +2368,13 @@ class Service(service.RPCService, service.Service):
         zone, deleted = self._update_zone_or_record_status(
             zone, status, serial)
 
-        LOG.debug('Setting zone %s, serial %s: action %s, status %s'
-                  % (zone.id, zone.serial, zone.action, zone.status))
-        self.storage.update_zone(context, zone)
+        if zone.status != 'DELETED':
+            LOG.debug('Setting zone %s, serial %s: action %s, status %s'
+                      % (zone.id, zone.serial, zone.action, zone.status))
+            self.storage.update_zone(context, zone)
 
-        # TODO(Ron): Including this to retain the current logic.
-        # We should NOT be deleting zones.  The zone status should be
-        # used to indicate the zone has been deleted and not the deleted
-        # column.  The deleted column is needed for unique constraints.
         if deleted:
-            # TODO(vinod): Pass a zone to delete_zone rather than id so
-            # that the action, status and serial are updated correctly.
+            LOG.debug('update_status: deleting %s' % zone.name)
             self.storage.delete_zone(context, zone.id)
 
         return zone
@@ -2663,7 +2735,7 @@ class Service(service.RPCService, service.Service):
                 zone_import.message = 'An SOA record is required.'
                 zone_import.status = 'ERROR'
             except Exception:
-                zone_import.message = 'An undefined error occured.'
+                zone_import.message = 'An undefined error occurred.'
                 zone_import.status = 'ERROR'
 
             return zone, zone_import
@@ -2687,7 +2759,7 @@ class Service(service.RPCService, service.Service):
                 zone_import.status = 'ERROR'
                 zone_import.message = e.message
             except Exception:
-                zone_import.message = 'An undefined error occured.'
+                zone_import.message = 'An undefined error occurred.'
                 zone_import.status = 'ERROR'
 
         self.update_zone_import(context, zone_import)

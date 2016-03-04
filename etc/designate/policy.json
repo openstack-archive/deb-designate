@@ -51,6 +51,7 @@
     "xfr_zone": "rule:admin_or_owner",
     "abandon_zone": "rule:admin",
     "count_zones": "rule:admin_or_owner",
+    "count_zones_pending_notify": "rule:admin_or_owner",
     "purge_zones": "rule:admin",
     "touch_zone": "rule:admin_or_owner",
 
@@ -80,7 +81,7 @@
     "get_blacklist": "rule:admin",
     "update_blacklist": "rule:admin",
     "delete_blacklist": "rule:admin",
-    "use_blacklisted_domain": "rule:admin",
+    "use_blacklisted_zone": "rule:admin",
 
     "create_pool": "rule:admin",
     "find_pools": "rule:admin",
@@ -90,8 +91,8 @@
     "delete_pool": "rule:admin",
 
     "diagnostics_ping": "rule:admin",
-    "diagnostics_sync_domains": "rule:admin",
-    "diagnostics_sync_domain": "rule:admin",
+    "diagnostics_sync_zones": "rule:admin",
+    "diagnostics_sync_zone": "rule:admin",
     "diagnostics_sync_record": "rule:admin",
 
     "create_zone_transfer_request": "rule:admin_or_owner",
