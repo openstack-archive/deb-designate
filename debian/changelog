@@ -4,6 +4,8 @@ designate (1:2.0.0~b3-1) experimental; urgency=medium
   * New upstream release.
   * Fixed (build-)depends for this release.
   * Do not use the -S option of dpkg-parsechangelog (incompatible with Trusty).
+  * Rebased config file patch.
+  * Removed skip test patch (applied upstream).
 
   [ Ondřej Nový ]
   * Fixed VCS URLs (https).

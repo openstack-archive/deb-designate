@@ -1,13 +1,11 @@
 Description: Uncomments keystone_authtoken directives
 Author: Thomas Goirand <zigo@debian.org>
 Forwarded: not-needed
-Last-Update: 2013-12-05
+Last-Update: 2016-03-04
 
-Index: designate/etc/designate/designate.conf.sample
-===================================================================
---- designate.orig/etc/designate/designate.conf.sample
-+++ designate/etc/designate/designate.conf.sample
-@@ -148,12 +148,12 @@ debug = False
+--- designate-2.0.0~b3.orig/etc/designate/designate.conf.sample
++++ designate-2.0.0~b3/etc/designate/designate.conf.sample
+@@ -154,12 +154,12 @@ debug = False
  # Keystone Middleware
  #-----------------------
  [keystone_authtoken]
@@ -23,6 +21,6 @@ Index: designate/etc/designate/designate.conf.sample
 +admin_tenant_name = service
 +admin_user = designate
 +admin_password = designate
+ #memcached_servers = localhost:11211
  
  #-----------------------
- # Sink Service
