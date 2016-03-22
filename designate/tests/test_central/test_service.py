@@ -480,7 +480,8 @@ class CentralServiceTest(CentralTestCase):
 
         # Create a secondary pool
         second_pool = self.create_pool()
-        fixture["pool_id"] = second_pool.id
+        fixture["attributes"] = {}
+        fixture["attributes"]["pool_id"] = second_pool.id
 
         self.create_zone(**fixture)
 
@@ -517,11 +518,6 @@ class CentralServiceTest(CentralTestCase):
         with testtools.ExpectedException(exceptions.OverQuota):
             self.create_zone()
 
-    def test_create_zone_with_refresh_time_dispersion(self):
-        random.seed(42)
-        zone = self.create_zone()
-        self.assertEqual(3563, zone['refresh'])
-
     def test_create_subzone(self):
         # Create the Parent Zone using fixture 0
         parent_zone = self.create_zone(fixture=0)
@@ -542,15 +538,19 @@ class CentralServiceTest(CentralTestCase):
         fixture = self.get_zone_fixture()
 
         # Create first zone that's placed in default pool
-        self.create_zone(**fixture)
+        zone = self.create_zone(**fixture)
 
         # Create a secondary pool
         second_pool = self.create_pool()
-        fixture["pool_id"] = second_pool.id
+        fixture["attributes"] = {}
+        fixture["attributes"]["pool_id"] = second_pool.id
         fixture["name"] = "sub.%s" % fixture["name"]
-
         subzone = self.create_zone(**fixture)
-        self.assertIsNone(subzone.parent_zone_id)
+
+        if subzone.pool_id is not zone.pool_id:
+            self.assertIsNone(subzone.parent_zone_id)
+        else:
+            raise Exception("Foo")
 
     def test_create_superzone(self):
         # Prepare values for the zone and subzone
@@ -810,7 +810,7 @@ class CentralServiceTest(CentralTestCase):
         servers = self.central_service.get_zone_ns_records(
             self.admin_context, zone['id'])
 
-        self.assertTrue(len(servers) > 0)
+        self.assertGreater(len(servers), 0)
 
     def test_find_zone(self):
         # Create a zone
@@ -848,7 +848,7 @@ class CentralServiceTest(CentralTestCase):
             self.admin_context, zone.id)
 
         # Ensure the zone was updated correctly
-        self.assertTrue(zone.serial > original_serial)
+        self.assertGreater(zone.serial, original_serial)
         self.assertEqual('info@example.net', zone.email)
 
         self.assertEqual(2, mock_notifier.call_count)
@@ -930,7 +930,7 @@ class CentralServiceTest(CentralTestCase):
         self.assertTrue(i[0])
 
         # Ensure the zone was updated correctly
-        self.assertTrue(zone.serial > original_serial)
+        self.assertGreater(zone.serial, original_serial)
         self.assertEqual('info@example.net', zone.email)
 
     @mock.patch.object(notifier.Notifier, "info")
@@ -1290,13 +1290,13 @@ class CentralServiceTest(CentralTestCase):
             self.admin_context, expected_zone['id'])
 
         # Ensure the serial was incremented
-        self.assertTrue(zone['serial'] > expected_zone['serial'])
+        self.assertGreater(zone['serial'], expected_zone['serial'])
 
     def test_xfr_zone(self):
         # Create a zone
         fixture = self.get_zone_fixture('SECONDARY', 0)
         fixture['email'] = cfg.CONF['service:central'].managed_resource_email
-        fixture['attributes'] = [{"key": "master", "value": "10.0.0.10"}]
+        fixture['masters'] = [{"host": "10.0.0.10", "port": 53}]
 
         # Create a zone
         secondary = self.create_zone(**fixture)
@@ -1313,7 +1313,7 @@ class CentralServiceTest(CentralTestCase):
         # Create a zone
         fixture = self.get_zone_fixture('SECONDARY', 0)
         fixture['email'] = cfg.CONF['service:central'].managed_resource_email
-        fixture['attributes'] = [{"key": "master", "value": "10.0.0.10"}]
+        fixture['masters'] = [{"host": "10.0.0.10", "port": 53}]
 
         # Create a zone
         secondary = self.create_zone(**fixture)
@@ -1330,7 +1330,7 @@ class CentralServiceTest(CentralTestCase):
         # Create a zone
         fixture = self.get_zone_fixture('SECONDARY', 0)
         fixture['email'] = cfg.CONF['service:central'].managed_resource_email
-        fixture['attributes'] = [{"key": "master", "value": "10.0.0.10"}]
+        fixture['masters'] = [{"host": "10.0.0.10", "port": 53}]
         fixture['serial'] = 10
 
         # Create a zone
@@ -2908,9 +2908,14 @@ class CentralServiceTest(CentralTestCase):
     def test_update_pool_add_ns_record(self):
         # Create a server pool and 3 zones
         pool = self.create_pool(fixture=0)
-        zone = self.create_zone(pool_id=pool.id)
-        self.create_zone(fixture=1, pool_id=pool.id)
-        self.create_zone(fixture=2, pool_id=pool.id)
+        zone = self.create_zone(
+            attributes=[{'key': 'pool_id', 'value': pool.id}])
+        self.create_zone(
+            fixture=1,
+            attributes=[{'key': 'pool_id', 'value': pool.id}])
+        self.create_zone(
+            fixture=2,
+            attributes=[{'key': 'pool_id', 'value': pool.id}])
 
         ns_record_count = len(pool.ns_records)
         new_ns_record = objects.PoolNsRecord(
@@ -2957,7 +2962,8 @@ class CentralServiceTest(CentralTestCase):
     def test_update_pool_remove_ns_record(self):
         # Create a server pool and zone
         pool = self.create_pool(fixture=0)
-        zone = self.create_zone(pool_id=pool.id)
+        zone = self.create_zone(
+            attributes=[{'key': 'pool_id', 'value': pool.id}])
 
         ns_record_count = len(pool.ns_records)
 

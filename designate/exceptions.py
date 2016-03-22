@@ -91,9 +91,19 @@ class NeutronCommunicationFailure(CommunicationFailure):
     error_type = 'neutron_communication_failure'
 
 
+class NoFiltersConfigured(ConfigurationError):
+    error_code = 500
+    error_type = 'no_filters_configured'
+
+
 class NoServersConfigured(ConfigurationError):
     error_code = 500
     error_type = 'no_servers_configured'
+
+
+class MultiplePoolsFound(ConfigurationError):
+    error_code = 500
+    error_type = 'multiple_pools_found'
 
 
 class NoPoolTargetsConfigured(ConfigurationError):
@@ -104,6 +114,7 @@ class NoPoolTargetsConfigured(ConfigurationError):
 class OverQuota(Base):
     error_code = 413
     error_type = 'over_quota'
+    expected = True
 
 
 class QuotaResourceUnknown(Base):
@@ -280,12 +291,28 @@ class DuplicatePoolAttribute(Duplicate):
     error_type = 'duplicate_pool_attribute'
 
 
-class DuplicateZoneAttribute(Duplicate):
-    error_type = 'duplicate_zone_attribute'
-
-
 class DuplicatePoolNsRecord(Duplicate):
     error_type = 'duplicate_pool_ns_record'
+
+
+class DuplicatePoolNameserver(Duplicate):
+    error_type = 'duplicate_pool_nameserver'
+
+
+class DuplicatePoolTarget(Duplicate):
+    error_type = 'duplicate_pool_target'
+
+
+class DuplicatePoolTargetOption(Duplicate):
+    error_type = 'duplicate_pool_target_option'
+
+
+class DuplicatePoolTargetMaster(Duplicate):
+    error_type = 'duplicate_pool_target_master'
+
+
+class DuplicatePoolAlsoNotify(Duplicate):
+    error_type = 'duplicate_pool_also_notify'
 
 
 class DuplicateZoneImport(Duplicate):
@@ -308,6 +335,14 @@ class DuplicateZoneTransferRequest(Duplicate):
 
 class DuplicateZoneTransferAccept(Duplicate):
     error_type = 'duplicate_zone_transfer_accept'
+
+
+class DuplicateZoneAttribute(Duplicate):
+    error_type = 'duplicate_zone_attribute'
+
+
+class DuplicateZoneMaster(Duplicate):
+    error_type = 'duplicate_zone_attribute'
 
 
 class NotFound(Base):
@@ -368,12 +403,36 @@ class PoolNotFound(NotFound):
     error_type = 'pool_not_found'
 
 
+class NoValidPoolFound(NotFound):
+    error_type = 'no_valid_pool_found'
+
+
 class PoolAttributeNotFound(NotFound):
     error_type = 'pool_attribute_not_found'
 
 
 class PoolNsRecordNotFound(NotFound):
     error_type = 'pool_ns_record_not_found'
+
+
+class PoolNameserverNotFound(NotFound):
+    error_type = 'pool_nameserver_not_found'
+
+
+class PoolTargetNotFound(NotFound):
+    error_type = 'pool_target_not_found'
+
+
+class PoolTargetOptionNotFound(NotFound):
+    error_type = 'pool_target_option_not_found'
+
+
+class PoolTargetMasterNotFound(NotFound):
+    error_type = 'pool_target_master_not_found'
+
+
+class PoolAlsoNotifyNotFound(NotFound):
+    error_type = 'pool_also_notify_not_found'
 
 
 class ZoneTransferRequestNotFound(NotFound):

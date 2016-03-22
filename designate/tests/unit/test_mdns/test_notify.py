@@ -18,6 +18,8 @@
 """Unit-test MiniDNS service
 """
 
+import socket
+
 from mock import Mock
 from oslotest import base
 import dns
@@ -65,6 +67,7 @@ class MdnsNotifyTest(base.BaseTestCase):
             'c', 'z', ns, 'status', 99)
 
     def test_get_serial_number_nxdomain(self, *mocks):
+        # The zone is not found but it was supposed to be there
         response = RoObject(
             answer=[RoObject(
                 rdclass=dns.rdataclass.IN,
@@ -80,6 +83,24 @@ class MdnsNotifyTest(base.BaseTestCase):
         out = self.notify.get_serial_number('c', zone, 'h', 1234, 1, 2, 3, 4)
 
         self.assertEqual(('NO_ZONE', None, 0), out)
+
+    def test_get_serial_number_nxdomain_deleted_zone(self, *mocks):
+        # The zone is not found and it's not was supposed be there
+        response = RoObject(
+            answer=[RoObject(
+                rdclass=dns.rdataclass.IN,
+                rdtype=dns.rdatatype.SOA
+            )],
+            rcode=Mock(return_value=dns.rcode.NXDOMAIN)
+        )
+        zone = RoObject(name='zn', serial=0, action='DELETE')
+        self.notify._make_and_send_dns_message = Mock(
+            return_value=(response, 1)
+        )
+
+        out = self.notify.get_serial_number('c', zone, 'h', 1234, 1, 2, 3, 4)
+
+        self.assertEqual(('NO_ZONE', 0, 3), out)
 
     def test_get_serial_number_ok(self, *mocks):
         zone = RoObject(name='zn', serial=314)
@@ -125,7 +146,7 @@ class MdnsNotifyTest(base.BaseTestCase):
         zone = RoObject(name='zn')
         self.notify._make_dns_message = Mock(return_value='')
         self.notify._send_dns_message = Mock(
-            return_value=dns.exception.Timeout())
+            side_effect=dns.exception.Timeout)
 
         out = self.notify._make_and_send_dns_message(zone, 'host',
                                                      123, 1, 2, 3)
@@ -136,12 +157,39 @@ class MdnsNotifyTest(base.BaseTestCase):
         zone = RoObject(name='zn')
         self.notify._make_dns_message = Mock(return_value='')
         self.notify._send_dns_message = Mock(
-            return_value=notify.dns_query.BadResponse())
+            side_effect=notify.dns_query.BadResponse)
 
         out = self.notify._make_and_send_dns_message(zone, 'host',
                                                      123, 1, 2, 3)
 
         self.assertEqual((None, 1), out)
+
+    def test_make_and_send_dns_message_eagain(self, *mocks):
+        # bug #1558096
+        zone = RoObject(name='zn')
+        self.notify._make_dns_message = Mock(return_value='')
+        socket_error = socket.error()
+        socket_error.errno = socket.errno.EAGAIN
+        self.notify._send_dns_message = Mock(
+            side_effect=socket_error)
+
+        out = self.notify._make_and_send_dns_message(zone, 'host',
+                                                     123, 1, 2, 3)
+
+        self.assertEqual((None, 3), out)
+
+    def test_make_and_send_dns_message_econnrefused(self, *mocks):
+        # bug #1558096
+        zone = RoObject(name='zn')
+        self.notify._make_dns_message = Mock(return_value='')
+        socket_error = socket.error()
+        socket_error.errno = socket.errno.ECONNREFUSED
+        # socket errors other than EAGAIN should raise
+        self.notify._send_dns_message = Mock(
+            side_effect=socket_error)
+
+        self.assertRaises(socket.error, self.notify._make_and_send_dns_message,
+                          zone, 'host', 123, 1, 2, 3)
 
     def test_make_and_send_dns_message_nxdomain(self, *mocks):
         zone = RoObject(name='zn')

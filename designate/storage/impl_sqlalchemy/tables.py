@@ -36,8 +36,6 @@ TSIG_SCOPES = ['POOL', 'ZONE']
 POOL_PROVISIONERS = ['UNMANAGED']
 ACTIONS = ['CREATE', 'DELETE', 'UPDATE', 'NONE']
 
-ZONE_ATTRIBUTE_KEYS = ('master',)
-
 ZONE_TYPES = ('PRIMARY', 'SECONDARY',)
 ZONE_TASK_TYPES = ['IMPORT', 'EXPORT']
 
@@ -131,11 +129,28 @@ zone_attributes = Table('zone_attributes', metadata,
     Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
     Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
 
-    Column('key', Enum(name='key', *ZONE_ATTRIBUTE_KEYS)),
+    Column('key', String(50)),
     Column('value', String(255), nullable=False),
     Column('zone_id', UUID, nullable=False),
 
     UniqueConstraint('key', 'value', 'zone_id', name='unique_attributes'),
+    ForeignKeyConstraint(['zone_id'], ['zones.id'], ondelete='CASCADE'),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8'
+)
+
+zone_masters = Table('zone_masters', metadata,
+    Column('id', UUID(), default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('host', String(32), nullable=False),
+    Column('port', Integer(), nullable=False),
+    Column('zone_id', UUID(), nullable=False),
+
+    UniqueConstraint('host', 'port', 'zone_id', name='unique_masters'),
     ForeignKeyConstraint(['zone_id'], ['zones.id'], ondelete='CASCADE'),
 
     mysql_engine='InnoDB',
@@ -282,6 +297,94 @@ pool_ns_records = Table('pool_ns_records', metadata,
 
     mysql_engine='InnoDB',
     mysql_charset='utf8')
+
+pool_nameservers = Table('pool_nameservers', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('pool_id', UUID(), nullable=False),
+    Column('host', String(255), nullable=False),
+    Column('port', Integer(), nullable=False),
+
+    ForeignKeyConstraint(['pool_id'], ['pools.id'], ondelete='CASCADE'),
+    UniqueConstraint('pool_id', 'host', 'port', name='unique_pool_host_port'),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8',
+)
+
+pool_targets = Table('pool_targets', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('pool_id', UUID(), nullable=False),
+    Column('type', String(50), nullable=False),
+    Column('tsigkey_id', UUID(), nullable=True),
+    Column('description', Unicode(160), nullable=True),
+
+    ForeignKeyConstraint(['pool_id'], ['pools.id'], ondelete='CASCADE'),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8',
+)
+
+pool_target_masters = Table('pool_target_masters', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('pool_target_id', UUID(), nullable=False),
+    Column('host', String(255), nullable=False),
+    Column('port', Integer(), nullable=False),
+
+    ForeignKeyConstraint(['pool_target_id'], ['pool_targets.id'],
+                         ondelete='CASCADE'),
+    UniqueConstraint('pool_target_id', 'host', 'port',
+                     name='unique_pool_target_host_port'),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8',
+)
+
+pool_target_options = Table('pool_target_options', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('pool_target_id', UUID(), nullable=False),
+    Column('key', String(255), nullable=False),
+    Column('value', String(255), nullable=False),
+
+    ForeignKeyConstraint(['pool_target_id'], ['pool_targets.id'],
+                         ondelete='CASCADE'),
+    UniqueConstraint('pool_target_id', 'key', name='unique_pool_target_key'),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8',
+)
+
+pool_also_notifies = Table('pool_also_notifies', metadata,
+    Column('id', UUID, default=utils.generate_uuid, primary_key=True),
+    Column('version', Integer(), default=1, nullable=False),
+    Column('created_at', DateTime, default=lambda: timeutils.utcnow()),
+    Column('updated_at', DateTime, onupdate=lambda: timeutils.utcnow()),
+
+    Column('pool_id', UUID(), nullable=False),
+    Column('host', String(255), nullable=False),
+    Column('port', Integer(), nullable=False),
+
+    ForeignKeyConstraint(['pool_id'], ['pools.id'], ondelete='CASCADE'),
+    UniqueConstraint('pool_id', 'host', 'port', name='unique_pool_host_port'),
+
+    mysql_engine='InnoDB',
+    mysql_charset='utf8',
+)
 
 zone_transfer_requests = Table('zone_transfer_requests', metadata,
     Column('id', UUID, default=utils.generate_uuid, primary_key=True),

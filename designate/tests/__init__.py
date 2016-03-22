@@ -13,10 +13,11 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+
 import copy
 import functools
-import os
 import inspect
+import os
 import time
 
 from testtools import testcase
@@ -232,17 +233,32 @@ class TestCase(base.BaseTestCase):
          'value': 'public'}
     ]
 
-    pool_manager_status_fixtures = [{
-        'server_id': '1d7a26e6-e604-4aa0-bbc5-d01081bf1f45',
-        'status': 'SUCCESS',
-        'serial_number': 1,
-        'action': 'CREATE',
-    }, {
-        'server_id': '1d7a26e6-e604-4aa0-bbc5-d01081bf1f45',
-        'status': 'ERROR',
-        'serial_number': 2,
-        'action': 'DELETE'
-    }]
+    pool_nameserver_fixtures = [
+        {'pool_id': default_pool_id,
+         'host': "192.0.2.1",
+         'port': 53},
+        {'pool_id': default_pool_id,
+         'host': "192.0.2.2",
+         'port': 53},
+    ]
+
+    pool_target_fixtures = [
+        {'pool_id': default_pool_id,
+         'type': "fake",
+         'description': u"FooBar"},
+        {'pool_id': default_pool_id,
+         'type': "fake",
+         'description': u"BarFoo"},
+    ]
+
+    pool_also_notify_fixtures = [
+        {'pool_id': default_pool_id,
+         'host': "192.0.2.1",
+         'port': 53},
+        {'pool_id': default_pool_id,
+         'host': "192.0.2.2",
+         'port': 53},
+    ]
 
     zone_transfers_request_fixtures = [{
         "description": "Test Transfer",
@@ -302,7 +318,7 @@ class TestCase(base.BaseTestCase):
             fixtures.DatabaseFixture.get_fixture(
                 REPOSITORY, manage_database.INIT_VERSION))
 
-        if os.getenv('DESIGNATE_SQL_DEBUG', "True").lower() in _TRUE_VALUES:
+        if os.getenv('DESIGNATE_SQL_DEBUG', "False").lower() in _TRUE_VALUES:
             connection_debug = 50
         else:
             connection_debug = 0
@@ -316,6 +332,10 @@ class TestCase(base.BaseTestCase):
         self._setup_pool_manager_cache()
 
         self.config(network_api='fake')
+
+        self.config(
+            scheduler_filters=['pool_id_attribute', 'random'],
+            group='service:central')
 
         # "Read" Configuration
         self.CONF([], project='designate')
@@ -362,9 +382,14 @@ class TestCase(base.BaseTestCase):
         # Fetch the default pool
         pool = self.storage.get_pool(self.admin_context, default_pool_id)
 
-        # Add a NS record to it
-        pool.ns_records.append(
-            objects.PoolNsRecord(priority=0, hostname='ns1.example.org.'))
+        # Fill out the necessary pool details
+        pool.ns_records = objects.PoolNsRecordList.from_list([
+            {'hostname': 'ns1.example.org.', 'priority': 0}
+        ])
+
+        pool.targets = objects.PoolTargetList.from_list([
+            {'type': 'fake', u'description': "Fake PoolTarget for Tests"}
+        ])
 
         # Save the default pool
         self.storage.update_pool(self.admin_context, pool)
@@ -513,10 +538,24 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
-    def get_pool_manager_status_fixture(self, fixture=0, values=None):
+    def get_pool_nameserver_fixture(self, fixture=0, values=None):
         values = values or {}
 
-        _values = copy.copy(self.pool_manager_status_fixtures[fixture])
+        _values = copy.copy(self.pool_nameserver_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def get_pool_target_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.pool_target_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def get_pool_also_notify_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.pool_also_notify_fixtures[fixture])
         _values.update(values)
         return _values
 
