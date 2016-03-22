@@ -1,6 +1,7 @@
 designate (1:2.0.0~rc1-1) experimental; urgency=medium
 
   * New upstream release.
+  * Updated (build-)depends of oslo.config version.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 22 Mar 2016 11:42:21 +0100
 
