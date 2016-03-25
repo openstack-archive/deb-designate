@@ -1,6 +1,7 @@
 designate (1:2.0.0~rc1-2) UNRELEASED; urgency=medium
 
   * Add all the rest of the services in the "designate" meta-package.
+  * Added install-missing-files.patch (because of the missing migration files).
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 25 Mar 2016 10:32:29 +0100
 

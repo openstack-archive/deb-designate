@@ -1,0 +1,13 @@
+Description: Install missing files
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: not-needed
+Last-Update: 2016-03-25
+
+--- /dev/null	2016-03-15 18:18:48.046095192 +0100
++++ b/MANIFEST.in	2016-03-25 11:24:52.877037638 +0100
+@@ -0,0 +1,5 @@
++recursive-include designate/tests *
++recursive-include designate/pool_manager *
++recursive-include designate/resources *
++recursive-include designate/backend *
++recursive-include designate/storage *
