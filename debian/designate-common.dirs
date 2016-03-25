@@ -1,5 +1,5 @@
 etc/designate
 etc/designate/conf.d
+usr/share/designate
 var/lib/designate
 var/log/designate
-usr/share/designate
