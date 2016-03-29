@@ -3,6 +3,7 @@ designate (1:2.0.0~rc1-2) experimental; urgency=medium
   * Do not use the Keystone admin auth token to register API endpoints.
   * Add all the rest of the services in the "designate" meta-package.
   * Added install-missing-files.patch (because of the missing migration files).
+  * Standards-Version: 3.9.7 (no change).
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 29 Mar 2016 12:52:29 +0000
 

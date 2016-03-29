@@ -70,7 +70,7 @@ Build-Depends-Indep: bandit,
                      sqlite3,
                      subunit,
                      testrepository,
-Standards-Version: 3.9.6
+Standards-Version: 3.9.7
 Vcs-Browser: https://anonscm.debian.org/cgit/openstack/designate.git/
 Vcs-Git: https://anonscm.debian.org/git/openstack/designate.git
 Homepage: https://github.com/openstack/designate
