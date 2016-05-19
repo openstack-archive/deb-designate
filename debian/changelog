@@ -7,6 +7,9 @@ designate (1:2.0.0-2) UNRELEASED; urgency=medium
   * Updated Portuguese translation for debconf messages (Closes: #821242).
   * Updated Dutch translation for debconf messages (Closes: #822968).
 
+  [ Ondřej Nový ]
+  * d/rules: Removed UPSTREAM_GIT with default value
+
  -- Thomas Goirand <zigo@debian.org>  Sat, 23 Apr 2016 18:47:14 +0200
 
 designate (1:2.0.0-1) unstable; urgency=medium
