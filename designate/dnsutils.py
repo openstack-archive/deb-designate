@@ -142,6 +142,10 @@ class SerializationMiddleware(DNSMiddleware):
                 elif isinstance(response, dns.renderer.Renderer):
                     yield response.get_wire()
 
+                else:
+                    LOG.error(_LE("Unexpected response %(resp)s") %
+                              repr(response))
+
 
 class TsigInfoMiddleware(DNSMiddleware):
     """Middleware which looks up the information available for a TsigKey"""
@@ -325,7 +329,9 @@ def dnspythonrecord_to_recordset(rname, rdataset):
 
 def do_axfr(zone_name, servers, timeout=None, source=None):
     """
-    Performs an AXFR for a given zone name
+    Requests an AXFR for a given zone name and process the response
+
+    :returns: Zone instance from dnspython
     """
     random.shuffle(servers)
     timeout = timeout or cfg.CONF["service:mdns"].xfr_timeout

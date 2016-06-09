@@ -62,6 +62,14 @@ class TestTimeoutError(Exception):
 
 
 class TestCase(base.BaseTestCase):
+    service_status_fixtures = [{
+        'service_name': 'foo',
+        'hostname': 'bar',
+        'status': "UP",
+        'stats': {},
+        'capabilities': {},
+    }]
+
     quota_fixtures = [{
         'resource': 'zones',
         'hard_limit': 5,
@@ -284,6 +292,23 @@ class TestCase(base.BaseTestCase):
         'task_type': 'IMPORT'
     }]
 
+    zone_export_fixtures = [{
+        'status': 'PENDING',
+        'zone_id': None,
+        'message': None,
+        'task_type': 'EXPORT'
+    }, {
+        'status': 'ERROR',
+        'zone_id': None,
+        'message': None,
+        'task_type': 'EXPORT'
+    }, {
+        'status': 'COMPLETE',
+        'zone_id': '6ca6baef-3305-4ad0-a52b-a82df5752b62',
+        'message': None,
+        'task_type': 'EXPORT'
+    }]
+
     def setUp(self):
         super(TestCase, self).setUp()
 
@@ -301,6 +326,11 @@ class TestCase(base.BaseTestCase):
         self.config(
             storage_driver='sqlalchemy',
             group='service:central'
+        )
+
+        self.config(
+            emitter_type="noop",
+            group="heartbeat_emitter"
         )
 
         self.config(
@@ -388,7 +418,7 @@ class TestCase(base.BaseTestCase):
         ])
 
         pool.targets = objects.PoolTargetList.from_list([
-            {'type': 'fake', u'description': "Fake PoolTarget for Tests"}
+            {'type': 'fake', u'description': u"Fake PoolTarget for Tests"}
         ])
 
         # Save the default pool
@@ -580,6 +610,30 @@ class TestCase(base.BaseTestCase):
         _values.update(values)
         return _values
 
+    def get_zone_export_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.zone_export_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def get_service_status_fixture(self, fixture=0, values=None):
+        values = values or {}
+
+        _values = copy.copy(self.service_status_fixtures[fixture])
+        _values.update(values)
+        return _values
+
+    def update_service_status(self, **kwargs):
+        context = kwargs.pop('context', self.admin_context)
+        fixture = kwargs.pop('fixture', 0)
+
+        values = self.get_service_status_fixture(
+            fixture=fixture, values=kwargs)
+
+        return self.central_service.update_service_status(
+            context, objects.ServiceStatus.from_dict(values))
+
     def create_tld(self, **kwargs):
         context = kwargs.pop('context', self.admin_context)
         fixture = kwargs.pop('fixture', 0)
@@ -732,6 +786,16 @@ class TestCase(base.BaseTestCase):
 
         return self.storage.create_zone_import(
             context, objects.ZoneImport.from_dict(zone_import))
+
+    def create_zone_export(self, **kwargs):
+        context = kwargs.pop('context', self.admin_context)
+        fixture = kwargs.pop('fixture', 0)
+
+        zone_export = self.get_zone_export_fixture(fixture=fixture,
+                                               values=kwargs)
+
+        return self.storage.create_zone_export(
+            context, objects.ZoneExport.from_dict(zone_export))
 
     def wait_for_import(self, zone_import_id, errorok=False):
         """

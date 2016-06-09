@@ -78,13 +78,24 @@ class RecordsetTest(DesignateV2Test):
         self.ensure_tld_exists('com')
         self.zone = self.useFixture(ZoneFixture()).created_zone
 
-    def test_list_recordsets(self):
-        post_model = datagen.random_a_recordset(self.zone.name)
+    def test_list_recordsets_with_filtering(self):
+        # This test ensures the behavior in bug #1561746 won't happen
+        post_model = datagen.random_a_recordset(self.zone.name,
+                                                ip='192.168.1.2')
         self.useFixture(RecordsetFixture(self.zone.id, post_model))
+        for i in range(1, 3):
+            post_model = datagen.random_a_recordset(self.zone.name,
+                                                    ip='10.0.1.{}'.format(i))
+            self.useFixture(RecordsetFixture(self.zone.id, post_model))
+
+        # Add limit in filter to make response paginated
+        filters = {"data": "10.*", "limit": 2}
         resp, model = RecordsetClient.as_user('default') \
-            .list_recordsets(self.zone.id)
+            .list_recordsets(self.zone.id, filters=filters)
         self.assertEqual(200, resp.status)
-        self.assertGreater(len(model.recordsets), 0)
+        self.assertEqual(2, model.metadata.total_count)
+        self.assertEqual(len(model.recordsets), 2)
+        self.assertIsNotNone(model.links.next)
 
     def assert_dns(self, model):
         results = dnsclient.query_servers(model.name, model.type)
@@ -108,36 +119,6 @@ class RecordsetTest(DesignateV2Test):
                 data['ttl'] = answer.rrset.ttl
 
             self.assertEqual(model_data, data)
-
-    @utils.parameterized(RECORDSETS_DATASET)
-    def test_crud_recordset(self, make_recordset):
-        post_model = make_recordset(self.zone)
-        fixture = self.useFixture(RecordsetFixture(self.zone.id, post_model))
-        recordset_id = fixture.created_recordset.id
-
-        self.assert_dns(fixture.post_model)
-
-        put_model = make_recordset(self.zone)
-        del put_model.name  # don't try to update the name
-        resp, put_resp_model = RecordsetClient.as_user('default') \
-            .put_recordset(self.zone.id, recordset_id, put_model)
-        self.assertEqual(202, resp.status, "on put response")
-        self.assertEqual("PENDING", put_resp_model.status)
-        self.assertEqual(post_model.name, put_resp_model.name)
-        self.assertEqual(put_model.records, put_resp_model.records)
-        self.assertEqual(put_model.ttl, put_resp_model.ttl)
-
-        RecordsetClient.as_user('default').wait_for_recordset(
-            self.zone.id, recordset_id)
-
-        put_model.name = post_model.name
-        self.assert_dns(put_model)
-
-        resp, delete_resp_model = RecordsetClient.as_user('default') \
-            .delete_recordset(self.zone.id, recordset_id)
-        self.assertEqual(202, resp.status, "on delete response")
-        RecordsetClient.as_user('default').wait_for_404(
-            self.zone.id, recordset_id)
 
     @utils.parameterized(WILDCARD_RECORDSETS_DATASET)
     def test_can_create_and_query_wildcard_recordset(self, make_recordset):
@@ -203,3 +184,65 @@ class RecordsetOwnershipTest(DesignateV2Test):
         self.assertRaises(exceptions.RestClientException,
             lambda: RecordsetClient.as_user('alt')
                     .post_recordset(alt_zone.id, recordset))
+
+
+@utils.parameterized_class
+class RecordsetCrossZoneTest(DesignateV2Test):
+
+    def setUp(self):
+        super(RecordsetCrossZoneTest, self).setUp()
+        self.increase_quotas(user='default')
+        self.ensure_tld_exists('com')
+        self.zone = self.useFixture(ZoneFixture()).created_zone
+        self.alt_zone = self.useFixture(ZoneFixture()).created_zone
+
+    def test_get_single_recordset(self):
+        post_model = datagen.random_a_recordset(self.zone.name)
+        _, resp_model = RecordsetClient.as_user('default').post_recordset(
+                self.zone.id, post_model)
+        rrset_id = resp_model.id
+
+        resp, model = RecordsetClient.as_user('default').get_recordset(
+                self.zone.id, rrset_id, cross_zone=True)
+        self.assertEqual(200, resp.status)
+
+        # clean up
+        RecordsetClient.as_user('default').delete_recordset(self.zone.id,
+                                                            rrset_id)
+
+    def test_list_recordsets(self):
+        post_model = datagen.random_a_recordset(self.zone.name)
+        self.useFixture(RecordsetFixture(self.zone.id, post_model))
+        post_model = datagen.random_a_recordset(self.alt_zone.name)
+        self.useFixture(RecordsetFixture(self.alt_zone.id, post_model))
+
+        resp, model = RecordsetClient.as_user('default').list_recordsets(
+                'zone_id', cross_zone=True)
+        self.assertEqual(200, resp.status)
+        zone_names = set()
+        for r in model.recordsets:
+            zone_names.add(r.zone_name)
+        self.assertGreaterEqual(len(zone_names), 2)
+
+    def test_filter_recordsets(self):
+        # create one A recordset in 'zone'
+        post_model = datagen.random_a_recordset(self.zone.name,
+                                                ip='123.201.99.1')
+        self.useFixture(RecordsetFixture(self.zone.id, post_model))
+
+        # create two A recordsets in 'alt_zone'
+        post_model = datagen.random_a_recordset(self.alt_zone.name,
+                                                ip='10.0.1.1')
+        self.useFixture(RecordsetFixture(self.alt_zone.id, post_model))
+        post_model = datagen.random_a_recordset(self.alt_zone.name,
+                                                ip='123.201.99.2')
+        self.useFixture(RecordsetFixture(self.alt_zone.id, post_model))
+
+        # Add limit in filter to make response paginated
+        filters = {"data": "123.201.99.*", "limit": 2}
+        resp, model = RecordsetClient.as_user('default') \
+            .list_recordsets('zone_id', cross_zone=True, filters=filters)
+        self.assertEqual(200, resp.status)
+        self.assertEqual(2, model.metadata.total_count)
+        self.assertEqual(len(model.recordsets), 2)
+        self.assertIsNotNone(model.links.next)

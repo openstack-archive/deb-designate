@@ -1,3 +1,4 @@
+===========================================
 Designate, a DNSaaS component for OpenStack
 ===========================================
 
@@ -54,8 +55,10 @@ Reference Documentation
    production-guidelines
    production-architecture
    configuration
+   designate-manage
    rest
    devstack
+   tempest
    related
    glossary
    backends
@@ -64,6 +67,8 @@ Reference Documentation
    gmr
    support-matrix
    pools
+   memory-caching
+   service_status
 
 Source Documentation
 ====================

@@ -5,7 +5,7 @@ XTRACE=$(set +o | grep xtrace)
 set +o xtrace
 
 # Get backend configuration
-# ----------------------------
+# -------------------------
 if is_service_enabled designate && [[ -r $DESIGNATE_PLUGINS/backend-$DESIGNATE_BACKEND_DRIVER ]]; then
     # Load plugin
     source $DESIGNATE_PLUGINS/backend-$DESIGNATE_BACKEND_DRIVER
@@ -52,10 +52,16 @@ function configure_designate {
     iniset $DESIGNATE_CONF DEFAULT rpc_response_timeout 5
 
     iniset $DESIGNATE_CONF DEFAULT debug $ENABLE_DEBUG_LOG_LEVEL
-    iniset $DESIGNATE_CONF DEFAULT verbose True
     iniset $DESIGNATE_CONF DEFAULT state_path $DESIGNATE_STATE_PATH
     iniset $DESIGNATE_CONF DEFAULT root-helper sudo designate-rootwrap $DESIGNATE_ROOTWRAP_CONF
     iniset $DESIGNATE_CONF storage:sqlalchemy connection `database_connection_url designate`
+
+    # Quota Configuration
+    iniset $DESIGNATE_CONF DEFAULT quota_zones $DESIGNATE_QUOTA_ZONES
+    iniset $DESIGNATE_CONF DEFAULT quota_zone_recordsets $DESIGNATE_QUOTA_ZONE_RECORDSETS
+    iniset $DESIGNATE_CONF DEFAULT quota_zone_records $DESIGNATE_QUOTA_ZONE_RECORDS
+    iniset $DESIGNATE_CONF DEFAULT quota_recordset_records $DESIGNATE_QUOTA_RECORDSET_RECORDS
+    iniset $DESIGNATE_CONF DEFAULT quota_api_export_size $DESIGNATE_QUOTA_API_EXPORT_SIZE
 
     # Coordination Configuration
     if [[ -n "$DESIGNATE_COORDINATION_URL" ]]; then
@@ -82,15 +88,13 @@ function configure_designate {
     iniset $DESIGNATE_CONF service:api enabled_extensions_v1 $DESIGNATE_ENABLED_EXTENSIONS_V1
     iniset $DESIGNATE_CONF service:api enabled_extensions_v2 $DESIGNATE_ENABLED_EXTENSIONS_V2
     iniset $DESIGNATE_CONF service:api enabled_extensions_admin $DESIGNATE_ENABLED_EXTENSIONS_ADMIN
-    iniset $DESIGNATE_CONF service:api api_host $DESIGNATE_SERVICE_HOST
     iniset $DESIGNATE_CONF service:api api_base_uri $DESIGNATE_SERVICE_PROTOCOL://$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT/
-    iniset $DESIGNATE_CONF service:api enable_api_v1 True
-    iniset $DESIGNATE_CONF service:api enable_api_v2 True
-    iniset $DESIGNATE_CONF service:api enable_api_admin True
+    iniset $DESIGNATE_CONF service:api enable_api_v1 $DESIGNATE_ENABLE_API_V1
+    iniset $DESIGNATE_CONF service:api enable_api_v2 $DESIGNATE_ENABLE_API_V2
+    iniset $DESIGNATE_CONF service:api enable_api_admin $DESIGNATE_ENABLE_API_ADMIN
 
     # mDNS Configuration
-    iniset $DESIGNATE_CONF service:mdns host $DESIGNATE_SERVICE_HOST
-    iniset $DESIGNATE_CONF service:mdns port $DESIGNATE_SERVICE_PORT_MDNS
+    iniset $DESIGNATE_CONF service:mdns listen ${DESIGNATE_SERVICE_HOST}:${DESIGNATE_SERVICE_PORT_MDNS}
 
     # Set up Notifications/Ceilometer Integration
     iniset $DESIGNATE_CONF DEFAULT notification_driver "$DESIGNATE_NOTIFICATION_DRIVER"
@@ -114,9 +118,9 @@ function configure_designate {
     # TLS Proxy Configuration
     if is_service_enabled tls-proxy; then
         # Set the service port for a proxy to take the original
-        iniset $DESIGNATE_CONF service:api api_port $DESIGNATE_SERVICE_PORT_INT
+        iniset $DESIGNATE_CONF service:api listen ${DESIGNATE_SERVICE_HOST}:${DESIGNATE_SERVICE_PORT_INT}
     else
-        iniset $DESIGNATE_CONF service:api api_port $DESIGNATE_SERVICE_PORT
+        iniset $DESIGNATE_CONF service:api listen ${DESIGNATE_SERVICE_HOST}:${DESIGNATE_SERVICE_PORT}
     fi
 
     # Setup the Keystone Integration
@@ -149,7 +153,18 @@ function configure_designatedashboard {
 # Configure the needed tempest options
 function configure_designate_tempest() {
     if is_service_enabled tempest; then
+        # Tell tempest we're available
+        iniset $TEMPEST_CONFIG service_available designate True
+
+        # Tell tempest which APIs are available
+        iniset $TEMPEST_CONFIG dns_feature_enabled api_v1 $DESIGNATE_ENABLE_API_V1
+        iniset $TEMPEST_CONFIG dns_feature_enabled api_v2 $DESIGNATE_ENABLE_API_V2
+        iniset $TEMPEST_CONFIG dns_feature_enabled api_admin $DESIGNATE_ENABLE_API_ADMIN
+        iniset $TEMPEST_CONFIG dns_feature_enabled api_v2_root_recordsets True
+
+        # Tell tempest where are nameservers are.
         nameservers=$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT_DNS
+        # TODO(kiall): Remove hardcoded list of plugins
         case $DESIGNATE_BACKEND_DRIVER in
             bind9|powerdns)
                 nameservers="$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT_DNS"
@@ -166,6 +181,9 @@ function configure_designate_tempest() {
             nameservers=$DESIGNATE_NAMESERVERS
         fi
 
+        iniset $TEMPEST_CONFIG dns nameservers $nameservers
+
+        # For legacy functionaltests
         iniset $TEMPEST_CONFIG designate nameservers $nameservers
     fi
 }
@@ -262,6 +280,12 @@ function install_designatedashboard {
     ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_1720_project_dns_panel.py $HORIZON_DIR/openstack_dashboard/local/enabled/_1720_project_dns_panel.py
 }
 
+# install_designatetempest - Collect source and prepare
+function install_designatetempest {
+    git_clone_by_name "designate-tempest-plugin"
+    setup_dev_lib "designate-tempest-plugin"
+}
+
 # start_designate - Start running processes, including screen
 function start_designate {
     start_designate_backend
@@ -300,6 +324,11 @@ function stop_designate {
 
 # This is the main for plugin.sh
 if is_service_enabled designate; then
+    # Sanify check for agent backend
+    # ------------------------------
+    if ! is_service_enabled designate-agent && [ "$DESIGNATE_BACKEND_DRIVER" == "agent" ]; then
+        die $LINENO "To use the agent backend, you must enable the designate-agent service"
+    fi
 
     if [[ "$1" == "stack" && "$2" == "install" ]]; then
         echo_summary "Installing Designate client"
@@ -313,10 +342,18 @@ if is_service_enabled designate; then
             install_designatedashboard
         fi
 
+        if is_service_enabled tempest; then
+            echo_summary "Installing Designate Tempest Plugin"
+            install_designatetempest
+        fi
+
     elif [[ "$1" == "stack" && "$2" == "post-config" ]]; then
         echo_summary "Configuring Designate"
         configure_designate
-        configure_designatedashboard
+        if is_service_enabled horizon; then
+            echo_summary "Configuring Designate dashboard"
+            configure_designatedashboard
+        fi
 
         if is_service_enabled key; then
             echo_summary "Creating Designate Keystone accounts"

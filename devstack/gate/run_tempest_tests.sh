@@ -23,10 +23,10 @@ fi
 echo "Successfully contacted the Designate API"
 
 # Where Designate and Tempest code lives
-DESIGNATE_DIR=${DESIGNATE_DIR:-/opt/stack/new/designate}
-TEMPEST_DIR=${TEMPEST_DIR:-/opt/stack/new/tempest}
-
+DESIGNATE_DIR=${DESIGNATE_DIR:-"$BASE/new/designate"}
+TEMPEST_DIR=${TEMPEST_DIR:-"$BASE/new/tempest"}
 
 pushd $DESIGNATE_DIR
 export TEMPEST_CONFIG=$TEMPEST_DIR/etc/tempest.conf
 tox -e functional -- --concurrency 4
+popd

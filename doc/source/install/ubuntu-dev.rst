@@ -48,9 +48,9 @@ Installing Designate
 
 ::
 
-   $ apt-get update
-   $ apt-get install python-pip python-virtualenv git
-   $ apt-get build-dep python-lxml
+   $ sudo apt-get update
+   $ sudo apt-get install python-pip python-virtualenv libssl-dev libffi-dev git
+   $ sudo apt-get build-dep python-lxml
 
 2. Clone the Designate repo from GitHub
 
@@ -65,17 +65,24 @@ Installing Designate
 3. Setup a virtualenv
 
 .. note::
-   This is an optional step, but will allow Designate's dependencies
-   to be installed in a contained environment that can be easily deleted
-   if you choose to start over or uninstall Designate.
+   This step is necessary to allow the installation of an up-to-date
+   pip, independent of the version packaged for Ubuntu. it is 
+   also useful in isolating the remainder of Designate's dependencies
+   from the rest of the system.
 
 ::
 
-   $ virtualenv --no-site-packages .venv
+   $ virtualenv .venv
    $ . .venv/bin/activate
 
+4. Install an up-to-date pip
 
-4. Install Designate and its dependencies
+::
+
+   $ pip install -U pip
+
+
+5. Install Designate and its dependencies
 
 .. note::
    If you run into the error: Installed distribution pbr 1.1.1 conflicts with requirement pbr>=0.6,!=0.7,<1.0, try doing pip install pbr==0.11.0
@@ -86,7 +93,7 @@ Installing Designate
    $ python setup.py develop
 
 
-5. Change directories to the etc/designate folder.
+6. Change directories to the etc/designate folder.
 
 .. note::
     Everything from here on out should take place in or below your designate/etc folder
@@ -96,21 +103,21 @@ Installing Designate
    $ cd etc/designate
 
 
-6. Create Designate's config files by copying the sample config files
+7. Create Designate's config files by copying the sample config files
 
 ::
 
-   $ ls *.sample | while read f; do cp $f $(echo $f | sed "s/.sample$//g"); done
+   $ cp -a rootwrap.conf.sample rootwrap.conf
 
 
-7. Make the directory for Designate’s log files
+8. Make the directory for Designate’s log files
 
 ::
 
    $ mkdir -p ../../log
 
 
-8. Make the directory for Designate’s state files
+9. Make the directory for Designate’s state files
 
 ::
 
@@ -124,7 +131,7 @@ Configuring Designate
 .. index::
     double: configure; designate
 
-Open the designate.conf file for editing
+Create the designate.conf file
 
 ::
 
@@ -140,21 +147,17 @@ Copy or mirror the configuration from this sample file here:
 Installing RabbitMQ
 ===================
 
-.. note::
-
-    Do the following commands as "root" or via sudo <command>
-
 Install the RabbitMQ package
 
 ::
 
-    $ apt-get install rabbitmq-server
+    $ sudo apt-get install rabbitmq-server
 
 Create a user:
 
 ::
 
-    $ rabbitmqctl add_user designate designate
+    $ sudo rabbitmqctl add_user designate designate
 
 Give the user access to the / vhost:
 
@@ -173,7 +176,7 @@ Install the MySQL server package
 
 ::
 
-    $ apt-get install mysql-server-5.5
+    $ sudo apt-get install mysql-server-5.5
 
 
 If you do not have MySQL previously installed, you will be prompted to change the root password.
@@ -204,7 +207,7 @@ Install additional packages
 
 ::
 
-    $ apt-get install libmysqlclient-dev
+    $ sudo apt-get install libmysqlclient-dev
     $ pip install pymysql
 
 
@@ -218,29 +221,63 @@ Install the DNS server, BIND9
 
 ::
 
-      $ apt-get install bind9
+    $ sudo apt-get install bind9
 
-      # Update the BIND9 Configuration
-      $ editor /etc/bind/named.conf.options
+Update the BIND9 Configuration
 
-      # Change the corresponding lines in the config file:
-      options {
-        directory "/var/cache/bind";
-        dnssec-validation auto;
-        auth-nxdomain no; # conform to RFC1035
-        listen-on-v6 { any; };
-        allow-new-zones yes;
-        request-ixfr no;
-        recursion no;
-      };
+::
 
-      # Disable AppArmor for BIND9
-      $ touch /etc/apparmor.d/disable/usr.sbin.named
-      $ service apparmor reload
+    $ sudo editor /etc/bind/named.conf.options
 
-      # Restart BIND9:
-      $ service bind9 restart
+Change the corresponding lines in the config file:
 
+::
+
+    options {
+      directory "/var/cache/bind";
+      dnssec-validation auto;
+      auth-nxdomain no; # conform to RFC1035
+      listen-on-v6 { any; };
+      allow-new-zones yes;
+      request-ixfr no;
+      recursion no;
+    };
+
+Disable AppArmor for BIND9
+
+::
+
+    $ sudo touch /etc/apparmor.d/disable/usr.sbin.named
+    $ sudo service apparmor reload
+
+Restart BIND9:
+
+::
+
+    $ sudo service bind9 restart
+
+Create and Import pools.yml File
+================================
+
+.. index::
+   double: install; pools
+
+Create the pools.yaml file
+
+::
+
+  $ editor pools.yaml
+
+Copy or mirror the configuration from this sample file here:
+
+.. literalinclude:: ../examples/basic-pools-sample.yaml
+    :language: yaml
+
+Import the pools.yaml file into Designate
+
+::
+
+   $ designate-manage pool update --file pools.yaml
 
 Initialize & Start the Central Service
 ======================================
@@ -276,10 +313,16 @@ Open up a new ssh window and log in to your server (or however you’re communic
 
    $ cd openstack/designate
 
-   # Make sure your virtualenv is sourced
+If Designate was installed into a virtualenv, make sure your virtualenv is sourced
+
+::
+
    $ source .venv/bin/activate
 
-   # Start the API Service
+Start the API Service
+
+::
+
    $ designate-api
 
 You’ll now be seeing the log from the API service.
@@ -295,10 +338,24 @@ Open up a new ssh window and log in to your server (or however you’re communic
 
 ::
 
-   # Sync the Pool Manager's cache:
+   $ cd openstack/designate
+
+If Designate was installed into a virtualenv, make sure your virtualenv is sourced
+
+::
+
+   $ source .venv/bin/activate
+
+Sync the Pool Manager's cache:
+
+::
+
    $ designate-manage pool-manager-cache sync
 
-   # Start the pool manager service:
+Start the pool manager service:
+
+::
+
    $ designate-pool-manager
 
 
@@ -306,7 +363,7 @@ You'll now be seeing the log from the Pool Manager service.
 
 
 Initialize & Start the MiniDNS Service
-===========================================
+======================================
 
 .. index::
    double: install; minidns
@@ -315,7 +372,18 @@ Open up a new ssh window and log in to your server (or however you’re communic
 
 ::
 
-   # Start the minidns service:
+   $ cd openstack/designate
+
+If Designate was installed into a virtualenv, make sure your virtualenv is sourced
+
+::
+
+   $ source .venv/bin/activate
+
+Start the minidns service:
+
+::
+
    $ designate-mdns
 
 

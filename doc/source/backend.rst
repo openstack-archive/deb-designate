@@ -12,6 +12,7 @@ Backend Base
     :undoc-members:
     :show-inheritance:
 
+
 Backend Akamai
 ==============
 
@@ -73,5 +74,25 @@ Backend Powerdns
 
 .. automodule:: designate.backend.impl_powerdns
     :members:
+    :undoc-members:
+    :show-inheritance:
+
+Agent Backend KnotDNS
+=====================
+
+.. automodule:: designate.backend.agent_backend.impl_knot2
+    :members:
+    :special-members:
+    :private-members:
+    :undoc-members:
+    :show-inheritance:
+
+Agent Backend Djbdns
+====================
+
+.. automodule:: designate.backend.agent_backend.impl_djbdns
+    :members:
+    :special-members:
+    :private-members:
     :undoc-members:
     :show-inheritance:

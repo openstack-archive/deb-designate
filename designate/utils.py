@@ -28,6 +28,7 @@ from oslo_config import cfg
 from oslo_concurrency import processutils
 from oslo_log import log as logging
 from oslo_utils import timeutils
+from oslo_utils.netutils import is_valid_ipv6
 
 from designate.common import config
 from designate import exceptions
@@ -60,6 +61,11 @@ proxy_opts = [
 ]
 
 cfg.CONF.register_opts(proxy_opts, group='proxy')
+
+# Default TCP/UDP ports
+
+DEFAULT_AGENT_PORT = 5358
+DEFAULT_MDNS_PORT = 5354
 
 
 def find_config(config_path):
@@ -456,10 +462,23 @@ def get_paging_params(params, sort_keys):
 
 
 def bind_tcp(host, port, tcp_backlog, tcp_keepidle=None):
-    # Bind to the TCP port
+    """Bind to a TCP port and listen.
+    Use reuseaddr, reuseport if available, keepalive if specified
+
+    :param host: IPv4/v6 address or "". "" binds to every IPv4 interface.
+    :type host: str
+    :param port: TCP port
+    :type port: int
+    :param tcp_backlog: TCP listen backlog
+    :type tcp_backlog: int
+    :param tcp_keepidle: TCP keepalive interval
+    :type tcp_keepidle: int
+    :returns: socket
+    """
     LOG.info(_LI('Opening TCP Listening Socket on %(host)s:%(port)d'),
              {'host': host, 'port': port})
-    sock_tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    family = socket.AF_INET6 if is_valid_ipv6(host) else socket.AF_INET
+    sock_tcp = socket.socket(family, socket.SOCK_STREAM)
     sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
@@ -467,7 +486,7 @@ def bind_tcp(host, port, tcp_backlog, tcp_keepidle=None):
     try:
         sock_tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     except Exception:
-        pass
+        LOG.info(_LI('SO_REUSEPORT not available, ignoring.'))
 
     # This option isn't available in the OS X version of eventlet
     if tcp_keepidle and hasattr(socket, 'TCP_KEEPIDLE'):
@@ -477,25 +496,41 @@ def bind_tcp(host, port, tcp_backlog, tcp_keepidle=None):
 
     sock_tcp.setblocking(True)
     sock_tcp.bind((host, port))
+    if port == 0:
+        newport = sock_tcp.getsockname()[1]
+        LOG.info(_LI('Listening on TCP port %(port)d'), {'port': newport})
+
     sock_tcp.listen(tcp_backlog)
 
     return sock_tcp
 
 
 def bind_udp(host, port):
-    # Bind to the UDP port
+    """Bind to an UDP port and listen.
+    Use reuseaddr, reuseport if available
+
+    :param host: IPv4/v6 address or "". "" binds to every IPv4 interface.
+    :type host: str
+    :param port: UDP port
+    :type port: int
+    :returns: socket
+    """
     LOG.info(_LI('Opening UDP Listening Socket on %(host)s:%(port)d'),
              {'host': host, 'port': port})
-    sock_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    family = socket.AF_INET6 if is_valid_ipv6(host) else socket.AF_INET
+    sock_udp = socket.socket(family, socket.SOCK_DGRAM)
     sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     # NOTE: Linux supports socket.SO_REUSEPORT only in 3.9 and later releases.
     try:
         sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     except Exception:
-        pass
+        LOG.info(_LI('SO_REUSEPORT not available, ignoring.'))
 
     sock_udp.setblocking(True)
     sock_udp.bind((host, port))
+    if port == 0:
+        newport = sock_udp.getsockname()[1]
+        LOG.info(_LI('Listening on UDP port %(port)d'), {'port': newport})
 
     return sock_udp

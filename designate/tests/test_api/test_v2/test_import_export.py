@@ -11,6 +11,8 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import unittest
+
 import six
 from dns import zone as dnszone
 from webtest import TestApp
@@ -133,3 +135,41 @@ class APIV2ZoneImportExportTest(ApiV2TestCase):
         exported.delete_rdataset(exported.origin, 'NS')
         imported.delete_rdataset('delegation', 'NS')
         self.assertEqual(imported, exported)
+
+    # Metadata tests
+    def test_metadata_exists_imports(self):
+        response = self.client.get('/zones/tasks/imports')
+
+        # Make sure the fields exist
+        self.assertIn('metadata', response.json)
+        self.assertIn('total_count', response.json['metadata'])
+
+    def test_metadata_exists_exports(self):
+        response = self.client.get('/zones/tasks/imports')
+
+        # Make sure the fields exist
+        self.assertIn('metadata', response.json)
+        self.assertIn('total_count', response.json['metadata'])
+
+    @unittest.skip("See bug 1582241 and 1570859")
+    def test_total_count_imports(self):
+        response = self.client.get('/zones/tasks/imports')
+
+        # There are no imported zones by default
+        self.assertEqual(0, response.json['metadata']['total_count'])
+
+        # Create a zone import
+        response = self.client.post('/zones/tasks/imports',
+                                    self.get_zonefile_fixture(),
+                                    headers={'Content-type': 'text/dns'})
+
+        response = self.client.get('/zones/tasks/imports')
+
+        # Make sure total_count picked it up
+        self.assertEqual(1, response.json['metadata']['total_count'])
+
+    def test_total_count_exports(self):
+        response = self.client.get('/zones/tasks/exports')
+
+        # There are no exported zones by default
+        self.assertEqual(0, response.json['metadata']['total_count'])

@@ -13,6 +13,17 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+
+"""
+    backend.agent
+    ~~~~~~~~~~~~~
+    Agent backend for Pool Manager.
+    Sends DNS requests to a remote agent using private OPCODEs to trigger
+    creation / deletion / update of zones.
+
+    Configured in the [service:pool_manager] section
+"""
+
 import eventlet
 import dns
 import dns.rdataclass
@@ -30,24 +41,13 @@ from designate.i18n import _LW
 from designate.backend import base
 from designate import exceptions
 from designate.mdns import rpcapi as mdns_api
-
+from designate.utils import DEFAULT_AGENT_PORT
+import designate.backend.private_codes as pcodes
 
 dns_query = eventlet.import_patched('dns.query')
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
-
-# Command and Control OPCODE
-CC = 14
-
-# Private DNS CLASS Uses
-CLASSCC = 65280
-
-# Private RR Code Uses
-SUCCESS = 65280
-FAILURE = 65281
-CREATE = 65282
-DELETE = 65283
 
 
 class AgentPoolBackend(base.Backend):
@@ -58,10 +58,12 @@ class AgentPoolBackend(base.Backend):
     def __init__(self, target):
         super(AgentPoolBackend, self).__init__(target)
         self.host = self.options.get('host', '127.0.0.1')
-        self.port = int(self.options.get('port', 53))
+        self.port = int(self.options.get('port', DEFAULT_AGENT_PORT))
         self.timeout = CONF['service:pool_manager'].poll_timeout
         self.retry_interval = CONF['service:pool_manager'].poll_retry_interval
         self.max_retries = CONF['service:pool_manager'].poll_max_retries
+
+        # FIXME: the agent retries creating zones without any interval
 
     @property
     def mdns_api(self):
@@ -72,14 +74,14 @@ class AgentPoolBackend(base.Backend):
         response, retry = self._make_and_send_dns_message(
             zone.name,
             self.timeout,
-            CC,
-            CREATE,
-            CLASSCC,
+            pcodes.CC,
+            pcodes.CREATE,
+            pcodes.CLASSCC,
             self.host,
             self.port
         )
         if response is None:
-            raise exceptions.Backend()
+            raise exceptions.Backend("create_zone() failed")
 
     def update_zone(self, context, zone):
         LOG.debug('Update Zone')
@@ -100,14 +102,14 @@ class AgentPoolBackend(base.Backend):
         response, retry = self._make_and_send_dns_message(
             zone.name,
             self.timeout,
-            CC,
-            DELETE,
-            CLASSCC,
+            pcodes.CC,
+            pcodes.DELETE,
+            pcodes.CLASSCC,
             self.host,
             self.port
         )
         if response is None:
-            raise exceptions.Backend()
+            raise exceptions.Backend("failed delete_zone()")
 
     def _make_and_send_dns_message(self, zone_name, timeout, opcode,
                                    rdatatype, rdclass, dest_ip,
@@ -129,7 +131,7 @@ class AgentPoolBackend(base.Backend):
         if isinstance(response, dns.exception.Timeout):
             LOG.warning(_LW("Got Timeout while trying to send '%(msg)s' for "
                          "'%(zone)s' to '%(server)s:%(port)d'. Timeout="
-                         "'%(timeout)d' seconds. Retry='%(retry)d'") %
+                         "'%(timeout)d' seconds. Retry='%(retry)d'"),
                      {'msg': str(opcode),
                       'zone': zone_name, 'server': dest_ip,
                       'port': dest_port, 'timeout': timeout,
@@ -138,7 +140,7 @@ class AgentPoolBackend(base.Backend):
         elif isinstance(response, dns_query.BadResponse):
             LOG.warning(_LW("Got BadResponse while trying to send '%(msg)s' "
                          "for '%(zone)s' to '%(server)s:%(port)d'. Timeout"
-                         "='%(timeout)d' seconds. Retry='%(retry)d'") %
+                         "='%(timeout)d' seconds. Retry='%(retry)d'"),
                      {'msg': str(opcode),
                       'zone': zone_name, 'server': dest_ip,
                       'port': dest_port, 'timeout': timeout,
@@ -151,7 +153,7 @@ class AgentPoolBackend(base.Backend):
                 response.flags, response.ednsflags) != dns.rcode.NOERROR:
             LOG.warning(_LW("Failed to get expected response while trying to "
                          "send '%(msg)s' for '%(zone)s' to '%(server)s:"
-                         "%(port)d'. Response message: %(resp)s") %
+                         "%(port)d'. Response message: %(resp)s"),
                      {'msg': str(opcode),
                       'zone': zone_name, 'server': dest_ip,
                       'port': dest_port, 'resp': str(response)})

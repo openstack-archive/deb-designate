@@ -30,6 +30,7 @@ import testtools
 from designate import exceptions
 from designate.tests.unit import RoObject
 import designate.backend.agent as agent
+import designate.backend.private_codes as pcodes
 
 
 class SCAgentPoolBackend(agent.AgentPoolBackend):
@@ -63,8 +64,8 @@ class BackendAgentTest(base.BaseTestCase):
         out = self.agent.create_zone('ctx', RoObject(name='zn'))
 
         self.agent._make_and_send_dns_message.assert_called_with(
-            'zn', 1, 14, agent.CREATE, agent.SUCCESS, 2, 3)
-        self.assertEqual(None, out)
+            'zn', 1, 14, pcodes.CREATE, pcodes.SUCCESS, 2, 3)
+        self.assertIsNone(out)
 
     def test_create_zone_exception(self, *mock):
         self.agent._make_and_send_dns_message = Mock(return_value=(None, 2))
@@ -73,7 +74,7 @@ class BackendAgentTest(base.BaseTestCase):
             self.agent.create_zone('ctx', RoObject(name='zn'))
 
         self.agent._make_and_send_dns_message.assert_called_with(
-            'zn', 1, 14, agent.CREATE, agent.SUCCESS, 2, 3)
+            'zn', 1, 14, pcodes.CREATE, pcodes.SUCCESS, 2, 3)
 
     def test_update_zone(self, *mock):
         self.agent.mdns_api.notify_zone_changed = Mock()
@@ -83,7 +84,7 @@ class BackendAgentTest(base.BaseTestCase):
 
         self.agent.mdns_api.notify_zone_changed.assert_called_with(
             'ctx', zone, 2, 3, 1, 4, 5, 6)
-        self.assertEqual(None, out)
+        self.assertIsNone(out)
 
     def test_delete_zone(self, *mock):
         self.agent._make_and_send_dns_message = Mock(return_value=(1, 2))
@@ -91,8 +92,8 @@ class BackendAgentTest(base.BaseTestCase):
         out = self.agent.delete_zone('ctx', RoObject(name='zn'))
 
         self.agent._make_and_send_dns_message.assert_called_with(
-            'zn', 1, 14, agent.DELETE, agent.SUCCESS, 2, 3)
-        self.assertEqual(None, out)
+            'zn', 1, 14, pcodes.DELETE, pcodes.SUCCESS, 2, 3)
+        self.assertIsNone(out)
 
     def test_delete_zone_exception(self, *mock):
         self.agent._make_and_send_dns_message = Mock(return_value=(None, 2))
@@ -101,7 +102,7 @@ class BackendAgentTest(base.BaseTestCase):
             self.agent.delete_zone('ctx', RoObject(name='zn'))
 
         self.agent._make_and_send_dns_message.assert_called_with(
-            'zn', 1, 14, agent.DELETE, agent.SUCCESS, 2, 3)
+            'zn', 1, 14, pcodes.DELETE, pcodes.SUCCESS, 2, 3)
 
     def test_make_and_send_dns_message_timeout(self, *mocks):
         self.agent._make_dns_message = Mock(return_value='')

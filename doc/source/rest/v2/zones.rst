@@ -199,47 +199,55 @@ List Zones
 
         {
           "zones": [{
-            "id": "a86dba58-0043-4cc6-a1bb-69d5e86f3ca3",
-            "pool_id": "572ba08c-d929-4c70-8e42-03824bb24ca2",
-            "project_id": "4335d1f0-f793-11e2-b778-0800200c9a66",
+            "status": "ACTIVE",
+            "masters": [],
             "name": "example.org.",
-            "email": "joe@example.org.",
-            "ttl": 7200,
-            "serial": 1404757531,
-            "status": "ACTIVE",
-            "description": "This is an example zone.",
-            "masters": [],
-            "type": "PRIMARY",
-            "transferred_at": null,
-            "version": 1,
-            "created_at": "2014-07-07T18:25:31.275934",
-            "updated_at": null,
             "links": {
-              "self": "https://127.0.0.1:9001/v2/zones/a86dba58-0043-4cc6-a1bb-69d5e86f3ca3"
-            }
-          }, {
-            "id": "fdd7b0dc-52a3-491e-829f-41d18e1d3ada",
-            "pool_id": "572ba08c-d929-4c70-8e42-03824bb24ca2",
-            "project_id": "4335d1f0-f793-11e2-b778-0800200c9a66",
-            "name": "example.net.",
-            "email": "joe@example.net.",
-            "ttl": 7200,
-            "serial": 1404756682,
-            "status": "ACTIVE",
-            "description": "This is another example zone.",
-            "masters": [],
-            "type": "PRIMARY",
+              "self": "http://127.0.0.1:9001/v2/zones/c991f02b-ae05-4570-bf75-73def68fe700"
+            },
             "transferred_at": null,
-            "version": 1,
-            "created_at": "2014-07-07T18:22:08.287743",
-            "updated_at": null,
+            "created_at": "2016-03-15T05:41:45.000000",
+            "pool_id": "794ccc2c-d751-44fe-b57f-8894c9f5c842",
+            "updated_at": "2016-03-15T05:41:50.000000",
+            "version": 2,
+            "id": "c991f02b-ae05-4570-bf75-73def68fe700",
+            "ttl": 3600,
+            "action": "NONE",
+            "attributes": {},
+            "serial": 1458020505,
+            "project_id": "6b89012cdb2640c3a80b8d777d9bac16",
+            "type": "PRIMARY",
+            "email": "abc@example.com",
+            "description": null
+          },
+          {
+            "status": "ACTIVE",
+            "masters": [],
+            "name": "example1.org.",
             "links": {
-              "self": "https://127.0.0.1:9001/v2/zones/fdd7b0dc-52a3-491e-829f-41d18e1d3ada"
-            }
+              "self": "http://127.0.0.1:9001/v2/zones/0d35ce4e-f3b4-4ba7-9b94-4f9eba49018a"
+            },
+            "transferred_at": null,
+            "created_at": "2016-03-15T05:54:24.000000",
+            "pool_id": "794ccc2c-d751-44fe-b57f-8894c9f5c842",
+            "updated_at": "2016-03-15T05:54:44.000000",
+            "version": 2,
+            "id": "0d35ce4e-f3b4-4ba7-9b94-4f9eba49018a",
+            "ttl": 3600,
+            "action": "NONE",
+            "attributes": {},
+            "serial": 1458021264,
+            "project_id": "6b89012cdb2640c3a80b8d777d9bac16",
+            "type": "PRIMARY",
+            "email": "abc@example.com",
+            "description": null
           }],
           "links": {
-            "self": "https://127.0.0.1:9001/v2/zones"
-          }
+            "self": "http://127.0.0.1:9001/v2/zones"
+            },
+          "metadata": {
+            "total_count": 2
+            }
         }
 
     :statuscode 200: Success
@@ -612,14 +620,14 @@ Accept a Transfer Request
 
     .. sourcecode:: http
 
-        POST /v2/zones/tasks/transfer_accept HTTP/1.1
+        POST /v2/zones/tasks/transfer_accepts HTTP/1.1
         Host: 127.0.0.1:9001
         Accept: application/json
         Content-Type: application/json
 
         {
-            "key":"9Z2R50Y0",
-            "zone_transfer_request_id":"f2ad17b5-807a-423f-a991-e06236c247be"
+            "key":"J6JCET2C",
+            "zone_transfer_request_id":"98ba1d22-c092-4603-891f-8a0ab04f7e57"
         }
 
     **Example Response**
@@ -627,15 +635,61 @@ Accept a Transfer Request
     .. sourcecode:: http
 
         HTTP/1.1 201 Created
+        Content-Length: 532
         Content-Type: application/json
+        charset=UTF-8
 
         {
-            "id": "581891d5-99f5-49e1-86c3-eec0f44d66fd",
+            "status": "COMPLETE",
+            "zone_id": "53cdcf82-9e32-4a00-a90d-32d6ec5db7e9",
             "links": {
-                "self": "http://127.0.0.1:9001/v2/zones/tasks/transfer_accepts/581891d5-99f5-49e1-86c3-eec0f44d66fd",
-                "zone": "http://127.0.0.1:9001/v2/zones/6b78734a-aef1-45cd-9708-8eb3c2d26ff8"
+                "self": "http://127.0.0.1:9001/v2/zones/tasks/transfer_accepts/46b04776-a7c9-45b4-812e-b8e615d1d73b",
+                "zone": "http://127.0.0.1:9001/v2/zones/53cdcf82-9e32-4a00-a90d-32d6ec5db7e9"
             },
-            "status": "COMPLETE"
+            "created_at": "2016-05-13 08:01:16",
+            "updated_at": "2016-05-13 08:01:16",
+            "key": "J6JCET2C",
+            "project_id": "10457ad1fe074f4a89bb1e4c0cd83d40",
+            "id": "46b04776-a7c9-45b4-812e-b8e615d1d73b",
+            "zone_transfer_request_id": "98ba1d22-c092-4603-891f-8a0ab04f7e57"
+        }
+
+
+View a Transfer Accept
+^^^^^^^^^^^^^^^^^^^^^^
+
+.. http:get:: /zones/tasks/transfer_accepts/(uuid:id)
+
+    **Example Request**
+
+    .. sourcecode:: http
+
+        GET /v2/zones/tasks/transfer_accepts/46b04776-a7c9-45b4-812e-b8e615d1d73b HTTP/1.1
+        Host: 127.0.0.1:9001
+        Accept: application/json
+
+    **Example Response**
+
+    .. sourcecode:: http
+
+        HTTP/1.1 200 OK
+        Content-Length: 526
+        Content-Type: application/json
+        charset=UTF-8
+
+        {
+            "status": "COMPLETE",
+            "zone_id": "53cdcf82-9e32-4a00-a90d-32d6ec5db7e9",
+            "links": {
+                "self": "http://127.0.0.1:9001/v2/zones/tasks/transfer_accepts/46b04776-a7c9-45b4-812e-b8e615d1d73b",
+                "zone": "http://127.0.0.1:9001/v2/zones/53cdcf82-9e32-4a00-a90d-32d6ec5db7e9"
+            },
+            "created_at": "2016-05-13 08:01:16",
+            "updated_at": "2016-05-13 08:01:16",
+            "key": null,
+            "project_id": "10457ad1fe074f4a89bb1e4c0cd83d40",
+            "id": "46b04776-a7c9-45b4-812e-b8e615d1d73b",
+            "zone_transfer_request_id": "98ba1d22-c092-4603-891f-8a0ab04f7e57"
         }
 
 
@@ -764,39 +818,42 @@ List Zone Imports
         Content-Type: application/json
 
         {
-            "imports": [
-                {
+             "imports": [
+                 {
                     "status": "COMPLETE",
-                    "zone_id": "ea2fd415-dc6d-401c-a8af-90a89d7efcf9",
+                    "zone_id": 047888ee-e9dd-4c08-8b44-ab2e879e01bd,
                     "links": {
-                        "self": "http://127.0.0.1:9001/v2/zones/tasks/imports/fb47a23e-eb97-4c86-a3d4-f3e1a4ca9f5e",
-                        "href": "http://127.0.0.1:9001/v2/zones/ea2fd415-dc6d-401c-a8af-90a89d7efcf9"
+                        "self": "http://127.0.0.1:9001/v2/zones/tasks/imports/0436a86e-ffc1-4d38-82a7-d75170fcd2a9",
+                        "href": "http://127.0.0.1:9001/v2/zones/047888ee-e9dd-4c08-8b44-ab2e879e01bd"
                     },
-                    "created_at": "2015-05-08T15:22:50.000000",
-                    "updated_at": "2015-05-08T15:22:50.000000",
+                    "created_at": "2016-04-05T06:03:06.000000",
+                    "updated_at": "2016-04-05T06:03:06.000000",
                     "version": 2,
                     "message": "example.com. imported",
-                    "project_id": "noauth-project",
-                    "id": "fb47a23e-eb97-4c86-a3d4-f3e1a4ca9f5e"
+                    "project_id": "1de6e2fdc22342d3bef6340c7b70f497",
+                    "id": "0436a86e-ffc1-4d38-82a7-d75170fcd2a9"
                 },
                 {
                     "status": "COMPLETE",
-                    "zone_id": "6625198b-d67d-47dc-8d29-f90bd60f3ac4",
+                    "zone_id": 68a17870-7f81-470a-b5e9-2753460fd6dc,
                     "links": {
-                        "self": "http://127.0.0.1:9001/v2/zones/tasks/imports/074e805e-fe87-4cbb-b10b-21a06e215d41",
-                        "href": "http://127.0.0.1:9001/v2/zones/6625198b-d67d-47dc-8d29-f90bd60f3ac4"
+                        "self": "http://127.0.0.1:9001/v2/zones/tasks/imports/f0aa4ac1-f975-46a4-b417-339acd1ea8e3",
+                        "href": "http://127.0.0.1:9001/v2/zones/68a17870-7f81-470a-b5e9-2753460fd6dc"
                     },
-                    "created_at": "2015-05-08T15:43:42.000000",
-                    "updated_at": "2015-05-08T15:43:42.000000",
+                    "created_at": "2016-04-05T06:06:26.000000",
+                    "updated_at": "2016-04-05T06:06:26.000000",
                     "version": 2,
-                    "message": "example.com. imported",
-                    "project_id": "noauth-project",
-                    "id": "074e805e-fe87-4cbb-b10b-21a06e215d41"
+                    "message": "temp.org. imported",
+                    "project_id": "1de6e2fdc22342d3bef6340c7b70f497",
+                    "id": "f0aa4ac1-f975-46a4-b417-339acd1ea8e3"
                 }
-            ],
-            "links": {
-                "self": "http://127.0.0.1:9001/v2/zones/tasks/imports"
-            }
+             ],
+             "links": {
+                 "self": "http://127.0.0.1:9001/v2/zones/tasks/imports"
+             },
+             "metadata": {
+                 "total_count": 2
+             }
         }
 
     :statuscode 200: Success
@@ -990,40 +1047,29 @@ List Zone Exports
         Content-Type: application/json
 
         {
+
             "exports": [
                 {
                     "status": "COMPLETE",
-                    "zone_id": "30ea7692-7f9e-4195-889e-0ba11620b491",
+                    "zone_id": "17a8d6b3-6ace-4857-b113-a707c5f975b1",
                     "links": {
-                        "self": "http://127.0.0.1:9001/v2/zones/tasks/exports/d2f36aa6-2da4-4b22-a2a9-9cdf19a2f248",
-                        "export": "http://127.0.0.1:9001/v2/zones/30ea7692-7f9e-4195-889e-0ba11620b491/tasks/exports/d2f36aa6-2da4-4b22-a2a9-9cdf19a2f248/export"
+                        "self": "http://127.0.0.1:9001/v2/zones/tasks/exports/204be410-0a9c-44b8-839e-bc4df3bb0d9a",
+                        "export": "http://127.0.0.1:9001/v2/zones/tasks/exports/204be410-0a9c-44b8-839e-bc4df3bb0d9a/export"
                     },
-                    "created_at": "2015-08-24T19:46:50.000000",
-                    "updated_at": "2015-08-24T19:46:50.000000",
+                    "created_at": "2016-04-04T01:53:29.000000",
+                    "updated_at": "2016-04-04T01:53:29.000000",
                     "version": 2,
-                    "location": "designate://v2/zones/30ea7692-7f9e-4195-889e-0ba11620b491/tasks/exports/d2f36aa6-2da4-4b22-a2a9-9cdf19a2f248/export",
+                    "location": "designate://v2/zones/tasks/exports/204be410-0a9c-44b8-839e-bc4df3bb0d9a/export",
                     "message": null,
-                    "project_id": "noauth-project",
-                    "id": "d2f36aa6-2da4-4b22-a2a9-9cdf19a2f248"
-                },
-                {
-                    "status": "COMPLETE",
-                    "zone_id": "0503f9fd-3938-47a4-bbf3-df99b088abfc",
-                    "links": {
-                        "self": "http://127.0.0.1:9001/v2/zones/tasks/exports/3d7d07a5-2ce3-458e-b3dd-6a29906234d8",
-                        "export": "http://127.0.0.1:9001/v2/zones/tasks/exports/3d7d07a5-2ce3-458e-b3dd-6a29906234d8/export"
-                    },
-                    "created_at": "2015-08-25T15:16:10.000000",
-                    "updated_at": "2015-08-25T15:16:10.000000",
-                    "version": 2,
-                    "location": "designate://v2/zones/tasks/exports/3d7d07a5-2ce3-458e-b3dd-6a29906234d8/export",
-                    "message": null,
-                    "project_id": "noauth-project",
-                    "id": "3d7d07a5-2ce3-458e-b3dd-6a29906234d8"
-                },
+                    "project_id": "1de6e2fdc22342d3bef6340c7b70f497",
+                    "id": "204be410-0a9c-44b8-839e-bc4df3bb0d9a"
+                }
             ],
             "links": {
                 "self": "http://127.0.0.1:9001/v2/zones/tasks/exports"
+            },
+            "metadata": {
+                "total_count": 1
             }
         }
 

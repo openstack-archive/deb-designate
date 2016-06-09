@@ -25,7 +25,7 @@ Architecture
 High Level Topology
 -----------------------
 
-.. image:: images/Designate-Simple.svg
+.. image:: images/Designate-Arch.png
 
 .. _designate-api:
 
@@ -53,13 +53,21 @@ Designate Pool Manager
 -----------------------
 designate-pool-manager is a service that manages the states of the DNS servers Designate manages. The Pool Manager is configured to know which DNS servers Designate manages, and their type of backend (PowerDNS, BIND9, etc). It can also divide those servers into 'Pools' so that zones within Designate can be split across different sets of backend servers. The Pool Manager is also responsible for making sure that backend DNS servers are in sync with the Designate database.
 
+.. _designate-zone-manager:
+
+Designate Zone Manager
+-----------------------
+designate-zone-manager is a service that handle all periodic tasks relating to the zone shard it is responsible for. A zone shard is a collection of zones allocated based on first three characters of zone UUID.
+
+The current implemented periodic tasks in zone manager include emitting dns.zone.exists events for Ceilometer, purging deleted zones from database, polling secondary zones at their refresh intervals, and generating delayed NOTIFY transactions. 
+
 .. _designate-sink:
 
 Designate Sink
 -----------------------
 designate-sink is an optional service which listens for event notifications, such as compute.instance.create.end, handlers are available for Nova and Neutron. Notification events can then be used to trigger record creation & deletion.
 
-The current sink implementations generate simple forward lookup A records, using a format specified in :ref:`handler-nova` configuration.  Any field in the event notification can be used to generate a record.
+The current sink implementations generate simple forward lookup A records, using a format specified in handler-nova configuration.  Any field in the event notification can be used to generate a record.
 
 .. _dns-backend:
 
@@ -79,3 +87,10 @@ Designate uses oslo.rpc for messaging between components, therefore it inherits 
 Database/Storage
 -----------------------
 Storage drivers are drivers for a particular SQL/NoSQL server. Designate needs a SQLAlchemy-supported storage engine for the persistent storage of data. The recommended driver is MySQL.
+
+.. _memory-caching-summary:
+
+Memory caching
+-----------------------
+Designate also uses an in-memory caching system, currently implemented with Memcached, as an optional cache for Pool Manager.
+See :ref:`memory-caching-details`
