@@ -12,7 +12,6 @@ override_dh_auto_install:
 	install -D -m 0664 $(CURDIR)/etc/designate/designate.conf.sample $(CURDIR)/debian/designate-common/usr/share/designate-common/designate.conf
 
 override_dh_auto_clean:
-	dh_auto_clean -O--buildsystem=python_distutils
 	rm -f debian/designate-common.postinst debian/designate-common.config debian/designate-api.config debian/designate-api.postinst
 	rm -rf doc/build build *.egg-info
 	rm -f debian/*.init debian/*.upstart debian/*.service
