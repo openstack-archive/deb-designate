@@ -5,6 +5,8 @@ designate (1:3.0.0~b1+dfsg1-1) experimental; urgency=medium
   * Do not run dh_auto_clean, as it breaks jenkins build.
   * Rebase fixes-keystone-authtoken.patch.
   * Added fix-requirements.txt.patch.
+  * Disable export OSLO_PACKAGE_VERSION and use the one from
+    openstack-pkg-tools 50~.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 09 Jun 2016 10:15:24 +0200
 
