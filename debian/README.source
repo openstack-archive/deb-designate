@@ -1,0 +1,2 @@
+The package is +dfsg1 because of the removal of bootstrap.min.{js,css}
+in the api-ref folder.
