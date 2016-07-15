@@ -35,6 +35,7 @@ class QuotasController(rest.RestController):
     def get_one(self, tenant_id):
         request = pecan.request
         context = pecan.request.environ['context']
+        context.all_tenants = True
 
         quotas = self.central_api.get_quotas(context, tenant_id)
 
@@ -46,6 +47,7 @@ class QuotasController(rest.RestController):
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
+        context.all_tenants = True
         body = request.body_dict
 
         # Validate the request conforms to the schema
@@ -69,6 +71,7 @@ class QuotasController(rest.RestController):
         request = pecan.request
         response = pecan.response
         context = request.environ['context']
+        context.all_tenants = True
 
         self.central_api.reset_quotas(context, tenant_id)
 

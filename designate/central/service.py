@@ -643,8 +643,8 @@ class Service(service.RPCService, service.Service):
         target = {'tenant_id': tenant_id}
         policy.check('get_quotas', context, target)
 
-        # This allows admins to get quota information correctly for all tenants
-        context.all_tenants = True
+        if tenant_id != context.tenant and not context.all_tenants:
+            raise exceptions.Forbidden()
 
         return self.quota.get_quotas(context, tenant_id)
 
@@ -663,6 +663,8 @@ class Service(service.RPCService, service.Service):
         }
 
         policy.check('set_quota', context, target)
+        if tenant_id != context.tenant and not context.all_tenants:
+            raise exceptions.Forbidden()
 
         return self.quota.set_quota(context, tenant_id, resource, hard_limit)
 
@@ -2673,7 +2675,7 @@ class Service(service.RPCService, service.Service):
                 zone_import.message = 'An SOA record is required.'
                 zone_import.status = 'ERROR'
             except Exception as e:
-                msg = _LE('An undefined error occured during zone import')
+                msg = _LE('An undefined error occurred during zone import')
                 LOG.exception(msg)
                 msg = 'An undefined error occurred. %s' % e.message[:130]
                 zone_import.message = msg
@@ -2700,7 +2702,7 @@ class Service(service.RPCService, service.Service):
                 zone_import.status = 'ERROR'
                 zone_import.message = e.message
             except Exception as e:
-                msg = _LE('An undefined error occured during zone '
+                msg = _LE('An undefined error occurred during zone '
                           'import creation')
                 LOG.exception(msg)
                 msg = 'An undefined error occurred. %s' % e.message[:130]

@@ -161,6 +161,8 @@ function configure_designate_tempest() {
         iniset $TEMPEST_CONFIG dns_feature_enabled api_v2 $DESIGNATE_ENABLE_API_V2
         iniset $TEMPEST_CONFIG dns_feature_enabled api_admin $DESIGNATE_ENABLE_API_ADMIN
         iniset $TEMPEST_CONFIG dns_feature_enabled api_v2_root_recordsets True
+        iniset $TEMPEST_CONFIG dns_feature_enabled api_v2_quotas True
+        iniset $TEMPEST_CONFIG dns_feature_enabled bug_1573141_fixed True
 
         # Tell tempest where are nameservers are.
         nameservers=$DESIGNATE_SERVICE_HOST:$DESIGNATE_SERVICE_PORT_DNS
@@ -249,11 +251,11 @@ function init_designate {
 
 # install_designate - Collect source and prepare
 function install_designate {
-    install_package libcap2-bin
-
-    if is_fedora; then
-        # This package provides `dig`
-        install_package bind-utils
+    if is_ubuntu; then
+        install_package libcap2-bin
+    elif is_fedora; then
+        # bind-utils package provides `dig`
+        install_package libcap bind-utils
     fi
 
     git_clone $DESIGNATE_REPO $DESIGNATE_DIR $DESIGNATE_BRANCH
@@ -274,8 +276,9 @@ function install_designateclient {
 
 # install_designatedashboard - Collect source and prepare
 function install_designatedashboard {
-    git_clone $DESIGNATEDASHBOARD_REPO $DESIGNATEDASHBOARD_DIR $DESIGNATEDASHBOARD_BRANCH
-    setup_develop $DESIGNATEDASHBOARD_DIR
+    git_clone_by_name "designate-dashboard"
+    setup_dev_lib "designate-dashboard"
+
     ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_1710_project_dns_panel_group.py $HORIZON_DIR/openstack_dashboard/local/enabled/_1710_project_dns_panel_group.py
     ln -fs $DESIGNATEDASHBOARD_DIR/designatedashboard/enabled/_1720_project_dns_panel.py $HORIZON_DIR/openstack_dashboard/local/enabled/_1720_project_dns_panel.py
 }

@@ -1,16 +1,6 @@
-#############################
-#     Common Variables      #
-#############################
-
-# Header Variables
-###################
-
-x-auth-token:
-  description: |
-    Token used to identify the user from keystone
-  in: header
-  required: false
-  type: string
+####################
+# Header Variables #
+####################
 
 x-auth-all-projects:
   description: |
@@ -26,6 +16,13 @@ x-auth-sudo-project-id:
   required: false
   type: string
 
+x-auth-token:
+  description: |
+    Token used to identify the user from keystone
+  in: header
+  required: false
+  type: string
+
 x-designate-edit-managed-records:
   description: |
     If enabled this will all users to edit records flagged as managed
@@ -37,15 +34,46 @@ x-openstack-request-id:
   description: |
     ID of the request
   in: header
-  required: false
+  required: true
   type: string
 
-# Path Variables
-#################
+zone_export_accepts:
+  description: >
+    Content-Type that will be accepted by the client.
+    This endpoint will send a response with a ``text/dns`` content-type.
+    If the client does not include a ``Accepts: text/dns`` header
+  in: header
+  required: true
+  type: string
 
-path_zone_id:
+####################
+#  Path Variables  #
+####################
+
+blacklist_id:
   description: |
-    ID for the zone
+    ID for this blacklist
+  in: path
+  required: true
+  type: uuid
+
+floatingip_id:
+  description: |
+    ID for the floatingip associated with the project
+  in: path
+  required: true
+  type: uuid
+
+path_pool_id:
+  description: |
+    ID for this pool
+  in: path
+  required: true
+  type: uuid
+
+path_project_id:
+  description: |
+    ID for the project
   in: path
   required: true
   type: uuid
@@ -57,8 +85,73 @@ path_recordset_id:
   required: true
   type: uuid
 
-# Query Variables
-##################
+path_zone_export_id:
+  description: |
+    ID for this zone export
+  in: path
+  required: true
+  type: uuid
+
+path_zone_id:
+  description: |
+    ID for the zone
+  in: path
+  required: true
+  type: uuid
+
+path_zone_import_id:
+  description: |
+    ID for this zone import
+  in: path
+  required: true
+  type: uuid
+
+path_zone_transfer_accept_id:
+  description: |
+    ID for this zone transfer accept
+  in: path
+  required: true
+  type: uuid
+
+path_zone_transfer_request_id:
+  description: |
+    ID for this zone transfer request
+  in: path
+  required: true
+  type: uuid
+
+region:
+  description: |
+    Openstack region
+  in: path
+  required: true
+  type: string
+
+tld_id:
+  description: |
+    ID for this tld
+  in: path
+  required: true
+  type: uuid
+
+tsigkey_id:
+  description: |
+    ID for this tsigkey
+  in: path
+  required: true
+  type: uuid
+
+
+####################
+# Query Variables  #
+####################
+
+blacklist_pattern_filter:
+  description: |
+    Filter results to only show blacklists that have a pattern matching the filter
+  in: query
+  required: false
+  type: string
 
 limit:
   description: |
@@ -70,6 +163,7 @@ limit:
   in: query
   required: false
   type: integer
+
 marker:
   description: |
     The ID of the last-seen item. Use the ``limit``
@@ -79,6 +173,49 @@ marker:
   in: query
   required: false
   type: string
+
+recordset_data_filter:
+  description: |
+    Filter results to only show recordsets that have a record with data matching the filter
+  in: query
+  required: false
+  type: string
+
+recordset_description_filter:
+  description: |
+    Filter results to only show recordsets that have a description matching the filter
+  in: query
+  required: false
+  type: string
+
+recordset_name_filter:
+  description: |
+    Filter results to only show recordsets that have a name matching the filter
+  in: query
+  required: false
+  type: string
+
+recordset_status_filter:
+  description: |
+    Filter results to only show recordsets that have a status matching the filter
+  in: query
+  required: false
+  type: string
+
+recordset_ttl_filter:
+  description: |
+    Filter results to only show recordsets that have a ttl matching the filter
+  in: query
+  required: false
+  type: string
+
+recordset_type_filter:
+  description: |
+    Filter results to only show recordsets that have a type matching the filter
+  in: query
+  required: false
+  type: string
+
 sort_dir:
   description: |
     Sorts the response by the requested sort
@@ -91,6 +228,7 @@ sort_dir:
   in: query
   required: false
   type: string
+
 sort_key:
   description: |
     Sorts the response by the this attribute value.
@@ -102,126 +240,30 @@ sort_key:
   required: false
   type: string
 
-# Body Variables
-#################
-
-
-id:
+tld_name_filter:
   description: |
-    ID for the resource
-  in: body
-  required: true
-  type: uuid
-
-
-project_id:
-  description: |
-    ID for the project that owns the resource
-  in: body
-  required: true
-  type: uuid
-
-
-description:
-  description: |
-    Description for the resource. Only showen in API / Horizon
-  in: body
-  required: true
-  type: string
-
-version:
-  description: |
-    Version of the resource
-  in: body
-  required: true
-  type: integer
-
-
-created_at:
-  description: |
-    Date / Time when resource was created
-  in: body
-  required: true
-  type: datestamp
-
-updated_at:
-  description: |
-    Date / Time when resource last updated
-  in: body
-  required: false
-  type: datestamp
-
-status:
-  description: |
-    status of the resource
-  in: body
-  required: true
-  type: enum
-
-action:
-  description: |
-    current action in progress on the resource
-  in: body
-  required: true
-  type: enum
-
-links:
-  description: |
-    Links to the resource, and other related resources.
-    When a response has been broken into pages, we will include
-    a ``next`` link that should be followed to retrive all results
-  in: body
-  required: true
-  type: object
-
-metadata:
-  description: |
-    Returns the ``total_count`` of resources matching this filter
-  in: body
-  required: true
-  type: object
-
-#############################
-#      Zone Variables       #
-#############################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-# Query Variables
-##################
-
-# Filters
-# 'name', 'type', 'email', 'status', 'description', 'ttl'
-
-zone_name_filter:
-  description: |
-    Filter results to only show zones that have a name matching the filter
+    Filter results to only show tlds that have a name matching the filter
   in: query
   required: false
   type: string
 
-zone_type_filter:
+tsigkey_algorithm_filter:
   description: |
-    Filter results to only show zones that have a type matching the filter
+    Filter results to only show tsigkeys that have an algorithm matching the filter
   in: query
   required: false
   type: string
 
-zone_email_filter:
+tsigkey_name_filter:
   description: |
-    Filter results to only show zones that have an email matching the filter
+    Filter results to only show tsigkeys that have a name matching the filter
   in: query
   required: false
   type: string
 
-zone_status_filter:
+tsigkey_scope_filter:
   description: |
-    Filter results to only show zones that have a status matching the filter
+    Filter results to only show tsigkeys that have a scope matching the filter
   in: query
   required: false
   type: string
@@ -233,347 +275,9 @@ zone_description_filter:
   required: false
   type: string
 
-zone_ttl_filter:
+zone_email_filter:
   description: |
-    Filter results to only show zones that have a ttl matching the filter
-  in: query
-  required: false
-  type: integer
-
-# Body Variables
-#################
-
-
-zone_name:
-  description: |
-    DNS Name for the zone
-  in: body
-  required: true
-  type: domainname
-
-zone_email:
-  description: |
-    e-mail for the zone. Used in SOA records for the zone
-  in: body
-  required: true
-  type: string
-
-zone_email_update:
-  description: |
-    e-mail for the zone. Used in SOA records for the zone
-  in: body
-  required: false
-  type: string
-
-zone_ttl:
-  description: |
-    TTL (Time to Live) for the zone.
-  in: body
-  required: false
-  type: integer
-
-zone_description:
-  description: |
-    Description for this zone
-  in: body
-  required: false
-  type: string
-
-zone_pool_id:
-  description: |
-    ID for the pool hosting this zone
-  in: body
-  required: true
-  type: uuid
-
-zone_serial:
-  description: |
-    current serial number for the zone
-  in: body
-  required: true
-  type: integer
-
-zone_serial:
-  description: |
-    current serial number for the zone
-  in: body
-  required: true
-  type: integer
-
-zone_type:
-  description: |
-    Type of zone. PRIMARY is controlled by Designate, SECONDARY zones are slaved from another DNS Server. Defaults to PRIMARY
-  in: body
-  required: false
-  type: enum
-
-zone_masters:
-  description: |
-    For secondary zones. The servers to slave from to get DNS information
-  in: body
-  required: true
-  type: enum
-
-zone_transfered_at:
-  description: |
-    For secondary zones. The last time an update was retrieved from the master servers
-  in: body
-  required: true
-  type: enum
-
-zone_nameserver_hostname:
-  description: |
-    The hostname of the nameserver that the zone should be delegated to
-  in: body
-  required: true
-  type: hostname
-
-
-zone_nameserver_priority:
-  description: |
-    The priority of the nameserver. This is used to determine the order of the
-    the nameserver listings, and which server is used in the SOA record for the
-    zone.
-  in: body
-  required: true
-  type: hostname
-
-
-#############################
-#    Recordset Variables    #
-#############################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-# Query Variables
-##################
-
-# Filters
-# 'name', 'type', 'ttl', 'data', 'status', 'description'
-
-recordset_name_filter:
-  description: |
-    Filter results to only show recordsets that have a name matching the filter
-  in: query
-  required: false
-  type: string
-
-recordset_type_filter:
-  description: |
-    Filter results to only show recordsets that have a type matching the filter
-  in: query
-  required: false
-  type: string
-
-recordset_ttl_filter:
-  description: |
-    Filter results to only show recordsets that have a ttl matching the filter
-  in: query
-  required: false
-  type: string
-
-recordset_data_filter:
-  description: |
-    Filter results to only show recordsets that have a record with data matching the filter
-  in: query
-  required: false
-  type: string
-
-recordset_status_filter:
-  description: |
-    Filter results to only show recordsets that have a status matching the filter
-  in: query
-  required: false
-  type: string
-
-recordset_description_filter:
-  description: |
-    Filter results to only show recordsets that have a description matching the filter
-  in: query
-  required: false
-  type: string
-
-# Body Variables
-#################
-
-recordset_name:
-  description: |
-    DNS Name for the recordset
-  in: body
-  required: true
-  type: hostname
-
-recordset_zone_id:
-  description: |
-    ID for the zone that contains this recordset
-  in: body
-  required: true
-  type: uuid
-
-recordset_zone_name:
-  description: |
-    The name of the zone that contains this recordset
-  in: body
-  required: true
-  type: string
-
-recordset_ttl:
-  description: |
-    TTL (Time to Live) for the recordset.
-  in: body
-  required: false
-  type: integer
-
-recordset_type:
-  description: |
-    They RRTYPE of the recordset.
-  in: body
-  required: true
-  type: string
-
-recordset_records:
-  description: |
-    A list of data for this recordset. Each item will be a separate record in Designate
-    These items should conform to the DNS spec for the record type - e.g. A records
-    must be IPv4 addresses, CNAME records must be a hostname.
-  in: body
-  required: true
-  type: string
-
-recordset_description:
-  description: |
-    Description for this recordset
-  in: body
-  required: false
-  type: string
-
-#############################
-#   Zone Import Variables   #
-#############################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-path_zone_import_id:
-  description: |
-    ID for this zone import
-  in: path
-  required: true
-  type: uuid
-
-# Query Variables
-##################
-
-# Filters
-# 'status', 'message', 'zone_id'
-
-zone_import_zone_id_filter:
-  description: |
-    Filter results to only show zone_imports that have a ``zone_id`` matching the filter
-  in: query
-  required: false
-  type: uuid
-
-zone_import_status_filter:
-  description: |
-    Filter results to only show zone_imports that have a ``status`` matching the filter
-  in: query
-  required: false
-  type: string
-
-zone_import_message_filter:
-  description: |
-    Filter results to only show zone_imports that have a ``message`` matching the filter
-  in: query
-  required: false
-  type: string
-
-
-
-# Body Variables
-#################
-
-zone_import_id:
-  description: |
-    ID for this zone import
-  in: body
-  required: true
-  type: uuid
-
-zone_import_zone_id:
-  description: |
-    ID for the zone that was created by this import
-  in: body
-  required: false
-  type: uuid
-
-zone_import_status:
-  description: |
-    Current status of the zone import
-  in: body
-  required: true
-  type: uuid
-
-zone_import_message:
-  description: |
-    Message about the current status of the import
-  in: body
-  required: false
-  type: uuid
-
-#############################
-#   Zone Export Variables   #
-#############################
-
-
-# Header Variables
-###################
-
-zone_export_accepts:
-  description: >
-    Content-Type that will be accepted by the client.
-    This endpoint will send a response with a ``text/dns`` content-type.
-    If the client does not include a ``Accepts: text/dns`` header
-  in: header
-  required: true
-  type: string
-
-
-# Path Variables
-#################
-
-path_zone_export_id:
-  description: |
-    ID for this zone export
-  in: path
-  required: true
-  type: uuid
-
-# Query Variables
-##################
-
-# Filters
-# 'status', 'message', 'zone_id'
-
-zone_export_zone_id_filter:
-  description: |
-    Filter results to only show ``zone_exports`` that have a ``zone_id`` matching the filter
-  in: query
-  required: false
-  type: uuid
-
-zone_export_status_filter:
-  description: |
-    Filter results to only show ``zone_exports`` that have a ``status`` matching the filter
+    Filter results to only show zones that have an email matching the filter
   in: query
   required: false
   type: string
@@ -585,91 +289,61 @@ zone_export_message_filter:
   required: false
   type: string
 
-
-
-# Body Variables
-#################
-
-zone_export_id:
+zone_export_status_filter:
   description: |
-    ID for this zone export
-  in: body
-  required: true
-  type: uuid
-
-zone_export_zone_id:
-  description: |
-    ID for the zone that is being exported
-  in: body
-  required: false
-  type: uuid
-
-zone_export_status:
-  description: |
-    Current status of the zone export
-  in: body
-  required: true
-  type: string
-
-zone_export_message:
-  description: |
-    Message about the current status of the export
-  in: body
-  required: false
-  type: uuid
-
-zone_export_location:
-  description: >
-    Where the exported zone is published to.
-    There are currently one placement option available - designate.
-
-    This will be shown by ``designate://<url>``.
-
-    As more drivers are added, this will expand to include swift - this will be
-    indicated by location being set to ``swift://<region>/<container>/<file>``
-
-    This is also allowed be a webserver if the operator implements a different
-    data store, and will be indicted by ``http://<url>``
-
-    When a zone export is complete, the location will be updated, and
-    the exported zone file will be available at the location specified.
-
-  in: body
+    Filter results to only show ``zone_exports`` that have a ``status`` matching the filter
+  in: query
   required: false
   type: string
 
-
-
-#################################
-#    Zone Transfer Variables    #
-#################################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-path_zone_transfer_request_id:
+zone_export_zone_id_filter:
   description: |
-    ID for this zone transfer request
-  in: path
-  required: true
+    Filter results to only show ``zone_exports`` that have a ``zone_id`` matching the filter
+  in: query
+  required: false
   type: uuid
 
-path_zone_transfer_accept_id:
+zone_import_message_filter:
   description: |
-    ID for this zone transfer accept
-  in: path
-  required: true
+    Filter results to only show zone_imports that have a ``message`` matching the filter
+  in: query
+  required: false
+  type: string
+
+zone_import_status_filter:
+  description: |
+    Filter results to only show zone_imports that have a ``status`` matching the filter
+  in: query
+  required: false
+  type: string
+
+zone_import_zone_id_filter:
+  description: |
+    Filter results to only show zone_imports that have a ``zone_id`` matching the filter
+  in: query
+  required: false
   type: uuid
 
-# Query Variables
-##################
+zone_name_filter:
+  description: |
+    Filter results to only show zones that have a name matching the filter
+  in: query
+  required: false
+  type: string
 
-# Filters
-# 'status'
+zone_status_filter:
+  description: |
+    Filter results to only show zones that have a status matching the filter
+  in: query
+  required: false
+  type: string
+
+zone_transfer_accept_status_filter:
+  description: |
+    Filter results to only show ``zone_transfer_accepts`` that have a ``status`` matching the filter
+  in: query
+  required: false
+  type: string
 
 zone_transfer_request_status_filter:
   description: |
@@ -678,83 +352,110 @@ zone_transfer_request_status_filter:
   required: false
   type: string
 
-# Body Variables
-#################
-zone_transfer_request_id:
+zone_ttl_filter:
   description: |
-    ID for this zone transfer request
-  in: path
-  required: true
-  type: uuid
+    Filter results to only show zones that have a ttl matching the filter
+  in: query
+  required: false
+  type: integer
 
-zone_transfer_accept_id:
+zone_type_filter:
   description: |
-    ID for this zone transfer accept
-  in: path
-  required: true
-  type: uuid
+    Filter results to only show zones that have a type matching the filter
+  in: query
+  required: false
+  type: string
 
-zone_transfer_request_target_project_id:
-  description: >
-    A project ID that the request will be limited to.
-    No other project will be allowed to accept this request.
+
+####################
+#  Body Variables  #
+####################
+
+action:
+  description: |
+    current action in progress on the resource
+  in: body
+  required: true
+  type: enum
+
+blacklist_description:
+  description: |
+    Description for this blacklist
   in: body
   required: false
   type: string
 
-zone_transfer_request_status:
+blacklist_pattern:
   description: |
-    Current status of the zone transfer request
+    Pattern for this blacklist
   in: body
   required: true
   type: string
 
-zone_transfer_accept_status:
+created_at:
   description: |
-    Current status of the zone transfer request
+    Date / Time when resource was created
+  in: body
+  required: true
+  type: datestamp
+
+description:
+  description: |
+    Description for the resource. Only shown in API / Horizon
   in: body
   required: true
   type: string
 
-zone_transfer_request_key:
-  description: >
-    Key that is used as part of the zone transfer accept process. This is only
-    shown to the creator, and must be communicated out of band.
+floatingip_address:
+  description: |
+    The floatingip address for this PTR record.
   in: body
   required: true
   type: string
 
-zone_transfer_request_zone_id:
+fptr_description:
   description: |
-    ID for the zone that is being exported
+    Description for this PTR record
+  in: body
+  required: true
+  type: string
+
+fptr_id:
+  description: |
+    ID for PTR record in the format of <region>:<floatingip_id>
+  in: body
+  required: true
+  type: string
+
+fptr_ttl:
+  description: |
+    Time to live for this PTR record
   in: body
   required: true
   type: uuid
 
-zone_transfer_request_zone_name:
+fptrd_name:
   description: |
-    the name of the zone that is being exported
+    Domain name for this PTR record
   in: body
   required: true
   type: string
 
+id:
+  description: |
+    ID for the resource
+  in: body
+  required: true
+  type: uuid
 
-#############################
-#     Limits Variables      #
-#############################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-# Query Variables
-##################
-
-# Body Variables
-#################
+links:
+  description: |
+    Links to the resource, and other related resources.
+    When a response has been broken into pages, we will include
+    a ``next`` link that should be followed to retrive all results
+  in: body
+  required: true
+  type: object
 
 max_page_limit:
   description: |
@@ -805,6 +506,13 @@ max_zones:
   required: true
   type: integer
 
+metadata:
+  description: |
+    Returns the ``total_count`` of resources matching this filter
+  in: body
+  required: true
+  type: object
+
 min_ttl:
   description: |
     The lowest ttl allowed on this system
@@ -812,181 +520,88 @@ min_ttl:
   required: true
   type: integer
 
-
-#############################
-#      Pool Variables       #
-#############################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-path_pool_id:
-  description: |
-    ID for this pool
-  in: path
+pool_attributes:
+  description: >
+    Key:Value pairs of information about this pool. This information can be used by the scheduler to place zones on the correct pools
+  in: body
   required: true
-  type: uuid
+  type: object
 
-# Query Variables
-##################
-
-# Body Variables
-#################
 pool_id:
   description: |
     ID for this pool
-  in: path
+  in: body
   required: true
   type: uuid
 
 pool_name:
   description: |
     Name for this pool
-  in: path
+  in: body
   required: true
   type: string
 
 pool_ns_records:
   description: |
     Name Servers for this pool. Any zones hosted by this pool should be delegated to these DNS servers
-  in: path
+  in: body
   required: true
   type: string
 
-pool_attributes:
-  description: >
-    Key:Value pairs of information about this pool. This information can be used by the scheduler to place zones on the correct pools
-  in: path
-  required: true
-  type: object
-
-
-#############################
-#      Tld Variables       #
-#############################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-tld_id:
+project_id:
   description: |
-    ID for this tld
-  in: path
+    ID for the project that owns the resource
+  in: body
   required: true
   type: uuid
 
-# Query Variables
-##################
-
-# Filters
-
-tld_name_filter:
+recordset_description:
   description: |
-    Filter results to only show tlds that have a name matching the filter
-  in: query
+    Description for this recordset
+  in: body
   required: false
   type: string
 
-
-# Body Variables
-#################
-
-tld_name:
+recordset_name:
   description: |
-    Name for this tld
+    DNS Name for the recordset
+  in: body
+  required: true
+  type: hostname
+
+recordset_records:
+  description: |
+    A list of data for this recordset. Each item will be a separate record in Designate
+    These items should conform to the DNS spec for the record type - e.g. A records
+    must be IPv4 addresses, CNAME records must be a hostname.
   in: body
   required: true
   type: string
 
-tld_description:
+recordset_ttl:
   description: |
-    Description for this tld
+    TTL (Time to Live) for the recordset.
   in: body
   required: false
+  type: integer
+
+recordset_type:
+  description: |
+    They RRTYPE of the recordset.
+  in: body
+  required: true
   type: string
 
-
-#############################
-#      Tsigkey Variables       #
-#############################
-
-
-# Header Variables
-###################
-
-# Path Variables
-#################
-
-tsigkey_id:
+recordset_zone_id:
   description: |
-    ID for this tsigkey
-  in: path
+    ID for the zone that contains this recordset
+  in: body
   required: true
   type: uuid
 
-
-# Query Variables
-##################
-
-#Filters
-
-tsigkey_name_filter:
+recordset_zone_name:
   description: |
-    Filter results to only show tsigkeys that have a name matching the filter
-  in: query
-  required: false
-  type: string
-
-tsigkey_algorithm_filter:
-  description: |
-    Filter results to only show tsigkeys that have an algorithm matching the filter
-  in: query
-  required: false
-  type: string
-
-tsigkey_scope_filter:
-  description: |
-    Filter results to only show tsigkeys that have a scope matching the filter
-  in: query
-  required: false
-  type: string
-
-
-# Body Variables
-#################
-
-tsigkey_name:
-  description: |
-    Name for this tsigkey
-  in: body
-  required: true
-  type: string
-
-tsigkey_algorithm:
-  description: |
-    The encryption algorithm for this tsigkey
-  in: body
-  required: true
-  type: string
-
-tsigkey_secret:
-  description: |
-    The actual key to be used
-  in: body
-  required: true
-  type: string
-
-tsigkey_scope:
-  description: |
-    scope for this tsigkey which can be either ZONE or POOL scope
+    The name of the zone that contains this recordset
   in: body
   required: true
   type: string
@@ -998,20 +613,285 @@ resource_id:
   required: true
   type: string
 
+status:
+  description: |
+    status of the resource
+  in: body
+  required: true
+  type: enum
 
-#############################
-#      <ITEM> Variables       #
-#############################
+tld_description:
+  description: |
+    Description for this tld
+  in: body
+  required: false
+  type: string
 
+tld_name:
+  description: |
+    Name for this tld
+  in: body
+  required: true
+  type: string
 
-# Header Variables
-###################
+tsigkey_algorithm:
+  description: |
+    The encryption algorithm for this tsigkey
+  in: body
+  required: true
+  type: string
 
-# Path Variables
-#################
+tsigkey_name:
+  description: |
+    Name for this tsigkey
+  in: body
+  required: true
+  type: string
 
-# Query Variables
-##################
+tsigkey_scope:
+  description: |
+    scope for this tsigkey which can be either ZONE or POOL scope
+  in: body
+  required: true
+  type: string
 
-# Body Variables
-#################
+tsigkey_secret:
+  description: |
+    The actual key to be used
+  in: body
+  required: true
+  type: string
+
+updated_at:
+  description: |
+    Date / Time when resource last updated
+  in: body
+  required: false
+  type: datestamp
+
+version:
+  description: |
+    Version of the resource
+  in: body
+  required: true
+  type: integer
+
+zone_description:
+  description: |
+    Description for this zone
+  in: body
+  required: false
+  type: string
+
+zone_email:
+  description: |
+    e-mail for the zone. Used in SOA records for the zone
+  in: body
+  required: true
+  type: string
+
+zone_email_update:
+  description: |
+    e-mail for the zone. Used in SOA records for the zone
+  in: body
+  required: false
+  type: string
+
+zone_export_id:
+  description: |
+    ID for this zone export
+  in: body
+  required: true
+  type: uuid
+
+zone_export_location:
+  description: >
+    Where the exported zone is published to.
+    There are currently one placement option available - designate.
+
+    This will be shown by ``designate://<url>``.
+
+    As more drivers are added, this will expand to include swift - this will be
+    indicated by location being set to ``swift://<region>/<container>/<file>``
+
+    This is also allowed be a webserver if the operator implements a different
+    data store, and will be indicted by ``http://<url>``
+
+    When a zone export is complete, the location will be updated, and
+    the exported zone file will be available at the location specified.
+
+  in: body
+  required: false
+  type: string
+
+zone_export_message:
+  description: |
+    Message about the current status of the export
+  in: body
+  required: false
+  type: uuid
+
+zone_export_status:
+  description: |
+    Current status of the zone export
+  in: body
+  required: true
+  type: string
+
+zone_export_zone_id:
+  description: |
+    ID for the zone that is being exported
+  in: body
+  required: false
+  type: uuid
+
+zone_import_id:
+  description: |
+    ID for this zone import
+  in: body
+  required: true
+  type: uuid
+
+zone_import_message:
+  description: |
+    Message about the current status of the import
+  in: body
+  required: false
+  type: uuid
+
+zone_import_status:
+  description: |
+    Current status of the zone import
+  in: body
+  required: true
+  type: uuid
+
+zone_import_zone_id:
+  description: |
+    ID for the zone that was created by this import
+  in: body
+  required: false
+  type: uuid
+
+zone_masters:
+  description: |
+    For secondary zones. The servers to slave from to get DNS information
+  in: body
+  required: true
+  type: enum
+
+zone_name:
+  description: |
+    DNS Name for the zone
+  in: body
+  required: true
+  type: domainname
+
+zone_nameserver_hostname:
+  description: |
+    The hostname of the nameserver that the zone should be delegated to
+  in: body
+  required: true
+  type: hostname
+
+zone_nameserver_priority:
+  description: |
+    The priority of the nameserver. This is used to determine the order of the
+    the nameserver listings, and which server is used in the SOA record for the
+    zone.
+  in: body
+  required: true
+  type: integer
+
+zone_pool_id:
+  description: |
+    ID for the pool hosting this zone
+  in: body
+  required: true
+  type: uuid
+
+zone_serial:
+  description: |
+    current serial number for the zone
+  in: body
+  required: true
+  type: integer
+
+zone_transfer_accept_id:
+  description: |
+    ID for this zone transfer accept
+  in: body
+  required: true
+  type: uuid
+
+zone_transfer_accept_status:
+  description: |
+    Current status of the zone transfer request
+  in: body
+  required: true
+  type: string
+
+zone_transfer_request_id:
+  description: |
+    ID for this zone transfer request
+  in: body
+  required: true
+  type: uuid
+
+zone_transfer_request_key:
+  description: >
+    Key that is used as part of the zone transfer accept process. This is only
+    shown to the creator, and must be communicated out of band.
+  in: body
+  required: true
+  type: string
+
+zone_transfer_request_status:
+  description: |
+    Current status of the zone transfer request
+  in: body
+  required: true
+  type: string
+
+zone_transfer_request_target_project_id:
+  description: >
+    A project ID that the request will be limited to.
+    No other project will be allowed to accept this request.
+  in: body
+  required: false
+  type: string
+
+zone_transfer_request_zone_id:
+  description: |
+    ID for the zone that is being exported
+  in: body
+  required: true
+  type: uuid
+
+zone_transfer_request_zone_name:
+  description: |
+    the name of the zone that is being exported
+  in: body
+  required: true
+  type: string
+
+zone_transfered_at:
+  description: |
+    For secondary zones. The last time an update was retrieved from the master servers
+  in: body
+  required: true
+  type: enum
+
+zone_ttl:
+  description: |
+    TTL (Time to Live) for the zone.
+  in: body
+  required: false
+  type: integer
+
+zone_type:
+  description: |
+    Type of zone. PRIMARY is controlled by Designate, SECONDARY zones are slaved from another DNS Server. Defaults to PRIMARY
+  in: body
+  required: false
+  type: enum

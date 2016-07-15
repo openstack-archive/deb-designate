@@ -32,15 +32,15 @@ class TransferRequestsController(rest.RestController):
     SORT_KEYS = ['created_at', 'id', 'updated_at']
 
     @pecan.expose(template='json:', content_type='application/json')
-    @utils.validate_uuid('transfer_request_id')
-    def get_one(self, transfer_request_id):
+    @utils.validate_uuid('zone_transfer_request_id')
+    def get_one(self, zone_transfer_request_id):
         """Get transfer_request"""
 
         request = pecan.request
         context = request.environ['context']
 
         transfer_request = self.central_api.get_zone_transfer_request(
-            context, transfer_request_id)
+            context, zone_transfer_request_id)
 
         LOG.info(_LI("Retrieved %(transfer_request)s"),
                  {'transfer_request': transfer_request})
@@ -88,6 +88,8 @@ class TransferRequestsController(rest.RestController):
         except exceptions.EmptyRequestBody:
             body = dict()
 
+        zone = self.central_api.get_zone(context, zone_id)
+        body['zone_name'] = zone.name
         body['zone_id'] = zone_id
 
         zone_transfer_request = DesignateAdapter.parse(

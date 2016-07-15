@@ -68,6 +68,11 @@ DEFAULT_AGENT_PORT = 5358
 DEFAULT_MDNS_PORT = 5354
 
 
+# Default datetime format
+
+DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f'
+
+
 def find_config(config_path):
     """
     Find a configuration file using the given hint.
@@ -390,15 +395,12 @@ def cache_result(function):
     #       we're able to read and update the value from within in inline
     #       wrapper method. If we used an immutable type, the assignment
     #       would not work as we want.
-    cache = [None]
+    cache = []
 
-    def wrapper(*args, **kwargs):
-        if cache[0] is not None:
-            return cache[0]
-        else:
-            result = function(*args, **kwargs)
-            cache[0] = result
-        return result
+    def wrapper(cls_instance):
+        if not cache:
+            cache.append(function(cls_instance))
+        return cache[0]
     return wrapper
 
 
