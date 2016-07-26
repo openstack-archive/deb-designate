@@ -1,2 +1,3 @@
 fixes-keystone-authtoken.patch
 install-missing-files.patch
+set_enable-api-v2_to_true_by_default.patch
