@@ -10,6 +10,9 @@ override_dh_auto_install:
 	install -D -m 0664 $(CURDIR)/etc/designate/rootwrap.conf.sample $(CURDIR)/debian/designate-common/etc/designate/rootwrap.conf
 	install -D -m 0664 $(CURDIR)/etc/designate/designate.conf.sample $(CURDIR)/debian/designate-common/usr/share/designate-common/designate.conf
 
+	mkdir -p $(CURDIR)/debian/designate-common/usr/share/doc/designate-common/examples
+	cp etc/designate/pools.yaml.sample* $(CURDIR)/debian/designate-common/usr/share/doc/designate-common/examples
+
 override_dh_auto_clean:
 	rm -f debian/designate-common.postinst debian/designate-common.config debian/designate-api.config debian/designate-api.postinst
 	rm -rf doc/build build *.egg-info
