@@ -1,0 +1,8 @@
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Workflow+1: Kiall Mac Innes <kiall@macinnes.ie>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 07 Jun 2016 11:48:45 +0000
+Reviewed-on: https://review.openstack.org/325883
+Project: openstack/deb-designate
+Branch: refs/heads/stable/mitaka

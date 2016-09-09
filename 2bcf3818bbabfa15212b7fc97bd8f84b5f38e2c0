@@ -1,0 +1,9 @@
+Code-Review+2: Graham Hayes <graham.hayes@hpe.com>
+Code-Review+2: Tim Simmons <tim.simmons@rackspace.com>
+Workflow+1: Tim Simmons <tim.simmons@rackspace.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 24 May 2016 18:31:08 +0000
+Reviewed-on: https://review.openstack.org/319929
+Project: openstack/deb-designate
+Branch: refs/heads/stable/mitaka

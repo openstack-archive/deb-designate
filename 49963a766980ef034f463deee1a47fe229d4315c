@@ -1,0 +1,9 @@
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Code-Review+2: Graham Hayes <graham.hayes@hpe.com>
+Workflow+1: Graham Hayes <graham.hayes@hpe.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sat, 30 Apr 2016 16:35:30 +0000
+Reviewed-on: https://review.openstack.org/311302
+Project: openstack/deb-designate
+Branch: refs/heads/stable/mitaka
