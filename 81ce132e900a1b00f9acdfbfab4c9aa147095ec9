@@ -1,0 +1,10 @@
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Code-Review+2: Graham Hayes <graham.hayes@hpe.com>
+Code-Review+2: Eric Larson <eric.larson@rackspace.com>
+Workflow+1: Graham Hayes <graham.hayes@hpe.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 25 Aug 2016 21:07:54 +0000
+Reviewed-on: https://review.openstack.org/283784
+Project: openstack/deb-designate
+Branch: refs/heads/master

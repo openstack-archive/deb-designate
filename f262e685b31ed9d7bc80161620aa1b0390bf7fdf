@@ -1,0 +1,11 @@
+Code-Review+1: amrith <amrith@tesora.com>
+Code-Review+1: Jim Rollenhagen <jim@jimrollenhagen.com>
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Code-Review+2: Tim Simmons <tim.simmons@rackspace.com>
+Workflow+1: Tim Simmons <tim.simmons@rackspace.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 23 Aug 2016 14:04:02 +0000
+Reviewed-on: https://review.openstack.org/357925
+Project: openstack/deb-designate
+Branch: refs/heads/master

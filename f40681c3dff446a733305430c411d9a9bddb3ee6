@@ -1,0 +1,9 @@
+Code-Review+2: Tim Simmons <tim.simmons@rackspace.com>
+Code-Review+2: Graham Hayes <graham.hayes@hpe.com>
+Workflow+1: Graham Hayes <graham.hayes@hpe.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 17 Aug 2016 04:48:45 +0000
+Reviewed-on: https://review.openstack.org/328813
+Project: openstack/deb-designate
+Branch: refs/heads/master
