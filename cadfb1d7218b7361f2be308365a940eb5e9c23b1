@@ -1,0 +1,10 @@
+Code-Review+2: Graham Hayes <graham.hayes@hpe.com>
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Workflow+1: Kiall Mac Innes <kiall@macinnes.ie>
+Code-Review+1: sonu <sonu.kumar@nectechnologies.in>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 23 Mar 2016 13:30:33 +0000
+Reviewed-on: https://review.openstack.org/296395
+Project: openstack/deb-designate
+Branch: refs/heads/stable/liberty
