@@ -191,7 +191,7 @@ debug = False
 
 # Indicate which header field names may be used during the actual request.
 # (list value)
-#allow_headers = X-Auth-Token,X-Auth-Sudo-Tenant-ID,X-Auth-Sudo-Project-ID,X-Auth-All-Projects,X-Designate-Edit-Managed-Records
+#allow_headers = X-Auth-Token,X-Auth-Sudo-Tenant-ID,X-Auth-Sudo-Project-ID,X-Auth-All-Projects,X-Designate-Edit-Managed-Records,OpenStack-DNS-Hide-Counts
 
 [cors.subdomain]
 
@@ -214,7 +214,7 @@ debug = False
 
 # Indicate which header field names may be used during the actual request.
 # (list value)
-#allow_headers = X-Auth-Token,X-Auth-Sudo-Tenant-ID,X-Auth-Sudo-Project-ID,X-Auth-All-Projects,X-Designate-Edit-Managed-Records
+#allow_headers = X-Auth-Token,X-Auth-Sudo-Tenant-ID,X-Auth-Sudo-Project-ID,X-Auth-All-Projects,X-Designate-Edit-Managed-Records,OpenStack-DNS-Hide-Counts
 
 #-----------------------
 # Sink Service
@@ -275,7 +275,7 @@ debug = False
 #-----------------------
 # Zone Manager Service
 #-----------------------
-[service:zone_manager]
+[service:producer]
 # Number of Zone Manager worker processes to spawn
 #workers = None
 
@@ -292,7 +292,7 @@ debug = False
 #------------------------
 # Deleted domains purging
 #------------------------
-[zone_manager_task:domain_purge]
+[producer_task:domain_purge]
 # How frequently to purge deleted domains, in seconds
 #interval = 3600  # 1h
 
@@ -305,12 +305,16 @@ debug = False
 #------------------------
 # Delayed zones NOTIFY
 #------------------------
-[zone_manager_task:delayed_notify]
+[producer_task:delayed_notify]
 # How frequently to scan for zones pending NOTIFY, in seconds
 #interval = 5
 
-# How many zones to receive NOTIFY on each run
-#batch_size = 100
+#------------------------
+# Worker Periodic Recovery
+#------------------------
+[producer_task:worker_periodic_recovery]
+# How frequently to scan for zones pending NOTIFY, in seconds
+#interval = 120
 
 #-----------------------
 # Pool Manager Service
@@ -364,6 +368,41 @@ debug = False
 
 # The cache driver to use
 #cache_driver = memcache
+
+
+#-----------------------
+# Worker Service
+#-----------------------
+[service:worker]
+# Whether to send events to worker instead of Pool Manager
+# enabled = False
+
+# Number of Worker processes to spawn
+#workers = None
+
+# Number of Worker greenthreads to spawn
+#threads = 1000
+
+# The percentage of servers requiring a successful update for a zone change
+# to be considered active
+#threshold_percentage = 100
+
+# The time to wait for a response from a server
+#poll_timeout = 30
+
+# The time between retrying to send a request and waiting for a response from a
+# server
+#poll_retry_interval = 15
+
+# The maximum number of times to retry sending a request and wait for a
+# response from a server
+#poll_max_retries = 10
+
+# The time to wait before sending the first request to a server
+#poll_delay = 5
+
+# Whether to allow worker to send NOTIFYs. NOTIFY requests to mdns will noop
+# notify = False
 
 ###################################
 ## Pool Manager Cache Configuration
@@ -431,10 +470,16 @@ debug = False
 #domain_id =
 #notification_topics = notifications
 #control_exchange = 'nova'
-#format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
-#format = '%(hostname)s.%(project)s.%(domain)s'
-#format = '%(hostname)s.%(domain)s'
-
+#"format" has been depricated. Instead we now have two formaters
+#each for IPv4 and IPv6.
+#"formatv4" has been defined for IPv4 addresses.
+#"formatv6" is for IPv6 addresses.
+#
+#formatv4 = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
+#formatv4 = '%(hostname)s.%(project)s.%(domain)s'
+#formatv4 = '%(hostname)s.%(domain)s'
+#formatv6 = '%(hostname)s.%(domain)s'
+#formatv6 = '%(hostname)s.%(project)s.%(domain)s'
 #------------------------
 # Neutron Floating Handler
 #------------------------
@@ -443,9 +488,11 @@ debug = False
 #domain_id =
 #notification_topics = notifications
 #control_exchange = 'neutron'
-#format = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
-#format = '%(hostname)s.%(project)s.%(domain)s'
-#format = '%(hostname)s.%(domain)s'
+#formatv4 = '%(octet0)s-%(octet1)s-%(octet2)s-%(octet3)s.%(domain)s'
+#formatv4 = '%(hostname)s.%(project)s.%(domain)s'
+#formatv4 = '%(hostname)s.%(domain)s'
+#formatv6 = '%(hostname)s.%(project)s.%(domain)s'
+#formatv6 = '%(hostname)s.%(domain)s'
 
 ##############################
 ## Agent Backend Configuration
@@ -482,6 +529,9 @@ debug = False
 [backend:agent:gdnsd]
 #gdnsd_cmd_name = gdnsd
 #confdir_path = /etc/gdnsd
+#query_destination = 127.0.0.1
+
+[backend:agent:msdns]
 #query_destination = 127.0.0.1
 
 ########################
