@@ -39,8 +39,8 @@ class ZoneExportController(rest.RestController):
         export = self.central_api.get_zone_export(context, export_id)
 
         if export.location and export.location.startswith('designate://'):
-            return self.zone_manager_api.\
-                render_zone(context, export['zone_id'])
+            return self.central_api.\
+                export_zone(context, export['zone_id'])
         else:
             msg = 'Zone can not be exported synchronously'
             raise exceptions.BadRequest(msg)
@@ -86,7 +86,7 @@ class ZoneExportsController(rest.RestController):
 
         zone_export = self.central_api.get_zone_export(context, export_id)
 
-        LOG.info(_LI("Retrived %(zone_export)s"), {'zone_export': zone_export})
+        LOG.info(_LI("Retrieved %(export)s"), {'export': zone_export})
 
         return DesignateAdapter.render(
             'API_v2',
@@ -99,7 +99,7 @@ class ZoneExportsController(rest.RestController):
         request = pecan.request
         context = request.environ['context']
         marker, limit, sort_key, sort_dir = utils.get_paging_params(
-            params, self.SORT_KEYS)
+                context, params, self.SORT_KEYS)
 
         # Extract any filter params.
         accepted_filters = ('status', 'message', 'zone_id', )
@@ -110,8 +110,8 @@ class ZoneExportsController(rest.RestController):
         zone_exports = self.central_api.find_zone_exports(
             context, criterion, marker, limit, sort_key, sort_dir)
 
-        LOG.info(_LI("Retrived %(zone_exports)s"),
-                 {'zone_exports': zone_exports})
+        LOG.info(_LI("Retrieved %(exports)s"),
+                 {'exports': zone_exports})
 
         return DesignateAdapter.render(
             'API_v2',

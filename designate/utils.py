@@ -119,8 +119,9 @@ def register_plugin_opts():
     # Avoid circular dependency imports
     from designate import plugin
 
-    plugin.Plugin.register_cfg_opts('designate.zone_manager_tasks')
-    plugin.Plugin.register_extra_cfg_opts('designate.zone_manager_tasks')
+    # Register Producer Tasks
+    plugin.Plugin.register_cfg_opts('designate.producer_tasks')
+    plugin.Plugin.register_extra_cfg_opts('designate.producer_tasks')
 
     # Register Backend Plugin Config Options
     plugin.Plugin.register_cfg_opts('designate.backend')
@@ -415,7 +416,7 @@ def split_host_port(string, default_port=53):
     return (host, port)
 
 
-def get_paging_params(params, sort_keys):
+def get_paging_params(context, params, sort_keys):
     """
     Extract any paging parameters
     """
@@ -459,6 +460,8 @@ def get_paging_params(params, sort_keys):
     elif sort_key and sort_key not in sort_keys:
         msg = 'sort key must be one of %(keys)s' % {'keys': sort_keys}
         raise exceptions.InvalidSortKey(msg)
+    elif sort_key == 'tenant_id' and not context.all_tenants:
+        sort_key = None
 
     return marker, limit, sort_key, sort_dir
 
@@ -536,3 +539,7 @@ def bind_udp(host, port):
         LOG.info(_LI('Listening on UDP port %(port)d'), {'port': newport})
 
     return sock_udp
+
+
+def max_prop_time(timeout, max_retries, retry_interval, delay):
+    return timeout * max_retries + max_retries * retry_interval + delay
