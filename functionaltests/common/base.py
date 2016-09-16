@@ -14,15 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import tempest_lib.base
+import tempest.lib.base
 
 from functionaltests.common.config import read_config
 
 
-class BaseDesignateTest(tempest_lib.base.BaseTestCase):
-
-    def __init__(self, *args, **kwargs):
-        super(BaseDesignateTest, self).__init__(*args, **kwargs)
+class BaseDesignateTest(tempest.lib.base.BaseTestCase):
 
     @classmethod
     def setUpClass(cls):
