@@ -1,0 +1,8 @@
+Code-Review+2: Thomas Goirand <thomas@goirand.fr>
+Workflow+1: Thomas Goirand <thomas@goirand.fr>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sat, 17 Sep 2016 22:26:00 +0000
+Reviewed-on: https://review.openstack.org/371740
+Project: openstack/deb-designate
+Branch: refs/heads/debian/newton
