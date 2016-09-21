@@ -18,13 +18,11 @@ from inspect import getargspec
 
 import six
 from oslo_serialization import jsonutils
-from oslo_log import log as logging
 import pecan.core
 
 from designate import exceptions
 
 JSON_TYPES = ('application/json', 'application/json-patch+json')
-LOG = logging.getLogger(__name__)
 
 
 class Request(pecan.core.Request):
@@ -39,9 +37,13 @@ class Request(pecan.core.Request):
         """
         if self.content_type in JSON_TYPES:
             try:
-                return jsonutils.load(self.body_file)
+                json_dict = jsonutils.load(self.body_file)
+                if json_dict is None:
+                    # NOTE(kiall): Somehow, json.load(fp) is returning None.
+                    raise exceptions.EmptyRequestBody('Request Body is empty')
+                return json_dict
             except ValueError as valueError:
-                if len(self.body) == 0:
+                if len(self.body) == 0 or self.body is None:
                     raise exceptions.EmptyRequestBody('Request Body is empty')
                 else:
                     raise exceptions.InvalidJson(six.text_type(valueError))
