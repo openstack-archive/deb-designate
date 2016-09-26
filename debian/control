@@ -74,8 +74,8 @@ Build-Depends-Indep: bandit,
                      subunit,
                      testrepository,
 Standards-Version: 3.9.8
-Vcs-Browser: https://anonscm.debian.org/cgit/openstack/designate.git/
-Vcs-Git: https://anonscm.debian.org/git/openstack/designate.git
+Vcs-Browser: https://git.openstack.org/cgit/openstack/deb-designate?h=debian%2Fnewton
+Vcs-Git: https://git.openstack.org/openstack/deb-designate -b debian/newton
 Homepage: https://github.com/openstack/designate
 
 Package: python-designate
