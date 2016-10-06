@@ -21,7 +21,7 @@ Last-Update: 2016-09-17
  keystoneauth1>=2.10.0 # Apache-2.0
 -keystonemiddleware!=4.1.0,!=4.5.0,>=4.0.0 # Apache-2.0
 +keystonemiddleware
- netaddr!=0.7.16,>=0.7.12 # BSD
+ netaddr!=0.7.16,>=0.7.13 # BSD
  oslo.config>=3.14.0 # Apache-2.0
  oslo.concurrency>=3.8.0 # Apache-2.0
 @@ -24,18 +24,17 @@ oslo.utils>=3.16.0 # Apache-2.0
