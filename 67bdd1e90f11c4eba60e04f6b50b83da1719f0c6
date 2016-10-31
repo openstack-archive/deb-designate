@@ -1,0 +1,8 @@
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Workflow+1: Kiall Mac Innes <kiall@macinnes.ie>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 27 Oct 2016 17:25:45 +0000
+Reviewed-on: https://review.openstack.org/386858
+Project: openstack/deb-designate
+Branch: refs/heads/master
