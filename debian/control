@@ -3,7 +3,7 @@ Section: net
 Priority: extra
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
 Uploaders: Thomas Goirand <zigo@debian.org>,
-Build-Depends: debhelper (>= 9),
+Build-Depends: debhelper (>= 10),
                dh-python,
                dh-systemd,
                openstack-pkg-tools (>= 53~),
@@ -183,6 +183,7 @@ Depends: adduser,
          designate-common (= ${binary:Version}),
          python-openstackclient,
          q-text-as-data,
+         lsb-base,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - API server
@@ -198,6 +199,7 @@ Package: designate-central
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
+         lsb-base,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - central daemon
@@ -213,6 +215,7 @@ Package: designate-agent
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
+         lsb-base,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - agent
@@ -228,6 +231,7 @@ Package: designate-sink
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
+         lsb-base,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - sink
@@ -243,6 +247,7 @@ Package: designate-mdns
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
+         lsb-base,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - mdns
@@ -258,6 +263,7 @@ Package: designate-pool-manager
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
+         lsb-base,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - pool manager
@@ -273,6 +279,7 @@ Package: designate-zone-manager
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
+         lsb-base,
          ${misc:Depends},
          ${python:Depends},
 Description: OpenStack DNS as a Service - zone manager
