@@ -183,8 +183,8 @@ Depends: adduser,
          designate-common (= ${binary:Version}),
          python-openstackclient,
          q-text-as-data,
-         lsb-base,
          ${misc:Depends},
+         ${ostack-lsb-base},
          ${python:Depends},
 Description: OpenStack DNS as a Service - API server
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
@@ -199,8 +199,8 @@ Package: designate-central
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
-         lsb-base,
          ${misc:Depends},
+         ${ostack-lsb-base},
          ${python:Depends},
 Description: OpenStack DNS as a Service - central daemon
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
@@ -215,8 +215,8 @@ Package: designate-agent
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
-         lsb-base,
          ${misc:Depends},
+         ${ostack-lsb-base},
          ${python:Depends},
 Description: OpenStack DNS as a Service - agent
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
@@ -231,8 +231,8 @@ Package: designate-sink
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
-         lsb-base,
          ${misc:Depends},
+         ${ostack-lsb-base},
          ${python:Depends},
 Description: OpenStack DNS as a Service - sink
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
@@ -247,8 +247,8 @@ Package: designate-mdns
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
-         lsb-base,
          ${misc:Depends},
+         ${ostack-lsb-base},
          ${python:Depends},
 Description: OpenStack DNS as a Service - mdns
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
@@ -263,8 +263,8 @@ Package: designate-pool-manager
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
-         lsb-base,
          ${misc:Depends},
+         ${ostack-lsb-base},
          ${python:Depends},
 Description: OpenStack DNS as a Service - pool manager
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant
@@ -279,8 +279,8 @@ Package: designate-zone-manager
 Architecture: all
 Depends: designate-common (= ${binary:Version}),
          python-designate (= ${binary:Version}),
-         lsb-base,
          ${misc:Depends},
+         ${ostack-lsb-base},
          ${python:Depends},
 Description: OpenStack DNS as a Service - zone manager
  Designate provides DNSaaS services for OpenStack. It provides a multi-tenant

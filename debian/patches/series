@@ -1,3 +1,4 @@
 fixes-keystone-authtoken.patch
 install-missing-files.patch
 fix-requirements.txt.patch
+allow-sqla-1.1.patch
