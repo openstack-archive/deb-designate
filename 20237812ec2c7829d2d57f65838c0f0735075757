@@ -1,0 +1,11 @@
+Code-Review+2: Graham Hayes <graham.hayes@hpe.com>
+Code-Review+1: yunfeng zhou <zhouyunfeng@inspur.com>
+Code-Review+1: sonu <sonu.kumar@nectechnologies.in>
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Workflow+1: Kiall Mac Innes <kiall@macinnes.ie>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sun, 11 Dec 2016 12:29:59 +0000
+Reviewed-on: https://review.openstack.org/398743
+Project: openstack/deb-designate
+Branch: refs/heads/master
