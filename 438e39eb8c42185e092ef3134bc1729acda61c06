@@ -1,0 +1,9 @@
+Code-Review+2: Tim Simmons <tim.simmons@rackspace.com>
+Code-Review+1: Maurice Schreiber <maurice.schreiber@sap.com>
+Workflow+1: Kiall Mac Innes <kiall@macinnes.ie>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 01 Feb 2017 16:00:58 +0000
+Reviewed-on: https://review.openstack.org/427272
+Project: openstack/deb-designate
+Branch: refs/heads/master
