@@ -1,0 +1,8 @@
+Code-Review+2: Tim Simmons <tim.simmons@rackspace.com>
+Workflow+1: Kiall Mac Innes <kiall@macinnes.ie>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 08 Feb 2017 14:54:41 +0000
+Reviewed-on: https://review.openstack.org/426621
+Project: openstack/deb-designate
+Branch: refs/heads/stable/newton
