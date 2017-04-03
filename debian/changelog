@@ -1,3 +1,10 @@
+designate (1:3.0.0-3) unstable; urgency=medium
+
+  * Build-depends on openstack-pkg-tools >= 54~ to ensure config script doesn't
+    use net-tools or iproute2, which aren't essential (Closes: #859443).
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 03 Apr 2017 16:50:31 +0200
+
 designate (1:3.0.0-2) unstable; urgency=medium
 
   [ Ondřej Nový ]
