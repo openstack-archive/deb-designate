@@ -1,13 +1,13 @@
 # Translation of designate debconf templates to German
-# Copyright (C) Helge Kreutzmann <debian@helgefjell.de>, 2014.
+# Copyright (C) Helge Kreutzmann <debian@helgefjell.de>, 2014, 2017.
 # This file is distributed under the same license as the designate package.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: designate 2014.1-10\n"
-"Report-Msgid-Bugs-To: designate@packages.debian.org\n"
-"POT-Creation-Date: 2016-03-29 12:52+0000\n"
-"PO-Revision-Date: 2014-09-27 14:38+0200\n"
+"Project-Id-Version: designate 1:3.0.0-2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2016-12-15 14:26+0000\n"
+"PO-Revision-Date: 2017-03-12 06:38+0100\n"
 "Last-Translator: Helge Kreutzmann <debian@helgefjell.de>\n"
 "Language-Team: de <debian-l10n-german@lists.debian.org>\n"
 "Language: \n"
@@ -215,17 +215,15 @@ msgstr ""
 #. Type: boolean
 #. Description
 #: ../designate-api.templates:2001
-#, fuzzy
-#| msgid ""
-#| "Note that you will need to have an up and running Keystone server on "
-#| "which to connect using the Keystone authentication token."
 msgid ""
 "Note that you will need to have an up and running Keystone server on which "
 "to connect using a known admin project name, admin username and password. "
 "The admin auth token is not used anymore."
 msgstr ""
 "Beachten Sie, dass ein laufender Keystone-Server benötigt wird, bei dem Sie "
-"sich mit einem Keystone-Authentifizierungs-Token verbinden können."
+"sich mit einem bekannten Projektnamen, Administrator-Benutzernamen und "
+"Passwort verbinden können. Der Administrations-Authentifizierungs-Token wird "
+"nicht mehr verwandt."
 
 #. Type: string
 #. Description
@@ -247,42 +245,36 @@ msgstr ""
 #. Type: string
 #. Description
 #: ../designate-api.templates:4001
-#, fuzzy
-#| msgid "Keystone authentication token:"
 msgid "Keystone admin name:"
-msgstr "Keystone-Authentifizierungs-Token:"
+msgstr "Keystone-Administratorname:"
 
 #. Type: string
 #. Description
 #. Type: string
 #. Description
+#. Type: password
+#. Description
 #: ../designate-api.templates:4001 ../designate-api.templates:5001
+#: ../designate-api.templates:6001
 msgid ""
 "To register the service endpoint, this package needs to know the Admin "
 "login, name, project name, and password to the Keystone server."
 msgstr ""
+"Um den Diensteendpunkt zu registrieren, muss dieses Paket den Anmeldenamen "
+"des Administrators, den Namen, den Projektnamen und das Passwort für den "
+"Keystone-Server kennen."
 
 #. Type: string
 #. Description
 #: ../designate-api.templates:5001
 msgid "Keystone admin project name:"
-msgstr ""
+msgstr "Keystone-Administratorprojektname:"
 
 #. Type: password
 #. Description
 #: ../designate-api.templates:6001
 msgid "Keystone authentication token:"
 msgstr "Keystone-Authentifizierungs-Token:"
-
-#. Type: password
-#. Description
-#: ../designate-api.templates:6001
-msgid ""
-"To configure its endpoint in Keystone, designate-api needs the Keystone "
-"authentication token."
-msgstr ""
-"Um seine Endpunkte in Keystone zu konfigurieren, benötigt Designate-Api den "
-"Keystone-Authentifizierungs-Token."
 
 #. Type: string
 #. Description
@@ -327,3 +319,10 @@ msgstr ""
 "OpenStack unterstützt die Verwendung von Verfügbarkeitszonen, wobei jede "
 "Region einen Ort darstellt. Bitte geben Sie die Zone ein, die Sie bei der "
 "Registrierung des Endpunkts verwenden möchten."
+
+#~ msgid ""
+#~ "To configure its endpoint in Keystone, designate-api needs the Keystone "
+#~ "authentication token."
+#~ msgstr ""
+#~ "Um seine Endpunkte in Keystone zu konfigurieren, benötigt Designate-Api "
+#~ "den Keystone-Authentifizierungs-Token."
