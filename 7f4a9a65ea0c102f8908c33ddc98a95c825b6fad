@@ -1,0 +1,11 @@
+Code-Review+1: Jean-Philippe Evrard <jean-philippe.evrard@rackspace.co.uk>
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Workflow+1: Graham Hayes <ghayes@suse.de>
+Code-Review+2: Tim Simmons <tim.r.simmons@gmail.com>
+Code-Review+1: sonu <sonu.kumar@nectechnologies.in>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 26 Apr 2017 18:06:56 +0000
+Reviewed-on: https://review.openstack.org/451569
+Project: openstack/deb-designate
+Branch: refs/heads/master
