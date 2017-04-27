@@ -1,0 +1,9 @@
+Code-Review+1: Jesse Pretorius (odyssey4me) <jesse.pretorius@rackspace.co.uk>
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Workflow+1: Graham Hayes <ghayes@suse.de>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 27 Apr 2017 15:36:56 +0000
+Reviewed-on: https://review.openstack.org/445069
+Project: openstack/deb-designate
+Branch: refs/heads/master
