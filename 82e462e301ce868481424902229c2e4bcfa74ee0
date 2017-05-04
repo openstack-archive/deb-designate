@@ -1,0 +1,9 @@
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Code-Review+2: Kiall Mac Innes <kiall@macinnes.ie>
+Workflow+1: Graham Hayes <ghayes@suse.de>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 04 May 2017 10:23:02 +0000
+Reviewed-on: https://review.openstack.org/461842
+Project: openstack/deb-designate
+Branch: refs/heads/stable/ocata
