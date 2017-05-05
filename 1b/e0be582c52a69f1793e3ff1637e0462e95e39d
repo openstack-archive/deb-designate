@@ -1,0 +1,12 @@
+Code-Review+1: Jesse Pretorius (odyssey4me) <jesse.pretorius@rackspace.co.uk>
+Code-Review+1: Nguyen Van Trung <trungnv@vn.fujitsu.com>
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Code-Review+1: Eduardo Gonzalez <dabarren@gmail.com>
+Code-Review+2: Tim Simmons <tim.r.simmons@gmail.com>
+Workflow+1: Tim Simmons <tim.r.simmons@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 05 May 2017 15:26:11 +0000
+Reviewed-on: https://review.openstack.org/450451
+Project: openstack/deb-designate
+Branch: refs/heads/master
