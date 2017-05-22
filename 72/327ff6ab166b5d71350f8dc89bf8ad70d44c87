@@ -1,0 +1,13 @@
+Code-Review+1: sonu <sonu.kumar@nectechnologies.in>
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Code-Review+2: Tim Simmons <tim.r.simmons@gmail.com>
+Code-Review+1: Nguyen Van Trung <trungnv@vn.fujitsu.com>
+Code-Review+1: Hieu LE <hieulq@vn.fujitsu.com>
+Code-Review+1: Erik Olof Gunnar Andersson <eandersson@blizzard.com>
+Workflow+1: Graham Hayes <ghayes@suse.de>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 22 May 2017 15:53:34 +0000
+Reviewed-on: https://review.openstack.org/447290
+Project: openstack/deb-designate
+Branch: refs/heads/master
