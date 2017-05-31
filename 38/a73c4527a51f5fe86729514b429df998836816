@@ -1,0 +1,9 @@
+Code-Review+2: Tim Simmons <tim.r.simmons@gmail.com>
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Workflow+1: Graham Hayes <ghayes@suse.de>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 31 May 2017 17:42:56 +0000
+Reviewed-on: https://review.openstack.org/468904
+Project: openstack/deb-designate
+Branch: refs/heads/master
