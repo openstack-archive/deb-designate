@@ -1,0 +1,11 @@
+Code-Review+1: Dai Dang Van <daidv@vn.fujitsu.com>
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Code-Review+1: Nguyen Van Trung <trungnv@vn.fujitsu.com>
+Code-Review+2: Tim Simmons <tim.r.simmons@gmail.com>
+Workflow+1: Tim Simmons <tim.r.simmons@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 28 Jun 2017 18:23:05 +0000
+Reviewed-on: https://review.openstack.org/472185
+Project: openstack/deb-designate
+Branch: refs/heads/master
