@@ -1,0 +1,14 @@
+Code-Review+1: Hieu LE <hieulq@vn.fujitsu.com>
+Code-Review+1: Erik Olof Gunnar Andersson <eandersson@blizzard.com>
+Code-Review+1: Nguyen Van Trung <trungnv@vn.fujitsu.com>
+Code-Review+1: Nguyen Phuong An <AnNP@vn.fujitsu.com>
+Code-Review+1: sonu <sonu.kumar@nectechnologies.in>
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Code-Review+2: Tim Simmons <tim.r.simmons@gmail.com>
+Workflow+1: Tim Simmons <tim.r.simmons@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 29 Jun 2017 02:25:28 +0000
+Reviewed-on: https://review.openstack.org/469238
+Project: openstack/deb-designate
+Branch: refs/heads/master
