@@ -1,0 +1,8 @@
+Code-Review+2: Graham Hayes <ghayes@suse.de>
+Workflow+1: Graham Hayes <ghayes@suse.de>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 13 Jul 2017 12:26:41 +0000
+Reviewed-on: https://review.openstack.org/483240
+Project: openstack/deb-designate
+Branch: refs/heads/master
