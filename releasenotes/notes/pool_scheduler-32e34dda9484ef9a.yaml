@@ -1,9 +1,0 @@
----
-features:
-  - Schedule across pools. See https://docs.openstack.org/designate/latest/admin/pool-scheduler.html#default-provided-filters for the built in filters
-upgrade:
-  - The default option for the scheduler filters will be
-    ``attribute, pool_id_attribute, random``.
-  - To maintain exact matching behaviour (if you have multiple pools) you will
-    need to set the ``scheduler_filters`` option in ``[service:central]`` to
-    ``default_pool``

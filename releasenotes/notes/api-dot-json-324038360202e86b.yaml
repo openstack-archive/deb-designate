@@ -1,5 +1,0 @@
----
-fixes:
-  - Designate no longer will attempt to guess content type based on
-    an extension to the URL. So GET /v2/zones.json is no longer an
-    acceptable URL.
